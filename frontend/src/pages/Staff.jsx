@@ -252,7 +252,7 @@ export default function Staff() {
     try {
       const { error } = await supabase.from("staff").delete().eq("id", staffToDelete.id);
       if (error) throw error;
-      toast.success("Staff moved to Recycle Bin");
+      toast.success("Staff account archived");
       setStaffToDelete(null);
       loadStaff(true);
     } catch (error) {
@@ -665,7 +665,7 @@ export default function Staff() {
                   </select>
                   {form.role === "admin" && !editing && (
                     <p style={{ margin: "8px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.45 }}>
-                      Administrators are global accounts with no branch assignment. They can access all branches, reports, settings, staff accounts, and the Recycle Bin. Only create this role for a trusted owner or manager.
+                      Administrators are global accounts with no branch assignment. They can access all branches, reports, settings, staff accounts, and the Audit Log. Only create this role for a trusted owner or manager.
                     </p>
                   )}
                 </div>
@@ -806,9 +806,9 @@ export default function Staff() {
       />
       <ConfirmDialog
         open={Boolean(staffToDelete)}
-        title="Move staff account to Recycle Bin?"
+        title="Archive staff account?"
         message={<> <strong>{staffToDelete?.full_name}</strong>'s account will be archived and removed from active staff lists. An administrator can restore the account later.</>}
-        confirmLabel="Move to Recycle Bin"
+        confirmLabel="Archive Account"
         cancelLabel="Keep Account"
         loading={deleting}
         onConfirm={deleteStaff}

@@ -5,7 +5,7 @@ import { authenticate, requireAdmin } from './middleware/authenticate.js'
 import { handleData } from './controllers/dataController.js'
 import { cancelOrder, createOrder, restockInventory, settleAndReleaseOrder, transitionOrder } from './controllers/operationController.js'
 import { listVisibleCustomers, lookupCustomer, registerCustomer } from './controllers/customerController.js'
-import { listRecycleBin, restoreRecord } from './controllers/auditController.js'
+import { listAuditLog, restoreRecord } from './controllers/auditController.js'
 import { login, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from './controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from './controllers/staffProvisionController.js'
 import { getPublicSettings, sendContactMessage, trackOrder } from './controllers/publicController.js'
@@ -81,7 +81,11 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && path === 'customers/visible') return write(response, 200, await listVisibleCustomers(await authenticate(request)))
     if (request.method === 'GET' && path === 'customers/lookup') return write(response, 200, await lookupCustomer(url.searchParams.get('phone'), await authenticate(request)))
     if (request.method === 'POST' && path === 'customers/register') return write(response, 200, await registerCustomer(await readBody(request), await authenticate(request)))
-    if (request.method === 'GET' && path === 'recycle-bin') return write(response, 200, await listRecycleBin(await authenticate(request)))
+    if (request.method === 'GET' && (path === 'audit-log' || path === 'recycle-bin')) {
+      return write(response, 200, await listAuditLog(await authenticate(request), {
+        page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'),
+      }))
+    }
     if (request.method === 'POST' && path === 'recycle-bin/restore') return write(response, 200, await restoreRecord(await readBody(request), await authenticate(request)))
 
     const table = resourceRoutes.get(path)

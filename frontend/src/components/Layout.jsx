@@ -38,7 +38,7 @@ const navigation = [
     adminOnly: true,
   },
   { name: "Staff", path: "/dashboard/staff", icon: UserCog, adminOnly: true },
-  { name: "Recycle Bin", path: "/dashboard/recycle-bin", icon: ArchiveRestore, adminOnly: true },
+  { name: "Audit Log", path: "/dashboard/audit-log", icon: ArchiveRestore, adminOnly: true },
   {
     name: "Settings",
     path: "/dashboard/settings",
@@ -56,7 +56,8 @@ const pageNames = {
   "/dashboard/sms": "Notifications",
   "/dashboard/staff": "Staff",
   "/dashboard/settings": "Settings",
-  "/dashboard/recycle-bin": "Recycle Bin",
+  "/dashboard/audit-log": "Audit Log",
+  "/dashboard/recycle-bin": "Audit Log",
   "/dashboard/change-password": "Account Security",
 };
 

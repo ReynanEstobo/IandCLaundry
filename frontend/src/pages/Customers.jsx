@@ -146,7 +146,7 @@ export default function Customers() {
     try {
       const { error } = await supabase.from("customers").delete().eq("id", customerToDelete.id);
       if (error) throw error;
-      toast.success("Customer moved to Recycle Bin");
+      toast.success("Customer archived");
       setCustomerToDelete(null);
       loadCustomers(true);
     } catch (error) {
@@ -503,9 +503,9 @@ export default function Customers() {
       )}
       <ConfirmDialog
         open={Boolean(customerToDelete)}
-        title="Move customer to Recycle Bin?"
-        message={<> <strong>{customerToDelete?.name}</strong> will be hidden from active client lists. An administrator can restore the client later from the Recycle Bin.</>}
-        confirmLabel="Move to Recycle Bin"
+        title="Archive customer?"
+        message={<> <strong>{customerToDelete?.name}</strong> will be hidden from active client lists. An administrator can restore the client later from the Audit Log.</>}
+        confirmLabel="Archive Customer"
         cancelLabel="Keep Customer"
         loading={deleting}
         onConfirm={deleteCustomer}

@@ -253,7 +253,7 @@ export default function Inventory() {
         .delete()
         .eq("id", itemToDelete.id);
       if (error) throw error;
-      toast.success("Item moved to Recycle Bin");
+      toast.success("Item archived");
       setItemToDelete(null);
       loadData(true);
     } catch (error) {
@@ -777,9 +777,9 @@ export default function Inventory() {
       )}
       <ConfirmDialog
         open={Boolean(itemToDelete)}
-        title="Move inventory item to Recycle Bin?"
+        title="Archive inventory item?"
         message={<> <strong>{itemToDelete?.name}</strong> will no longer be available for branch stock checks or new orders. An administrator can restore it later.</>}
-        confirmLabel="Move to Recycle Bin"
+        confirmLabel="Archive Item"
         cancelLabel="Keep Item"
         loading={deleting}
         onConfirm={deleteItem}
