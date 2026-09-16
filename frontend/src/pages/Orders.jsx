@@ -21,7 +21,7 @@ import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { sendEmail, sendSms } from "../services/api/notificationApi";
-import { cancelBranchOrder, createBranchOrder, getVisibleCustomers, lookupCustomerByPhone, settleAndReleaseBranchOrder, transitionBranchOrder } from "../services/api/operationsApi";
+import { cancelBranchOrder, collectBranchOrderPayment, createBranchOrder, getVisibleCustomers, lookupCustomerByPhone, settleAndReleaseBranchOrder, transitionBranchOrder } from "../services/api/operationsApi";
 import { useAuth } from "../context/AuthContext";
 import { PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from "../components/LoadingButton";
@@ -150,6 +150,9 @@ export default function Orders() {
   const { role } = useAuth();
   const isAdmin = role === "admin";
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showAdditionalPaymentModal, setShowAdditionalPaymentModal] = useState(false);
+  const [additionalPayment, setAdditionalPayment] = useState({ amount: "", paymentMethod: "cash" });
+  const [recordingPayment, setRecordingPayment] = useState(false);
   const [cancellingOrder, setCancellingOrder] = useState(null);
   const [cancellationReason, setCancellationReason] = useState("");
   const [isCancelling, setIsCancelling] = useState(false);
@@ -493,8 +496,10 @@ export default function Orders() {
     const amountPaid = parseFloat(form.amount_paid) || 0;
     const minRequired = total_price * 0.5;
 
-    // Require at least 50% payment
-    if (amountPaid < minRequired) {
+    // The 50% minimum applies when the order is first placed. Existing
+    // records may have older payment terms and can still have their non-payment
+    // details corrected without rewriting payment history.
+    if (!editing && amountPaid < minRequired) {
       return toast.error(
         `Minimum 50% payment required: \u20B1${minRequired.toLocaleString()}`,
       );
@@ -549,19 +554,6 @@ export default function Orders() {
         orderData = result.data;
       } catch (createError) {
         error = { message: createError.message };
-      }
-    }
-
-    // If failed, might be due to missing amount_paid column - retry without it
-    if (editing && error && amountPaid > 0) {
-      // Try adding amount_paid in case the column exists
-      const payloadWithPaid = { ...payload, amount_paid: amountPaid };
-      if (editing) {
-        const r = await supabase
-          .from("orders")
-          .update(payloadWithPaid)
-          .eq("id", editing.id);
-        if (!r.error) error = null;
       }
     }
 
@@ -711,6 +703,35 @@ export default function Orders() {
     await loadData(true);
     await new Promise((resolve) => requestAnimationFrame(resolve));
     setUpdatingOrderId(null);
+  }
+
+  function openAdditionalPayment(order) {
+    const remaining = Math.max(0, Number(order.total_price || 0) - Number(order.amount_paid || 0));
+    if (remaining <= 0) return toast.error("This order is already fully paid.");
+    setSelectedOrder(order);
+    setAdditionalPayment({ amount: "", paymentMethod: order.payment_method || "cash" });
+    setShowAdditionalPaymentModal(true);
+  }
+
+  async function recordAdditionalPayment() {
+    if (!selectedOrder) return;
+    const amount = Number(additionalPayment.amount);
+    const remaining = Math.max(0, Number(selectedOrder.total_price || 0) - Number(selectedOrder.amount_paid || 0));
+    if (!Number.isFinite(amount) || amount <= 0) return toast.error("Enter a payment amount greater than zero.");
+    if (amount > remaining + 0.005) return toast.error(`Payment cannot exceed the ₱${remaining.toLocaleString()} remaining balance.`);
+
+    setRecordingPayment(true);
+    try {
+      await collectBranchOrderPayment(selectedOrder.id, amount, additionalPayment.paymentMethod);
+      toast.success(`₱${amount.toLocaleString()} payment recorded.`);
+      setShowAdditionalPaymentModal(false);
+      setSelectedOrder(null);
+      await loadData(true);
+    } catch (error) {
+      toast.error(error.message || "Unable to record the payment.");
+    } finally {
+      setRecordingPayment(false);
+    }
   }
 
   async function updateStatus(order, newStatus, correctionNote = "") {
@@ -1209,6 +1230,15 @@ export default function Orders() {
                               onClick={() => openEdit(order)}
                             >
                               <Edit2 size={16} />
+                            </button>
+                          )}
+                          {!['released', 'cancelled'].includes(order.status) && Number(order.amount_paid || 0) < Number(order.total_price || 0) && (
+                            <button
+                              className="btn-icon"
+                              title="Record additional payment"
+                              onClick={() => openAdditionalPayment(order)}
+                            >
+                              <Plus size={16} />
                             </button>
                           )}
                           {order.status === "ready" && (
@@ -1745,7 +1775,18 @@ export default function Orders() {
                       Min. 50% required
                     </span>
                   </div>
-                  {editing && <p style={{ margin: "0 0 12px", color: "var(--text-muted)", fontSize: 13 }}>Payment details are locked after placement. The remaining balance is collected only when the order is released.</p>}
+                  {editing && <div style={{ margin: "0 0 12px", color: "var(--text-muted)", fontSize: 13 }}>
+                    <p style={{ margin: "0 0 8px" }}>The original payment is kept for accountability. Record an additional payment instead of changing it.</p>
+                    {Number(editing.total_price || 0) > Number(editing.amount_paid || 0) && (
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
+                        setShowModal(false);
+                        setEditing(null);
+                        openAdditionalPayment(editing);
+                      }}>
+                        <Plus size={15} /> Record additional payment
+                      </button>
+                    )}
+                  </div>}
                   <div className="form-row">
                     <div className="form-group">
                       <label>Method</label>
@@ -1852,6 +1893,50 @@ export default function Orders() {
                 </LoadingButton>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {showAdditionalPaymentModal && (
+        <div className="modal-overlay" onClick={() => !recordingPayment && setShowAdditionalPaymentModal(false)}>
+          <div className="order-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="order-modal-header">
+              <div>
+                <h3>Record Additional Payment</h3>
+                <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>Order #{selectedOrder?.order_number}</p>
+              </div>
+              <button className="btn-icon" disabled={recordingPayment} onClick={() => setShowAdditionalPaymentModal(false)} aria-label="Close payment dialog">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="order-modal-body">
+              <div className="form-group">
+                <label>Remaining Balance</label>
+                <div className="form-control" style={{ display: "flex", alignItems: "center", fontWeight: 700, background: "var(--bg-secondary)" }}>
+                  ₱{Math.max(0, Number(selectedOrder?.total_price || 0) - Number(selectedOrder?.amount_paid || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Method</label>
+                  <select className="form-control" value={additionalPayment.paymentMethod} disabled={recordingPayment} onChange={(event) => setAdditionalPayment((current) => ({ ...current, paymentMethod: event.target.value }))}>
+                    <option value="cash">Cash</option>
+                    <option value="gcash">GCash</option>
+                    <option value="bank_transfer">Bank transfer</option>
+                    <option value="card">Card</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Amount to Add (₱)</label>
+                  <input className="form-control" type="number" min="0.01" step="0.01" inputMode="decimal" autoFocus value={additionalPayment.amount} disabled={recordingPayment} onChange={(event) => setAdditionalPayment((current) => ({ ...current, amount: event.target.value }))} placeholder="0.00" />
+                </div>
+              </div>
+              <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 13 }}>This adds a separate, auditable payment entry. The original payment will not be changed.</p>
+            </div>
+            <div className="order-modal-footer">
+              <button className="btn btn-secondary" disabled={recordingPayment} onClick={() => setShowAdditionalPaymentModal(false)}>Cancel</button>
+              <LoadingButton className="btn btn-primary" loading={recordingPayment} loadingLabel="Recording…" onClick={recordAdditionalPayment}>Record Payment</LoadingButton>
+            </div>
           </div>
         </div>
       )}

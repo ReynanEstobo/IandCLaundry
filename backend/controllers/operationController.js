@@ -140,3 +140,41 @@ export async function settleAndReleaseOrder(body, identity) {
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
   return { data }
 }
+
+export async function collectOrderPayment(body, identity) {
+  const orderId = String(body?.orderId || '').trim()
+  const amount = Number(body?.amount)
+  const paymentMethod = String(body?.paymentMethod || 'cash').trim().toLowerCase()
+  if (!orderId) throw Object.assign(new Error('An order is required.'), { status: 400 })
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw Object.assign(new Error('Enter a payment amount greater than zero.'), { status: 400 })
+  }
+  if (!['cash', 'gcash', 'bank_transfer', 'card', 'other'].includes(paymentMethod)) {
+    throw Object.assign(new Error('Select a valid payment method.'), { status: 400 })
+  }
+  requireBranch(identity)
+
+  const { data: order, error: orderError } = await database.from('orders')
+    .select('id, branch_id, status, total_price, amount_paid')
+    .eq('id', orderId).maybeSingle()
+  if (orderError || !order) throw Object.assign(new Error('Order not found.'), { status: 404 })
+  if (identity.role !== 'admin' && order.branch_id !== identity.branchId) {
+    throw Object.assign(new Error('You can only collect payment for orders assigned to your branch.'), { status: 403 })
+  }
+  if (['released', 'cancelled'].includes(order.status)) {
+    throw Object.assign(new Error('Payments cannot be added to released or cancelled orders.'), { status: 400 })
+  }
+  const remaining = Math.max(0, Number(order.total_price || 0) - Number(order.amount_paid || 0))
+  if (amount > remaining + 0.005) {
+    throw Object.assign(new Error(`Payment exceeds the remaining balance of ₱${remaining.toLocaleString()}.`), { status: 400 })
+  }
+
+  const { data, error } = await database.rpc('collect_order_payment', {
+    p_order_id: order.id,
+    p_staff_id: identity.staffId,
+    p_amount: amount,
+    p_payment_method: paymentMethod,
+  })
+  if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
+  return { data }
+}

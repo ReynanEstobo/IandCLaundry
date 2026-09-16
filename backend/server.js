@@ -3,7 +3,7 @@ import http from 'node:http'
 import { URL } from 'node:url'
 import { authenticate, requireAdmin } from './middleware/authenticate.js'
 import { handleData } from './controllers/dataController.js'
-import { cancelOrder, createOrder, restockInventory, settleAndReleaseOrder, transitionOrder } from './controllers/operationController.js'
+import { cancelOrder, collectOrderPayment, createOrder, restockInventory, settleAndReleaseOrder, transitionOrder } from './controllers/operationController.js'
 import { listVisibleCustomers, lookupCustomer, registerCustomer } from './controllers/customerController.js'
 import { listAuditLog, restoreRecord } from './controllers/auditController.js'
 import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from './controllers/authController.js'
@@ -74,6 +74,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && path === 'public/contact') return write(response, 200, await sendContactMessage(await readBody(request)))
     if (request.method === 'POST' && path === 'orders/create') return write(response, 200, await createOrder(await readBody(request), await authenticate(request)))
     if (request.method === 'POST' && path === 'orders/transition') return write(response, 200, await transitionOrder(await readBody(request), await authenticate(request)))
+    if (request.method === 'POST' && path === 'orders/collect-payment') return write(response, 200, await collectOrderPayment(await readBody(request), await authenticate(request)))
     if (request.method === 'POST' && path === 'orders/settle-and-release') return write(response, 200, await settleAndReleaseOrder(await readBody(request), await authenticate(request)))
     if (request.method === 'POST' && path === 'orders/cancel') return write(response, 200, await cancelOrder(await readBody(request), await authenticate(request)))
     if (request.method === 'POST' && path === 'inventory/restock') return write(response, 200, await restockInventory(await readBody(request), await authenticate(request)))
