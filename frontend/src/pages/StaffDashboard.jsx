@@ -153,7 +153,7 @@ export default function StaffDashboard() {
             <div className="staff-dss-metric workload">
               <span>Expected workload</span>
               <strong>{branchForecast.workloadLevel}</strong>
-              <small>{branchForecast.workloadPct}% of usual demand · next day</small>
+              <small>{branchForecast.workloadSummary}</small>
             </div>
             <div className="staff-dss-metric peak">
               <span>Likely peak day</span>

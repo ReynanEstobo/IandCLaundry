@@ -261,7 +261,7 @@ export default function Dashboard() {
             operationalSignals: [
               `${activeOrders} active orders and ${readyForPickup} orders ready for pickup.`,
               `${lowStockItems} low-stock inventory items.`,
-              `Forecast workload: ${fc.workloadLevel} (${fc.workloadPct}%).`,
+              `Forecast workload: ${fc.workloadLevel}. ${fc.workloadSummary}.`,
               `Forecast monthly revenue: ₱${fc.predictedMonthlyRevenue.toLocaleString()}.`,
             ],
           },
@@ -676,7 +676,7 @@ export default function Dashboard() {
               <div className="dashboard-forecast-metric workload">
                 <span>Expected workload</span>
                 <strong>{forecasts.workloadLevel}</strong>
-                <small>{forecasts.workloadPct}% of usual demand · next day</small>
+                <small>{forecasts.workloadSummary}</small>
               </div>
               <div className="dashboard-forecast-metric peak">
                 <span>Likely peak day</span>

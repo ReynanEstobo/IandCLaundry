@@ -50,15 +50,24 @@ export function rollingDemandForecast(orders = [], paymentsOrNow = [], suppliedN
   const tomorrowDay = tomorrow.getDay()
   const matchingDays = Array.from({ length: historyDays }, (_, index) => subDays(today, index))
     .filter(day => day.getDay() === tomorrowDay).length
-  const expectedTomorrowOrders = history.filter(order => new Date(order.created_at).getDay() === tomorrowDay).length / Math.max(matchingDays, 1)
+  // Blend the weekday pattern with the overall daily average. This avoids
+  // dramatic-looking forecasts when a small data set happens to have one or
+  // two orders on the same weekday.
+  const weekdayOrders = history.filter(order => new Date(order.created_at).getDay() === tomorrowDay).length
+  const smoothingDays = 2
+  const expectedTomorrowOrders = (weekdayOrders + (averageDailyOrders * smoothingDays)) / (matchingDays + smoothingDays)
   const workloadPct = averageDailyOrders > 0
-    ? Math.min(Math.round((expectedTomorrowOrders / averageDailyOrders) * 100), 200)
+    ? Math.round((expectedTomorrowOrders / averageDailyOrders) * 100)
     : 0
   const workloadLevel = history.length < 7 ? 'Limited data'
-    : workloadPct >= 120 ? 'High Demand'
-      : workloadPct >= 80 ? 'Moderate'
-        : workloadPct >= 50 ? 'Normal'
-          : 'Low'
+    : workloadPct >= 125 ? 'Busier than usual'
+      : workloadPct >= 75 ? 'Usual workload'
+        : 'Lighter than usual'
+  const expectedOrderCount = Math.max(0, Math.round(expectedTomorrowOrders))
+  const usualOrderCount = Math.max(0, Math.round(averageDailyOrders))
+  const workloadSummary = history.length < 7
+    ? 'Based on limited recent order history'
+    : `About ${expectedOrderCount} ${expectedOrderCount === 1 ? 'order' : 'orders'} expected tomorrow (usual: ${usualOrderCount} ${usualOrderCount === 1 ? 'order' : 'orders'} per day)` 
 
   const byDay = Array(7).fill(0)
   history.forEach(order => { byDay[new Date(order.created_at).getDay()] += 1 })
@@ -80,6 +89,8 @@ export function rollingDemandForecast(orders = [], paymentsOrNow = [], suppliedN
     historyDays,
     totalRevenue,
     averageDailyOrders,
+    expectedTomorrowOrders,
+    workloadSummary,
     predictedMonthlyRevenue: Math.round(totalRevenue),
     workloadPct,
     workloadLevel,
