@@ -2,8 +2,8 @@ import { authenticate, requireAdmin } from '../backend/middleware/authenticate.j
 import { handleData } from '../backend/controllers/dataController.js'
 import { cancelOrder, createOrder, restockInventory, settleAndReleaseOrder, transitionOrder } from '../backend/controllers/operationController.js'
 import { listVisibleCustomers, lookupCustomer, registerCustomer } from '../backend/controllers/customerController.js'
-import { listRecycleBin, restoreRecord } from '../backend/controllers/auditController.js'
-import { login, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from '../backend/controllers/authController.js'
+import { listAuditLog, restoreRecord } from '../backend/controllers/auditController.js'
+import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from '../backend/controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from '../backend/controllers/staffProvisionController.js'
 import { getPublicSettings, sendContactMessage, trackOrder } from '../backend/controllers/publicController.js'
 import { sendEmail, sendSms } from '../backend/services/notificationService.js'
@@ -52,6 +52,7 @@ async function body(request) {
 
 const ratePolicies = {
   'POST:auth/login': { limit: 10, windowMs: 15 * 60 * 1000 },
+  'POST:auth/refresh': { limit: 30, windowMs: 15 * 60 * 1000 },
   'POST:auth/forgot-password/otp': { limit: 5, windowMs: 15 * 60 * 1000 },
   'POST:auth/forgot-password/otp/verify': { limit: 10, windowMs: 15 * 60 * 1000 },
   'PATCH:auth/forgot-password': { limit: 8, windowMs: 15 * 60 * 1000 },
@@ -108,6 +109,7 @@ async function api(request, env) {
   if (method === 'GET' && path === 'events') return new Response(null, { status: 204 })
 
   if (method === 'POST' && path === 'auth/login') return json(await login(await body(request)))
+  if (method === 'POST' && path === 'auth/refresh') return json(await refreshLoginSession(await body(request)))
   if (method === 'POST' && path === 'auth/forgot-password/otp') return json(await requestForgotPasswordOtp(await body(request)))
   if (method === 'POST' && path === 'auth/forgot-password/otp/verify') return json(await verifyForgotPasswordOtp(await body(request)))
   if (method === 'PATCH' && path === 'auth/forgot-password') return json(await resetForgottenPassword(await body(request)))
@@ -140,7 +142,9 @@ async function api(request, env) {
   if (method === 'GET' && path === 'customers/visible') return json(await listVisibleCustomers(await authenticate(request)))
   if (method === 'GET' && path === 'customers/lookup') return json(await lookupCustomer(url.searchParams.get('phone'), await authenticate(request)))
   if (method === 'POST' && path === 'customers/register') return json(await registerCustomer(await body(request), await authenticate(request)))
-  if (method === 'GET' && path === 'recycle-bin') return json(await listRecycleBin(await authenticate(request)))
+  if (method === 'GET' && (path === 'audit-log' || path === 'recycle-bin')) return json(await listAuditLog(await authenticate(request), {
+    page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'),
+  }))
   if (method === 'POST' && path === 'recycle-bin/restore') return json(await restoreRecord(await body(request), await authenticate(request)))
 
   const table = resourceRoutes.get(path)

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { getStoredSession, startSessionMonitor } from '../services/api/client'
+import { getStoredSession, refreshRememberedSession, startSessionMonitor } from '../services/api/client'
 
 const AuthContext = createContext({})
 
@@ -65,7 +65,13 @@ export function AuthProvider({ children }) {
     }
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => applySession(session))
     const stopMonitor = startSessionMonitor()
-    applySession(getStoredSession())
+    const existingSession = getStoredSession()
+    if (existingSession) applySession(existingSession)
+    else {
+      refreshRememberedSession()
+        .then(session => applySession(session))
+        .catch(() => applySession(null))
+    }
 
     return () => {
       active = false

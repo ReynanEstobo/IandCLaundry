@@ -70,6 +70,18 @@ export async function login({ identifier, email, password }) {
   return { session: data.session, ...identity }
 }
 
+export async function refreshLoginSession({ refreshToken }) {
+  if (!refreshToken || typeof refreshToken !== 'string') {
+    throw Object.assign(new Error('A valid session refresh token is required.'), { status: 400 })
+  }
+  const { data, error } = await authClient.auth.refreshSession({ refresh_token: refreshToken })
+  if (error || !data?.session || !data?.user) {
+    throw Object.assign(new Error('Your session has expired. Please sign in again.'), { status: 401 })
+  }
+  const identity = await identityFor(data.user)
+  return { session: data.session, ...identity }
+}
+
 export async function signUp({ email, password, options }) {
   if (!email || !password) throw Object.assign(new Error('Email and password are required'), { status: 400 })
   assertStrongPassword(password, email)

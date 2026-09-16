@@ -6,7 +6,7 @@ import { handleData } from './controllers/dataController.js'
 import { cancelOrder, createOrder, restockInventory, settleAndReleaseOrder, transitionOrder } from './controllers/operationController.js'
 import { listVisibleCustomers, lookupCustomer, registerCustomer } from './controllers/customerController.js'
 import { listAuditLog, restoreRecord } from './controllers/auditController.js'
-import { login, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from './controllers/authController.js'
+import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from './controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from './controllers/staffProvisionController.js'
 import { getPublicSettings, sendContactMessage, trackOrder } from './controllers/publicController.js'
 import { sendEmail, sendSms } from './services/notificationService.js'
@@ -49,6 +49,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && url.pathname === '/api/health') return write(response, 200, { status: 'ok' })
     if (request.method === 'GET' && url.pathname === '/api/events') return streamEvents(request, response)
     if (request.method === 'POST' && path === 'auth/login') return write(response, 200, await login(await readBody(request)))
+    if (request.method === 'POST' && path === 'auth/refresh') return write(response, 200, await refreshLoginSession(await readBody(request)))
     if (request.method === 'POST' && path === 'auth/forgot-password/otp') return write(response, 200, await requestForgotPasswordOtp(await readBody(request)))
     if (request.method === 'POST' && path === 'auth/forgot-password/otp/verify') return write(response, 200, await verifyForgotPasswordOtp(await readBody(request)))
     if (request.method === 'PATCH' && path === 'auth/forgot-password') return write(response, 200, await resetForgottenPassword(await readBody(request)))
