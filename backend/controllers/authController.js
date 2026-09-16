@@ -2,6 +2,7 @@ import { authClient, database, runtimeValue } from '../config/supabase.js'
 import { getStaffProfile } from '../models/databaseModel.js'
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
 import { sendEmail } from '../services/notificationService.js'
+import { assertStrongPassword } from '../utils/validation.js'
 
 async function identityFor(user) {
   const { data: staff, error } = await getStaffProfile(user.id, user.email)
@@ -32,6 +33,16 @@ const invalidForgotPasswordCode = () => Object.assign(new Error('The verificatio
 const literalPattern = value => value.replace(/[\\%_]/g, character => `\\${character}`)
 const isInternalAccountEmail = value => /@accounts\.(?:hc|ic)laundry\.local$/i.test(String(value || ''))
 
+async function writePasswordAudit(staffId, branchId = null) {
+  if (!staffId) return
+  const { error } = await database.from('audit_logs').insert({
+    action: 'password_changed', event_type: 'password_changed', event_category: 'security',
+    table_name: 'staff', record_id: staffId, actor_staff_id: staffId,
+    branch_id: branchId, before_data: {}, after_data: {}, changed_fields: {}, source: 'security_workflow',
+  })
+  if (error) console.error('Password audit could not be written', error.message)
+}
+
 async function findActiveAccount(identifier, includeContactEmail = false) {
   const value = String(identifier || '').trim()
   if (!value) return null
@@ -61,6 +72,7 @@ export async function login({ identifier, email, password }) {
 
 export async function signUp({ email, password, options }) {
   if (!email || !password) throw Object.assign(new Error('Email and password are required'), { status: 400 })
+  assertStrongPassword(password, email)
   const { data, error } = await authClient.auth.signUp({ email, password, options })
   if (error) throw Object.assign(new Error(error.message), { status: 400 })
   return { user: data.user, session: data.session }
@@ -199,7 +211,6 @@ export async function verifyForgotPasswordOtp({ identifier, otp }) {
 }
 
 export async function resetForgottenPassword({ identifier, otp, newPassword }) {
-  if (!newPassword || newPassword.length < 10) throw Object.assign(new Error('Your new password must contain at least 10 characters.'), { status: 400 })
   const account = await findPublicResetAccount(identifier)
   if (!account) throw invalidForgotPasswordCode()
   let challenge
@@ -209,17 +220,19 @@ export async function resetForgottenPassword({ identifier, otp, newPassword }) {
     if (error?.status === 400) throw invalidForgotPasswordCode()
     throw error
   }
+  assertStrongPassword(newPassword, identifier)
   const { error } = await database.auth.admin.updateUserById(account.user.id, { password: newPassword })
   if (error) throw Object.assign(new Error(error.message), { status: 400 })
   await database.from('password_change_otps').update({ consumed_at: new Date().toISOString() }).eq('id', challenge.id)
   await database.from('staff').update({ must_change_password: false }).eq('id', account.staffId)
+  await writePasswordAudit(account.staffId)
   return { success: true }
 }
 
 export async function updatePassword({ currentPassword, newPassword, otp }, identity) {
   const email = identity?.user?.email
   if (!email || !newPassword) throw Object.assign(new Error('Missing required fields'), { status: 400 })
-  if (newPassword.length < 10) throw Object.assign(new Error('Your new password must contain at least 10 characters.'), { status: 400 })
+  assertStrongPassword(newPassword, email)
   let error
   let challenge
   if (identity.mustChangePassword) {
@@ -247,6 +260,7 @@ export async function updatePassword({ currentPassword, newPassword, otp }, iden
     const { error: staffError } = await database.from('staff').update({ must_change_password: false }).eq('id', identity.staffId)
     if (staffError) throw Object.assign(new Error(staffError.message), { status: 400 })
   }
+  await writePasswordAudit(identity?.staffId, identity?.branchId || null)
   return { success: true }
 }
 

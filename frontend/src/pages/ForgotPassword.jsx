@@ -6,6 +6,7 @@ import LoadingButton from '../components/LoadingButton'
 import { apiFetch } from '../services/api/client'
 import useOtpCooldown from '../hooks/useOtpCooldown'
 import { clearOtpSession, readOtpSession, writeOtpSession } from '../utils/otpSession'
+import { passwordPolicyError } from '../utils/validation'
 
 const OTP_SESSION_KEY = 'ic-laundry:forgot-password-otp'
 const OTP_COOLDOWN_KEY = 'ic-laundry:forgot-password-otp-cooldown'
@@ -15,7 +16,7 @@ function PasswordInput({ label, value, onChange, visible, onToggle, disabled }) 
     <label>{label}</label>
     <div className="login-input-wrap">
       <LockKeyhole size={15} className="login-input-icon" />
-      <input className="login-input login-input-password" type={visible ? 'text' : 'password'} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} placeholder="At least 10 characters" autoComplete="new-password" required />
+      <input className="login-input login-input-password" type={visible ? 'text' : 'password'} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} minLength={12} placeholder="Strong password" autoComplete="new-password" required />
       <button type="button" className="login-eye-btn" disabled={disabled} onClick={onToggle}>{visible ? <EyeOff size={15} /> : <Eye size={15} />}</button>
     </div>
   </div>
@@ -65,7 +66,8 @@ export default function ForgotPassword() {
   async function submit(event) {
     event.preventDefault()
     if (!verified) return toast.error('Verify your OTP before setting a new password.')
-    if (password.length < 10) return toast.error('Use at least 10 characters for your new password.')
+    const policyError = passwordPolicyError(password, identifier)
+    if (policyError) return toast.error(policyError)
     if (password !== confirmation) return toast.error('Passwords do not match.')
     setLoading(true)
     try {

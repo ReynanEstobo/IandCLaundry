@@ -26,6 +26,7 @@ import { useAuth } from "../context/AuthContext";
 import { PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from "../components/LoadingButton";
 import { compareOrdersForList } from "../utils/orderListPriority";
+import { isValidPhilippineMobile } from "../utils/validation";
 
 const PROCESS_FLOW = [
   "received",
@@ -457,6 +458,8 @@ export default function Orders() {
     if (savingOrder) return;
     if (!form.customer_phone.trim())
       return toast.error("Phone number is required");
+    if (!isValidPhilippineMobile(form.customer_phone))
+      return toast.error("Phone number must start with 09 and contain exactly 11 digits");
     if (!form.customer_name.trim())
       return toast.error("Client name is required");
     if (!editing && serviceTypes.length > 0 && !form.service_type_id)
@@ -1441,6 +1444,7 @@ export default function Orders() {
                         type="tel"
                         maxLength={11}
                         inputMode="numeric"
+                        pattern="09[0-9]{9}"
                         value={form.customer_phone}
                         onChange={(e) => {
                           // REMOVE NON-NUMBERS

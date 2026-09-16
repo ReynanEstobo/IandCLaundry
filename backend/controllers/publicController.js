@@ -1,6 +1,7 @@
 import { database } from '../config/supabase.js'
 import { runtimeValue } from '../config/supabase.js'
 import { sendEmail } from '../services/notificationService.js'
+import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
 
 export async function trackOrder(orderNumber) {
   if (typeof orderNumber !== 'string' || !orderNumber.trim()) throw Object.assign(new Error('Tracking number is required'), { status: 400 })
@@ -35,9 +36,9 @@ export async function sendContactMessage(body) {
   if (!name || !email || !message) {
     throw Object.assign(new Error('Name, email, and message are required.'), { status: 400 })
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw Object.assign(new Error('Enter a valid email address.'), { status: 400 })
-  }
+  const validName = assertText(name, { label: 'Name', min: 2, max: 120 })
+  const validEmail = assertEmail(email, { required: true })
+  const validPhone = phone ? assertPhilippineMobile(phone) : ''
   if (name.length > 120 || email.length > 254 || phone.length > 40 || address.length > 240 || message.length > 4_000) {
     throw Object.assign(new Error('Your message contains a field that is too long.'), { status: 400 })
   }
@@ -47,9 +48,9 @@ export async function sendContactMessage(body) {
 
   await sendEmail({
     to: inbox,
-    replyTo: email,
+    replyTo: validEmail,
     subject: 'New website contact message — I&C Laundry',
-    body: `Name: ${name}\nEmail: ${email}\nPhone: ${phone || 'Not provided'}\nAddress: ${address || 'Not provided'}\n\nMessage:\n${message}`,
+    body: `Name: ${validName}\nEmail: ${validEmail}\nPhone: ${validPhone || 'Not provided'}\nAddress: ${address || 'Not provided'}\n\nMessage:\n${message}`,
   })
   return { success: true }
 }

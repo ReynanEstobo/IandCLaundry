@@ -1,4 +1,5 @@
 import { database } from '../config/supabase.js'
+import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
 
 async function attachIssuedRewards(customers) {
   const customerIds = customers.map(customer => customer?.id).filter(Boolean)
@@ -54,8 +55,8 @@ export async function listVisibleCustomers(identity) {
 }
 
 export async function lookupCustomer(phone, identity) {
-  if (!phone) throw Object.assign(new Error('A phone number is required.'), { status: 400 })
-  const { data, error } = await database.rpc('find_customer_by_phone', { p_phone: phone })
+  const validPhone = assertPhilippineMobile(phone)
+  const { data, error } = await database.rpc('find_customer_by_phone', { p_phone: validPhone })
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
   const customer = data?.[0]
   if (!customer) return { exists: false, visible: false, customer: null, loyalty: { nextReward: null } }
@@ -89,13 +90,17 @@ export async function lookupCustomer(phone, identity) {
 
 export async function registerCustomer(body, identity) {
   const branch = await resolveBranch(identity, body?.branch)
+  const name = assertText(body?.name, { label: 'Customer name', min: 2, max: 120 })
+  const phone = assertPhilippineMobile(body?.phone)
+  const email = assertEmail(body?.email, { label: 'Customer email' })
+  const notes = assertText(body?.notes, { label: 'Notes', max: 1_000, required: false })
   const { data, error } = await database.rpc('register_branch_customer', {
     p_branch_id: branch.id,
     p_staff_id: identity.staffId,
-    p_name: body?.name || '',
-    p_phone: body?.phone || '',
-    p_email: body?.email || '',
-    p_notes: body?.notes || '',
+    p_name: name,
+    p_phone: phone,
+    p_email: email,
+    p_notes: notes,
   })
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
   return { data }

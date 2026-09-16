@@ -9,6 +9,7 @@ import { getVisibleCustomers, registerBranchCustomer } from "../services/api/ope
 import { PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
+import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
 
 const BRANCHES = [
   "Main - Brgy 7",
@@ -109,6 +110,8 @@ export default function Customers() {
     e.preventDefault();
     if (!form.name.trim() || !form.phone.trim())
       return toast.error("Name and phone are required");
+    if (!isValidPhilippineMobile(form.phone))
+      return toast.error("Phone number must start with 09 and contain exactly 11 digits.");
     if (isAdmin && !form.branch)
       return toast.error("Please assign this customer to a branch");
 
@@ -396,8 +399,11 @@ export default function Customers() {
                       placeholder="09171234567"
                       value={form.phone}
                       onChange={(e) =>
-                        setForm((f) => ({ ...f, phone: e.target.value }))
+                        setForm((f) => ({ ...f, phone: normalizePhone(e.target.value) }))
                       }
+                      inputMode="numeric"
+                      pattern="09[0-9]{9}"
+                      maxLength={11}
                       required
                     />
                   </div>

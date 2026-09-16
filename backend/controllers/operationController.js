@@ -1,4 +1,5 @@
 import { database } from '../config/supabase.js'
+import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
 
 function requireBranch(identity) {
   if (!identity.staffId) throw Object.assign(new Error('Your account must have a staff profile before it can process operations.'), { status: 403 })
@@ -26,6 +27,13 @@ export async function createOrder(body, identity) {
     throw Object.assign(new Error('A valid non-negative payment amount is required.'), { status: 400 })
   }
   if (amountPaid < total * 0.5) throw Object.assign(new Error(`Minimum 50% payment required: ₱${(total * 0.5).toLocaleString()}`), { status: 400 })
+  // The order screen always supplies customer details. Legacy callers are
+  // preserved here; the database RPC still rejects incomplete customers.
+  const validatedCustomer = { ...customer }
+  if (Object.hasOwn(customer, 'name')) validatedCustomer.name = assertText(customer.name, { label: 'Customer name', min: 2, max: 120 })
+  if (Object.hasOwn(customer, 'phone')) validatedCustomer.phone = assertPhilippineMobile(customer.phone)
+  if (Object.hasOwn(customer, 'email')) validatedCustomer.email = assertEmail(customer.email, { label: 'Customer email' })
+  if (Object.hasOwn(customer, 'notes')) validatedCustomer.notes = assertText(customer.notes, { label: 'Customer notes', max: 1_000, required: false })
   const loads = Math.max(1, Math.ceil(weight / Number(body.bundleKg || 8)))
   const payload = {
     service_type_id: order.service_type_id || null,
@@ -39,7 +47,7 @@ export async function createOrder(body, identity) {
   const { data, error } = await database.rpc('create_branch_order', {
     p_branch_id: selectedBranch.id,
     p_staff_id: identity.staffId,
-    p_customer: customer,
+    p_customer: validatedCustomer,
     p_order: payload,
     p_addons: addons,
     p_loads: loads,

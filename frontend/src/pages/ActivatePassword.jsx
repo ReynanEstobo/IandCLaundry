@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import LoadingButton from '../components/LoadingButton'
 import { supabase } from '../lib/supabase'
+import { passwordPolicyError } from '../utils/validation'
 
 export default function ActivatePassword() {
   const navigate = useNavigate()
@@ -15,7 +16,8 @@ export default function ActivatePassword() {
 
   async function submit(event) {
     event.preventDefault()
-    if (password.length < 10) return toast.error('Use at least 10 characters for your new password.')
+    const policyError = passwordPolicyError(password)
+    if (policyError) return toast.error(policyError)
     if (password !== confirmPassword) return toast.error('Passwords do not match.')
     setSaving(true)
     try {
@@ -47,7 +49,7 @@ export default function ActivatePassword() {
                 <label>New password</label>
                 <div className="login-input-wrap">
                   <LockKeyhole size={15} className="login-input-icon" />
-                  <input className="login-input login-input-password" type={showPassword ? 'text' : 'password'} value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" required />
+                  <input className="login-input login-input-password" type={showPassword ? 'text' : 'password'} value={password} onChange={event => setPassword(event.target.value)} minLength={12} autoComplete="new-password" required />
                   <button type="button" className="login-eye-btn" onClick={() => setShowPassword(visible => !visible)} aria-label={showPassword ? 'Hide new password' : 'Show new password'}>
                     {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
@@ -57,7 +59,7 @@ export default function ActivatePassword() {
                 <label>Confirm new password</label>
                 <div className="login-input-wrap">
                   <LockKeyhole size={15} className="login-input-icon" />
-                  <input className="login-input login-input-password" type={showConfirmation ? 'text' : 'password'} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} autoComplete="new-password" required />
+                  <input className="login-input login-input-password" type={showConfirmation ? 'text' : 'password'} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} minLength={12} autoComplete="new-password" required />
                   <button type="button" className="login-eye-btn" onClick={() => setShowConfirmation(visible => !visible)} aria-label={showConfirmation ? 'Hide confirmation password' : 'Show confirmation password'}>
                     {showConfirmation ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>

@@ -11,6 +11,7 @@ import { useRealtime } from "../lib/useRealtime";
 import { PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
+import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
 
 // ─────────────────────────────────────
 // ROLES
@@ -160,6 +161,9 @@ export default function Staff() {
 
     if (!form.full_name.trim()) {
       return toast.error("Full name is required");
+    }
+    if (form.phone && !isValidPhilippineMobile(form.phone)) {
+      return toast.error("Phone number must start with 09 and contain exactly 11 digits.");
     }
 
     setSaving(true);
@@ -553,9 +557,12 @@ export default function Staff() {
                         setForm((f) => ({
                           ...f,
 
-                          phone: e.target.value,
+                          phone: normalizePhone(e.target.value),
                         }))
                       }
+                      inputMode="numeric"
+                      pattern="09[0-9]{9}"
+                      maxLength={11}
                     />
                   </div>
                 </div>

@@ -7,6 +7,7 @@ import LoadingButton from '../components/LoadingButton'
 import ChangeEmail from '../components/ChangeEmail'
 import useOtpCooldown from '../hooks/useOtpCooldown'
 import { clearOtpSession, readOtpSession, writeOtpSession } from '../utils/otpSession'
+import { passwordPolicyError } from '../utils/validation'
 
 const OTP_SESSION_KEY = 'ic-laundry:account-password-otp'
 const OTP_COOLDOWN_KEY = 'ic-laundry:account-password-otp-cooldown'
@@ -16,7 +17,7 @@ function PasswordField({ label, value, onChange, visible, onToggle, placeholder,
     <label>{label}</label>
     <div className="login-input-wrap">
       <LockKeyhole size={15} className="login-input-icon" />
-      <input className="login-input login-input-password" type={visible ? 'text' : 'password'} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} placeholder={placeholder} autoComplete="new-password" required />
+      <input className="login-input login-input-password" type={visible ? 'text' : 'password'} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} minLength={12} placeholder={placeholder} autoComplete="new-password" required />
       <button type="button" className="login-eye-btn" disabled={disabled} onClick={onToggle} aria-label={visible ? `Hide ${label}` : `Show ${label}`}>
         {visible ? <EyeOff size={15} /> : <Eye size={15} />}
       </button>
@@ -73,7 +74,8 @@ export default function AccountSecurity() {
 
   async function submit(event) {
     event.preventDefault()
-    if (newPassword.length < 10) return toast.error('Use at least 10 characters for your new password.')
+    const policyError = passwordPolicyError(newPassword)
+    if (policyError) return toast.error(policyError)
     if (newPassword !== confirmation) return toast.error('Passwords do not match.')
     if (otpStatus !== 'valid') return toast.error('Verify your OTP before setting a new password.')
     setSaving(true)
@@ -113,7 +115,7 @@ export default function AccountSecurity() {
           {otpMessage && <p className="otp-verification-message" role="alert">{otpMessage}</p>}
         </div>
         {otpStatus === 'valid' && <div className="otp-verification-success" role="status">OTP verified. You can now set a new password.</div>}
-        <PasswordField label="New password" value={newPassword} onChange={setNewPassword} visible={visible.next} onToggle={flip('next')} placeholder="At least 10 characters" disabled={saving || otpStatus !== 'valid'} />
+        <PasswordField label="New password" value={newPassword} onChange={setNewPassword} visible={visible.next} onToggle={flip('next')} placeholder="Strong password" disabled={saving || otpStatus !== 'valid'} />
         <PasswordField label="Confirm new password" value={confirmation} onChange={setConfirmation} visible={visible.confirmation} onToggle={flip('confirmation')} placeholder="Re-enter your new password" disabled={saving || otpStatus !== 'valid'} />
         <LoadingButton type="submit" className="btn btn-primary" disabled={otpStatus !== 'valid'} loading={saving} loadingLabel="Changing password…"><LockKeyhole size={16} /> Change password</LoadingButton>
       </form>

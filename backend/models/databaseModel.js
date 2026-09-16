@@ -1,4 +1,5 @@
 import { database } from '../config/supabase.js'
+import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
 
 // This is intentionally a whitelist: it preserves existing Supabase query shapes
 // while preventing the browser from selecting arbitrary database tables.
@@ -128,6 +129,62 @@ async function assertInventoryRecordOwnership(table, request, identity) {
   return request
 }
 
+function assertNonNegativeNumber(value, label) {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number < 0) throw Object.assign(new Error(`${label} must be a valid non-negative number.`), { status: 400 })
+  return number
+}
+
+function validateResourcePayload(table, payload, operation) {
+  const validateOne = entry => {
+    const value = { ...(entry || {}) }
+    const has = field => Object.hasOwn(value, field)
+    const needs = field => operation === 'insert' || has(field)
+    if (table === 'customers') {
+      if (needs('name')) value.name = assertText(value.name, { label: 'Customer name', min: 2, max: 120 })
+      if (needs('phone')) value.phone = assertPhilippineMobile(value.phone)
+      if (has('email')) value.email = assertEmail(value.email, { label: 'Customer email' }) || null
+      if (has('notes')) value.notes = assertText(value.notes, { label: 'Customer notes', max: 1_000, required: false }) || null
+    }
+    if (table === 'inventory_items') {
+      if (needs('name')) value.name = assertText(value.name, { label: 'Item name', min: 2, max: 120 })
+      if (needs('unit')) value.unit = assertText(value.unit, { label: 'Unit', min: 1, max: 20 })
+      for (const field of ['current_stock', 'minimum_stock', 'cost_per_unit', 'usage_per_load']) if (has(field)) value[field] = assertNonNegativeNumber(value[field], field.replaceAll('_', ' '))
+    }
+    if (table === 'inventory_categories' && needs('name')) value.name = assertText(value.name, { label: 'Category name', min: 2, max: 80 })
+    if (table === 'service_types') {
+      if (needs('name')) value.name = assertText(value.name, { label: 'Service name', min: 2, max: 120 })
+      if (has('price_per_kg')) value.price_per_kg = assertNonNegativeNumber(value.price_per_kg, 'Price per kilogram')
+      if (has('estimated_minutes')) {
+        const minutes = assertNonNegativeNumber(value.estimated_minutes, 'Estimated minutes')
+        if (!Number.isInteger(minutes) || minutes > 10_080) throw Object.assign(new Error('Estimated minutes must be a whole number up to 10,080.'), { status: 400 })
+        value.estimated_minutes = minutes
+      }
+      if (has('description')) value.description = assertText(value.description, { label: 'Service description', max: 500, required: false }) || null
+    }
+    if (table === 'expenses') {
+      if (needs('category')) value.category = assertText(value.category, { label: 'Expense category', min: 2, max: 80 })
+      if (needs('amount')) value.amount = assertNonNegativeNumber(value.amount, 'Expense amount')
+      if (has('description')) value.description = assertText(value.description, { label: 'Expense description', max: 500, required: false }) || null
+    }
+    if (table === 'branches') {
+      if (needs('name')) value.name = assertText(value.name, { label: 'Branch name', min: 2, max: 120 })
+      if (has('phone') && value.phone) value.phone = assertPhilippineMobile(value.phone)
+      if (has('address')) value.address = assertText(value.address, { label: 'Address', max: 240, required: false }) || null
+    }
+    if (table === 'orders') {
+      if (has('weight_kg')) {
+        const weight = Number(value.weight_kg)
+        if (!Number.isFinite(weight) || weight <= 0) throw Object.assign(new Error('Order weight must be greater than zero.'), { status: 400 })
+        value.weight_kg = weight
+      }
+      if (has('notes')) value.notes = assertText(value.notes, { label: 'Order notes', max: 1_000, required: false }) || null
+    }
+    return value
+  }
+  return Array.isArray(payload) ? payload.map(validateOne) : validateOne(payload)
+}
+
 export async function execute(table, request, identity) {
   if (!TABLES.has(table)) throw Object.assign(new Error('Unknown resource'), { status: 404 })
   if (table === 'staff' && request.operation === 'delete' && identity.role !== 'admin') {
@@ -159,6 +216,9 @@ export async function execute(table, request, identity) {
       ? await attachAdminBranch(table, request, identity)
       : restrictStaffBranchRequest(table, request, identity)
     request = await assertInventoryRecordOwnership(table, request, identity)
+  }
+  if (['insert', 'update'].includes(request.operation)) {
+    request = { ...request, payload: validateResourcePayload(table, request.payload, request.operation) }
   }
   const { operation, selection = '*', filters, orders = [], range, limit, payload, count, single, returning } = request
   if (operation === 'delete' && PROTECTED_TRANSACTION_TABLES.has(table)) {

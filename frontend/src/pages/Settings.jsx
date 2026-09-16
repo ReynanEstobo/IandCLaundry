@@ -23,6 +23,7 @@ import LoadingButton from "../components/LoadingButton";
 import ChangeEmail from "../components/ChangeEmail";
 import useOtpCooldown from "../hooks/useOtpCooldown";
 import { clearOtpSession, readOtpSession, writeOtpSession } from "../utils/otpSession";
+import { passwordPolicyError } from "../utils/validation";
 
 const PASSWORD_OTP_SESSION_KEY = "ic-laundry:settings-password-otp";
 const PASSWORD_OTP_COOLDOWN_KEY = "ic-laundry:settings-password-otp-cooldown";
@@ -192,8 +193,9 @@ export default function Settings() {
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
-    if (newPassword.length < 10) {
-      toast.error("New password must be at least 10 characters");
+    const policyError = passwordPolicyError(newPassword);
+    if (policyError) {
+      toast.error(policyError);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -320,9 +322,10 @@ export default function Settings() {
                   <input
                     className="form-control"
                     type={showNew ? "text" : "password"}
-                    placeholder="At least 10 characters"
+                    placeholder="Strong password"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
+                    minLength={12}
                     disabled={pwLoading || passwordOtpStatus !== "valid"}
                     required
                     style={{ paddingLeft: 38, paddingRight: 38 }}

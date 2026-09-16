@@ -1,6 +1,7 @@
-import { randomInt, randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { database } from '../config/supabase.js'
 import { events } from '../services/realtimeService.js'
+import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
 
 function cleanName(value) {
   return String(value || '').trim().replace(/\s+/g, ' ')
@@ -17,9 +18,9 @@ function baseUsername(name) {
 }
 
 function generatePassword() {
-  // Memorable for handover, unique per account, and mandatory to replace at
-  // first sign-in. Do not use one shared temporary password for all staff.
-  return `I&CLaundry${randomInt(1000, 10000)}`
+  // Random, one-time credentials must already meet the password policy.
+  // The fixed characters guarantee every required character class.
+  return `Ic!${randomBytes(12).toString('base64url')}9A`
 }
 
 async function resolveBranch(branchName) {
@@ -62,15 +63,11 @@ async function writeAudit(action, staff, actorStaffId, before = {}, after = {}) 
 }
 
 export async function provisionStaff(body, identity) {
-  const fullName = cleanName(body?.full_name)
-  if (!fullName) throw Object.assign(new Error('Full name is required.'), { status: 400 })
+  const fullName = assertText(cleanName(body?.full_name), { label: 'Full name', min: 2, max: 120 })
   const role = ['admin', 'staff'].includes(String(body?.role || '').toLowerCase())
     ? String(body.role).toLowerCase()
     : 'staff'
-  const contactEmail = String(body?.contact_email || '').trim() || null
-  if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
-    throw Object.assign(new Error('Enter a valid contact email address.'), { status: 400 })
-  }
+  const contactEmail = assertEmail(body?.contact_email, { label: 'Contact email' }) || null
   // An administrator needs a recovery channel for password verification.
   if (role === 'admin' && !contactEmail) {
     throw Object.assign(new Error('A contact email is required for an administrator account.'), { status: 400 })
@@ -96,7 +93,7 @@ export async function provisionStaff(body, identity) {
     staff_code: staffCode,
     username,
     full_name: fullName,
-    phone: String(body?.phone || '').trim() || null,
+    phone: assertPhilippineMobile(body?.phone, { required: false, label: 'Phone number' }) || null,
     contact_email: contactEmail,
     email: authEmail,
     role,
@@ -153,24 +150,21 @@ export async function resetStaffCredentials(body, identity) {
 
 export async function updateProvisionedStaff(body, identity) {
   const staffId = body?.staffId
-  const fullName = cleanName(body?.full_name)
-  if (!staffId || !fullName) throw Object.assign(new Error('Staff member and full name are required.'), { status: 400 })
+  if (!staffId) throw Object.assign(new Error('Staff member is required.'), { status: 400 })
+  const fullName = assertText(cleanName(body?.full_name), { label: 'Full name', min: 2, max: 120 })
   const { data: existing, error: existingError } = await database.from('staff').select('*').eq('id', staffId).is('deleted_at', null).maybeSingle()
   if (existingError || !existing) throw Object.assign(new Error('Active staff member not found.'), { status: 404 })
   const role = ['admin', 'staff'].includes(String(body?.role || '').toLowerCase())
     ? String(body.role).toLowerCase()
     : existing.role
-  const contactEmail = String(body?.contact_email || '').trim() || null
-  if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
-    throw Object.assign(new Error('Enter a valid contact email address.'), { status: 400 })
-  }
+  const contactEmail = assertEmail(body?.contact_email, { label: 'Contact email' }) || null
   if (role === 'admin' && !contactEmail) {
     throw Object.assign(new Error('A contact email is required for an administrator account.'), { status: 400 })
   }
   const branch = role === 'staff' ? await resolveBranch(body?.branch) : null
   const updates = {
     full_name: fullName,
-    phone: String(body?.phone || '').trim() || null,
+    phone: assertPhilippineMobile(body?.phone, { required: false, label: 'Phone number' }) || null,
     contact_email: contactEmail,
     position: String(body?.position || '').trim() || null,
     role,

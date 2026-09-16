@@ -85,9 +85,13 @@ export default function RecycleBin() {
     </div>
 
     <div className="card" style={{ padding: 0 }}>
-      <div className="card-header" style={{ padding: '18px 20px', margin: 0, borderBottom: '1px solid var(--border)' }}><h3 style={{ display: 'flex', gap: 8, alignItems: 'center' }}><History size={18} color="#7c3aed" /> Recent delete and restore activity</h3></div>
-      <div className="table-wrapper"><table><thead><tr><th>Action</th><th>Record type</th><th>Performed by</th><th>When</th></tr></thead><tbody>
-        {!logs.length ? <tr><td colSpan={4} className="empty-state"><p>No recovery activity recorded yet</p></td></tr> : logs.map(log => <tr key={log.id}><td style={{ textTransform: 'capitalize', fontWeight: 700, color: log.action === 'restore' ? '#059669' : '#dc2626' }}>{log.action}</td><td>{labels[log.table_name] || log.table_name}</td><td>{log.staff?.full_name || 'System / unassigned'}</td><td>{new Date(log.created_at).toLocaleString('en-PH')}</td></tr>)}
+      <div className="card-header" style={{ padding: '18px 20px', margin: 0, borderBottom: '1px solid var(--border)' }}><h3 style={{ display: 'flex', gap: 8, alignItems: 'center' }}><History size={18} color="#7c3aed" /> Audit trail</h3><span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Latest 150 events</span></div>
+      <div className="table-wrapper"><table><thead><tr><th>Event</th><th>Record type</th><th>Changed fields</th><th>Performed by</th><th>When</th></tr></thead><tbody>
+        {!logs.length ? <tr><td colSpan={5} className="empty-state"><p>No audit activity recorded yet</p></td></tr> : logs.map(log => {
+          const fields = Object.keys(log.changed_fields || {}).filter(field => !['created_at', 'updated_at'].includes(field))
+          const event = log.event_type || log.action
+          return <tr key={log.id}><td><span style={{ textTransform: 'capitalize', fontWeight: 700, color: log.action === 'restore' ? '#059669' : log.action === 'delete' || log.action === 'cancel' ? '#dc2626' : '#2563eb' }}>{event.replaceAll('_', ' ')}</span></td><td>{labels[log.table_name] || log.table_name}</td><td title={fields.join(', ')}>{fields.length ? fields.slice(0, 3).join(', ') + (fields.length > 3 ? ` +${fields.length - 3}` : '') : log.reason || 'Recorded event'}</td><td>{log.staff?.full_name || 'System / unassigned'}</td><td>{new Date(log.created_at).toLocaleString('en-PH')}</td></tr>
+        })}
       </tbody></table></div>
     </div>
     <ConfirmDialog

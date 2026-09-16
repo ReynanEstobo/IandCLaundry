@@ -13,8 +13,8 @@ export async function listRecycleBin(identity) {
     return (data || []).map(record => ({ ...record, table_name: table }))
   }))
   const { data: logs, error: logError } = await database.from('audit_logs')
-    .select('id, action, table_name, record_id, branch_id, created_at, actor_staff_id, staff:actor_staff_id(full_name)')
-    .in('action', ['delete', 'restore']).order('created_at', { ascending: false }).limit(100)
+    .select('id, action, event_type, event_category, table_name, record_id, branch_id, created_at, actor_staff_id, changed_fields, reason, source, staff:actor_staff_id(full_name)')
+    .order('created_at', { ascending: false }).limit(150)
   if (logError) throw Object.assign(new Error(logError.message), { status: 400, details: logError })
   return { records: results.flat().sort((a, b) => new Date(b.deleted_at) - new Date(a.deleted_at)), logs: logs || [] }
 }

@@ -23,6 +23,7 @@ import { supabase } from "../lib/supabase";
 import { apiFetch } from "../services/api/client";
 import LandingChatbot from "../components/LandingChatbot";
 import FacebookIcon from "../components/FacebookIcon";
+import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
 
 function useScrollReveal(threshold = 0.15) {
   const ref = useRef(null);
@@ -394,7 +395,8 @@ export default function LandingPage() {
   }, []);
 
   const handleChange = (e) => {
-    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+    const value = e.target.name === "phone" ? normalizePhone(e.target.value) : e.target.value;
+    setFormData((prev) => ({ ...prev, [e.target.name]: value }));
   };
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -412,6 +414,10 @@ export default function LandingPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (formData.phone && !isValidPhilippineMobile(formData.phone)) {
+      setNotification({ show: true, type: "error", message: "Phone number must start with 09 and contain exactly 11 digits." });
+      return;
+    }
     setSending(true);
 
     try {
@@ -872,7 +878,10 @@ export default function LandingPage() {
                   <input
                     type="tel"
                     name="phone"
-                    placeholder="Your Phone"
+                    placeholder="09171234567"
+                    inputMode="numeric"
+                    pattern="09[0-9]{9}"
+                    maxLength={11}
                     value={formData.phone}
                     onChange={handleChange}
                     disabled={sending}
