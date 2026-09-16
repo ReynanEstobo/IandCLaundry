@@ -1,4 +1,5 @@
 import { addDays, eachDayOfInterval, eachMonthOfInterval, eachYearOfInterval, endOfDay, format, parseISO, startOfDay, subDays } from 'date-fns'
+import { recordedRevenue } from './businessForecast.js'
 
 export function analyticsPeriod(range, customRange = {}, now = new Date()) {
   if (customRange.start && customRange.end) return {
@@ -38,7 +39,7 @@ export function descriptiveChartData(orders, expenses, range, customRange, now =
     const date = parseISO(order.created_at)
     if (date < period.start || date > period.end || Number.isNaN(+date)) continue
     const point = byKey.get(format(date, pattern))
-    if (point) point.revenue += Number(order.amount_paid ?? (order.payment_status === 'paid' ? order.total_price : 0))
+    if (point) point.revenue += recordedRevenue(order)
   }
   for (const expense of expenses) {
     const date = parseISO(expense.expense_date)

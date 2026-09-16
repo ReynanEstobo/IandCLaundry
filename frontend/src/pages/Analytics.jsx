@@ -33,6 +33,7 @@ import { generateAiForecast, generateDecisionSupport } from "../services/geminiS
 import { LoadingVisual, PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from '../components/LoadingButton'
 import { analyticsPeriod, chartTooltipDate, dailyChartLabel, descriptiveChartData } from '../utils/chartDates'
+import { recordedRevenue } from '../utils/businessForecast'
 
 // ─── Custom tooltip ────────────────────────────────────────────────────────────
 const CustomTooltip = ({ active, payload, label }) => {
@@ -258,7 +259,7 @@ export default function Analytics() {
     // Revenue is cash actually recorded against the order, including partial
     // payments, rather than only the price of fully paid orders.
     const totalRevenue = orderData.reduce(
-      (s, o) => s + Number(o.amount_paid ?? (o.payment_status === "paid" ? o.total_price : 0)), 0,
+      (s, o) => s + recordedRevenue(o), 0,
     );
 
     const totalExpenses = expenseData.reduce((s, e) => s + Number(e.amount), 0);
@@ -286,12 +287,12 @@ export default function Analytics() {
       const serviceName = order.service_types?.name || "Unspecified service";
       const current = serviceTotals.get(serviceName) || { name: serviceName, orders: 0, revenue: 0 };
       current.orders += 1;
-      current.revenue += Number(order.amount_paid ?? 0);
+      current.revenue += recordedRevenue(order);
       serviceTotals.set(serviceName, current);
       if (order.customer_id) customerVisits.set(order.customer_id, (customerVisits.get(order.customer_id) || 0) + 1);
       const branchRecord = branchTotals.get(order.branch || "Unassigned") || { name: order.branch || "Unassigned", orders: 0, revenue: 0 };
       branchRecord.orders += 1;
-      branchRecord.revenue += Number(order.amount_paid ?? 0);
+      branchRecord.revenue += recordedRevenue(order);
       branchTotals.set(branchRecord.name, branchRecord);
       const staffId = order.completed_by_staff_id || order.created_by_staff_id;
       if (staffId) {
@@ -337,8 +338,8 @@ export default function Analytics() {
       const date = format(new Date(order.created_at), "yyyy-MM-dd");
       const day = totals.get(date) || { date, revenue: 0, orders: 0, paidOrders: 0 };
       day.orders += 1;
-      if (Number(order.amount_paid ?? (order.payment_status === "paid" ? order.total_price : 0)) > 0) {
-        day.revenue += Number(order.amount_paid ?? (order.payment_status === "paid" ? order.total_price : 0)) || 0;
+      if (recordedRevenue(order) > 0) {
+        day.revenue += recordedRevenue(order);
         day.paidOrders += 1;
       }
       totals.set(date, day);
@@ -357,7 +358,7 @@ export default function Analytics() {
       const historicalRevenue = [];
 
       orderData.forEach((o) => {
-        historicalRevenue.push(Number(o.amount_paid ?? (o.payment_status === "paid" ? o.total_price : 0)));
+        historicalRevenue.push(recordedRevenue(o));
       });
 
       // ─────────────────────────────────────

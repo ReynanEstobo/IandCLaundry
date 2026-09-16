@@ -4,6 +4,7 @@ import { useRealtime } from '../lib/useRealtime'
 import { useAuth } from '../context/AuthContext'
 import { PageError, PageLoader } from '../components/AsyncState'
 import { compareOrdersForList } from '../utils/orderListPriority'
+import { rollingDemandForecast } from '../utils/businessForecast'
 import {
   Clock, AlertTriangle, ShoppingBag, CheckCircle2, Timer, User, RefreshCw,
   Brain, Zap, TrendingUp
@@ -22,38 +23,11 @@ const STATUS_ICONS = {
 }
 
 function buildBranchForecast(orderHistory, lowStockItems) {
-  const now = new Date()
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-  const recordedOrders = orderHistory.filter(order => order.created_at)
-  const oldest = recordedOrders.length
-    ? new Date(Math.min(...recordedOrders.map(order => new Date(order.created_at).getTime())))
-    : now
-  const daysOfData = Math.max(Math.ceil((now - oldest) / 86400000), 1)
-  const averageDailyOrders = recordedOrders.length / daysOfData
-  const paidRevenue = recordedOrders
-    .filter(order => order.payment_status === 'paid')
-    .reduce((sum, order) => sum + Number(order.total_price || 0), 0)
-  const nextMonthRevenue = Math.round((paidRevenue / daysOfData) * 30)
-
-  const byDay = Array(7).fill(0)
-  recordedOrders.forEach(order => { byDay[new Date(order.created_at).getDay()] += 1 })
-  const peakIndex = byDay.indexOf(Math.max(...byDay))
-  const tomorrow = new Date(now)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const expectedOrders = byDay[tomorrow.getDay()] / Math.max(Math.ceil(daysOfData / 7), 1)
-  const workloadPct = averageDailyOrders > 0
-    ? Math.min(Math.round((expectedOrders / averageDailyOrders) * 100), 100)
-    : 0
-  const workloadLevel = workloadPct >= 80 ? 'High demand'
-    : workloadPct >= 50 ? 'Moderate'
-      : workloadPct >= 20 ? 'Normal'
-        : 'Low'
+  const baseline = rollingDemandForecast(orderHistory)
 
   return {
-    workloadLevel,
-    workloadPct,
-    peakDay: recordedOrders.length ? dayNames[peakIndex] : 'Not enough data',
-    nextMonthRevenue,
+    ...baseline,
+    nextMonthRevenue: baseline.predictedMonthlyRevenue,
     restockItem: lowStockItems[0] || null,
   }
 }
@@ -78,7 +52,7 @@ export default function StaffDashboard() {
           .order('created_at', { ascending: false }),
         supabase.from('inventory_items').select('*, inventory_categories(name)'),
         // Row-level security restricts this data to the signed-in staff member's branch.
-        supabase.from('orders').select('created_at, total_price, payment_status, status')
+        supabase.from('orders').select('created_at, amount_paid, total_price, payment_status, status')
           .not('status', 'eq', 'cancelled')
       ])
       if (ordersRes.error || inventoryRes.error || historyRes.error) {
@@ -176,7 +150,7 @@ export default function StaffDashboard() {
             <div className="staff-dss-metric workload">
               <span>Expected workload</span>
               <strong>{branchForecast.workloadLevel}</strong>
-              <small>{branchForecast.workloadPct}% of usual demand</small>
+              <small>{branchForecast.workloadPct}% of usual demand · next day</small>
             </div>
             <div className="staff-dss-metric peak">
               <span>Likely peak day</span>
@@ -190,7 +164,7 @@ export default function StaffDashboard() {
             <div>
               <span>Predicted revenue</span>
               <strong>₱{branchForecast.nextMonthRevenue.toLocaleString()}</strong>
-              <small>Estimated for the next month</small>
+              <small>Based on received payments in the last 30 days</small>
             </div>
           </div>
 

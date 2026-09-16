@@ -32,6 +32,7 @@ import { useRealtime } from "../lib/useRealtime";
 import { generateDecisionSupport } from "../services/geminiService";
 import { PageError, PageLoader } from "../components/AsyncState";
 import { compareOrdersForList } from "../utils/orderListPriority";
+import { rollingDemandForecast } from "../utils/businessForecast";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -287,75 +288,7 @@ export default function Dashboard() {
   }
 
   function generateForecasts(orders, inventory, usageLogs) {
-    const now = new Date();
-    // Forecasts must not treat cancelled transactions as business activity.
-    const reportableOrders = orders.filter((order) => order.status !== "cancelled");
-
-    // --- Workload prediction (next 7 days) ---
-    // Calculate avg daily orders from last 30 days
-    const thirtyDaysAgo = new Date(now);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const last30 = reportableOrders.filter(
-      (o) => new Date(o.created_at) >= thirtyDaysAgo,
-    );
-    const avgDailyOrders = last30.length / 30;
-
-    // Check day-of-week pattern for tomorrow
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowDow = tomorrow.getDay();
-    const sameDayOrders = reportableOrders.filter(
-      (o) => new Date(o.created_at).getDay() === tomorrowDow,
-    );
-    const avgDowOrders =
-      sameDayOrders.length > 0
-        ? sameDayOrders.length / Math.max(Math.ceil(reportableOrders.length / 7), 1)
-        : avgDailyOrders;
-
-    // Workload level
-    let workloadPct = Math.min(
-      Math.round((avgDowOrders / Math.max(avgDailyOrders, 1)) * 100),
-      100,
-    );
-    if (avgDailyOrders === 0) workloadPct = 0;
-    let workloadLevel = "Low";
-    if (workloadPct >= 80) workloadLevel = "High Demand";
-    else if (workloadPct >= 50) workloadLevel = "Moderate";
-    else if (workloadPct >= 20) workloadLevel = "Normal";
-
-    // --- Revenue prediction (next month) ---
-    const paidOrders = reportableOrders.filter((o) => o.payment_status === "paid");
-    const totalRevenue = paidOrders.reduce(
-      (s, o) => s + Number(o.total_price),
-      0,
-    );
-    const oldestOrder =
-      reportableOrders.length > 0
-        ? new Date(Math.min(...reportableOrders.map((o) => new Date(o.created_at))))
-        : now;
-    const daysOfData = Math.max(differenceInDays(now, oldestOrder), 1);
-    const dailyRevenue = totalRevenue / daysOfData;
-    const predictedMonthlyRevenue = Math.round(dailyRevenue * 30);
-
-    // Revenue trend (comparing last 15 days vs previous 15 days)
-    const fifteenDaysAgo = new Date(now);
-    fifteenDaysAgo.setDate(fifteenDaysAgo.getDate() - 15);
-    const thirtyDaysAgoDt = new Date(now);
-    thirtyDaysAgoDt.setDate(thirtyDaysAgoDt.getDate() - 30);
-    const recent15 = paidOrders.filter(
-      (o) => new Date(o.created_at) >= fifteenDaysAgo,
-    );
-    const prev15 = paidOrders.filter(
-      (o) =>
-        new Date(o.created_at) >= thirtyDaysAgoDt &&
-        new Date(o.created_at) < fifteenDaysAgo,
-    );
-    const recent15Rev = recent15.reduce((s, o) => s + Number(o.total_price), 0);
-    const prev15Rev = prev15.reduce((s, o) => s + Number(o.total_price), 0);
-    const revenueTrend =
-      prev15Rev > 0
-        ? (((recent15Rev - prev15Rev) / prev15Rev) * 100).toFixed(1)
-        : 0;
+    const baseline = rollingDemandForecast(orders);
 
     // --- Restock predictions ---
     const restockAlerts = [];
@@ -394,31 +327,10 @@ export default function Dashboard() {
     });
     restockAlerts.sort((a, b) => a.daysLeft - b.daysLeft);
 
-    // --- Peak day prediction ---
-    const dowCounts = [0, 0, 0, 0, 0, 0, 0];
-    orders.forEach((o) => {
-      dowCounts[new Date(o.created_at).getDay()]++;
-    });
-    const dayNames = [
-      "Sunday",
-      "Monday",
-      "Tuesday",
-      "Wednesday",
-      "Thursday",
-      "Friday",
-      "Saturday",
-    ];
-    const peakDayIdx = dowCounts.indexOf(Math.max(...dowCounts));
-    const peakDay = dayNames[peakDayIdx];
-
     return {
-      workloadPct,
-      workloadLevel,
-      predictedMonthlyRevenue,
-      revenueTrend: Number(revenueTrend),
+      ...baseline,
       restockAlerts: restockAlerts.slice(0, 3),
-      peakDay,
-      avgDailyOrders: Math.round(avgDailyOrders),
+      avgDailyOrders: Math.round(baseline.averageDailyOrders),
     };
   }
 
@@ -758,7 +670,7 @@ export default function Dashboard() {
               <div className="dashboard-forecast-metric workload">
                 <span>Expected workload</span>
                 <strong>{forecasts.workloadLevel}</strong>
-                <small>{forecasts.workloadPct}% of usual demand</small>
+                <small>{forecasts.workloadPct}% of usual demand · next day</small>
               </div>
               <div className="dashboard-forecast-metric peak">
                 <span>Likely peak day</span>
@@ -783,7 +695,7 @@ export default function Dashboard() {
                 <strong className="forecast-value" style={{ color: "#10b981" }}>
                   ₱{forecasts.predictedMonthlyRevenue.toLocaleString()}
                 </strong>
-                <span className="forecast-sublabel">Estimated for the next month</span>
+                <span className="forecast-sublabel">Based on received payments in the last 30 days</span>
                 {forecasts.revenueTrend !== 0 && (
                   <span
                     className={`forecast-trend ${forecasts.revenueTrend > 0 ? "up" : "down"}`}
