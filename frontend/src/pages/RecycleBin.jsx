@@ -86,8 +86,8 @@ export default function RecycleBin() {
         <h3 style={{ display: 'flex', gap: 8, alignItems: 'center' }}><History size={18} color="#7c3aed" /> Activity history</h3>
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{audit.total} event{audit.total === 1 ? '' : 's'}</span>
       </div>
-      <div className="table-wrapper"><table><thead><tr><th>Activity</th><th>Performed by</th><th>When</th></tr></thead><tbody>
-        {!audit.items.length ? <tr><td colSpan={3} className="empty-state"><p>No audit activity recorded yet</p></td></tr> : audit.items.map(log => <tr key={log.id}><td style={{ minWidth: 390 }}>{log.description}</td><td>{log.staff?.full_name || 'System / unassigned'}</td><td style={{ whiteSpace: 'nowrap' }}>{new Date(log.created_at).toLocaleString('en-PH')}</td></tr>)}
+      <div className="table-wrapper"><table><thead><tr><th>Activity</th><th>Branch</th><th>Performed by</th><th>When</th></tr></thead><tbody>
+        {!audit.items.length ? <tr><td colSpan={4} className="empty-state"><p>No audit activity recorded yet</p></td></tr> : audit.items.map(log => <tr key={log.id}><td style={{ minWidth: 390 }}>{log.description}</td><td>{log.table_name === 'orders' ? log.branch?.name || 'Not recorded' : '—'}</td><td>{log.staff?.full_name || 'System / unassigned'}</td><td style={{ whiteSpace: 'nowrap' }}>{new Date(log.created_at).toLocaleString('en-PH')}</td></tr>)}
       </tbody></table></div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '14px 20px', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
         <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Page {audit.page} of {audit.totalPages}</span>
