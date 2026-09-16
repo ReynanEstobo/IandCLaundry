@@ -182,7 +182,7 @@ export default function Dashboard() {
         .order("logged_at", { ascending: false })
         .limit(500),
       supabase.from("inventory_categories").select("*"),
-      supabase.from("payments").select("amount, paid_at, payment_date, voided_at"),
+      supabase.from("payments").select("amount, paid_at, payment_date"),
     ]);
     const { data: settingsData } = await supabase
       .from("settings")

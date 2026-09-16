@@ -235,7 +235,7 @@ export default function Analytics() {
 
     let paymentQuery = supabase
       .from("payments")
-      .select("amount, paid_at, payment_date, voided_at, order_id, branch, branch_id, orders!inner(id, status, branch, branch_id, service_types(name))")
+      .select("amount, paid_at, payment_date, order_id, branch, branch_id, orders!inner(id, status, branch, branch_id, service_types(name))")
       .gte("paid_at", startDate)
       .lte("paid_at", endDate)
       .order("paid_at", { ascending: true });

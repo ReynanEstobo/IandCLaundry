@@ -55,7 +55,7 @@ export default function StaffDashboard() {
         // Row-level security restricts this data to the signed-in staff member's branch.
         supabase.from('orders').select('created_at, amount_paid, total_price, payment_status, status')
           .not('status', 'eq', 'cancelled'),
-        supabase.from('payments').select('amount, paid_at, payment_date, voided_at')
+        supabase.from('payments').select('amount, paid_at, payment_date')
       ])
       if (ordersRes.error || inventoryRes.error || historyRes.error || paymentsRes.error) {
         throw ordersRes.error || inventoryRes.error || historyRes.error || paymentsRes.error
