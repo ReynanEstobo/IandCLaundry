@@ -16,16 +16,33 @@ export function reportableOrders(orders = []) {
   return orders.filter(order => order?.status !== 'cancelled' && order?.created_at && !Number.isNaN(+new Date(order.created_at)))
 }
 
+export function paymentTimestamp(payment) {
+  return payment?.paid_at || payment?.payment_date || payment?.created_at || null
+}
+
+export function recordedPaymentAmount(payment) {
+  const amount = Number(payment?.amount)
+  return Number.isFinite(amount) && amount > 0 && !payment?.voided_at ? amount : 0
+}
+
 /**
  * A transparent rolling 30-day baseline for dashboard decision support.
  * It deliberately uses the same received-revenue definition as Analytics.
  */
-export function rollingDemandForecast(orders = [], now = new Date()) {
+export function rollingDemandForecast(orders = [], paymentsOrNow = [], suppliedNow = new Date()) {
+  const payments = Array.isArray(paymentsOrNow) ? paymentsOrNow : []
+  const now = Array.isArray(paymentsOrNow) ? suppliedNow : paymentsOrNow
   const today = startOfDay(now)
   const windowStart = subDays(today, 29)
   const history = reportableOrders(orders).filter(order => new Date(order.created_at) >= windowStart && new Date(order.created_at) <= now)
   const historyDays = 30
-  const totalRevenue = history.reduce((sum, order) => sum + recordedRevenue(order), 0)
+  const paymentHistory = payments.filter(payment => {
+    const paidAt = paymentTimestamp(payment)
+    return paidAt && new Date(paidAt) >= windowStart && new Date(paidAt) <= now
+  })
+  const totalRevenue = paymentHistory.length
+    ? paymentHistory.reduce((sum, payment) => sum + recordedPaymentAmount(payment), 0)
+    : history.reduce((sum, order) => sum + recordedRevenue(order), 0)
   const averageDailyOrders = history.length / historyDays
 
   const tomorrow = new Date(today)
@@ -50,12 +67,14 @@ export function rollingDemandForecast(orders = [], now = new Date()) {
 
   const recentStart = subDays(today, 14)
   const previousStart = subDays(today, 29)
-  const recentRevenue = history.filter(order => new Date(order.created_at) >= recentStart)
-    .reduce((sum, order) => sum + recordedRevenue(order), 0)
-  const previousRevenue = history.filter(order => {
-    const date = new Date(order.created_at)
+  const revenueEvents = paymentHistory.length ? paymentHistory.map(payment => ({ date: paymentTimestamp(payment), amount: recordedPaymentAmount(payment) }))
+    : history.map(order => ({ date: order.created_at, amount: recordedRevenue(order) }))
+  const recentRevenue = revenueEvents.filter(event => new Date(event.date) >= recentStart)
+    .reduce((sum, event) => sum + event.amount, 0)
+  const previousRevenue = revenueEvents.filter(event => {
+    const date = new Date(event.date)
     return date >= previousStart && date < recentStart
-  }).reduce((sum, order) => sum + recordedRevenue(order), 0)
+  }).reduce((sum, event) => sum + event.amount, 0)
 
   return {
     historyDays,

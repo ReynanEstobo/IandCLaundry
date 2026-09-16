@@ -20,3 +20,14 @@ test('rolling dashboard forecast uses received revenue from the same 30-day wind
   assert.equal(forecast.predictedMonthlyRevenue, 175)
   assert.equal(forecast.historyDays, 30)
 })
+
+test('payment ledger timing overrides the order creation date for revenue forecasts', () => {
+  const now = new Date('2026-09-16T12:00:00')
+  const forecast = rollingDemandForecast([
+    { created_at: '2026-08-10T08:00:00', amount_paid: 500, status: 'released' },
+  ], [
+    { amount: 250, paid_at: '2026-09-01T09:00:00' },
+    { amount: 250, paid_at: '2026-09-05T09:00:00' },
+  ], now)
+  assert.equal(forecast.totalRevenue, 500)
+})

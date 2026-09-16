@@ -134,19 +134,8 @@ export async function settleAndReleaseOrder(body, identity) {
   if (!Number.isFinite(total) || total < 0 || !Number.isFinite(paid) || paid < 0) {
     throw Object.assign(new Error('This order has invalid payment data.'), { status: 400 })
   }
-  if (paid < total) {
-    const { error: paymentError } = await database.from('orders').update({
-      amount_paid: total,
-      payment_status: 'paid',
-      last_updated_by_staff_id: identity.staffId,
-    }).eq('id', order.id).eq('status', 'ready')
-    if (paymentError) throw Object.assign(new Error(paymentError.message), { status: 400 })
-  }
-  const { data, error } = await database.rpc('transition_branch_order', {
-    p_order_id: order.id,
-    p_staff_id: identity.staffId,
-    p_new_status: 'released',
-    p_correction_reason: null,
+  const { data, error } = await database.rpc('settle_and_release_order', {
+    p_order_id: order.id, p_staff_id: identity.staffId,
   })
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
   return { data }

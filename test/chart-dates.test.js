@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { analyticsPeriod, descriptiveChartData, chartTooltipDate } from '../frontend/src/utils/chartDates.js'
+import { analyticsPeriod, descriptiveChartData, paymentChartData, chartTooltipDate } from '../frontend/src/utils/chartDates.js'
 
 test('weekly chart uses seven exact calendar dates across a year boundary', () => {
   const rows = descriptiveChartData([], [], 'weekly', {}, new Date(2027, 0, 3, 12))
@@ -35,4 +35,13 @@ test('monthly custom range separates months from different years', () => {
   assert.equal(rows[12].date,'Jan 2026')
   assert.equal(rows[0].revenue,10)
   assert.equal(rows[12].revenue,20)
+})
+
+test('payment ledger charts group revenue by payment date, not the order date', () => {
+  const rows = paymentChartData([
+    { amount: 250, paid_at: '2026-09-01T09:00:00' },
+    { amount: 250, paid_at: '2026-09-05T09:00:00' },
+  ], [], 'weekly', { start: '2026-09-01', end: '2026-09-07' })
+  assert.equal(rows[0].revenue, 250)
+  assert.equal(rows[4].revenue, 250)
 })

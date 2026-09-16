@@ -32,8 +32,8 @@ import { useRealtime } from "../lib/useRealtime";
 import { generateAiForecast, generateDecisionSupport } from "../services/geminiService";
 import { LoadingVisual, PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from '../components/LoadingButton'
-import { analyticsPeriod, chartTooltipDate, dailyChartLabel, descriptiveChartData } from '../utils/chartDates'
-import { recordedRevenue } from '../utils/businessForecast'
+import { analyticsPeriod, chartTooltipDate, dailyChartLabel, paymentChartData } from '../utils/chartDates'
+import { paymentTimestamp, recordedPaymentAmount } from '../utils/businessForecast'
 
 // ─── Custom tooltip ────────────────────────────────────────────────────────────
 const CustomTooltip = ({ active, payload, label }) => {
@@ -148,6 +148,7 @@ export default function Analytics() {
   });
 
   const [orders, setOrders] = useState([]);
+  const [payments, setPayments] = useState([]);
   const [expenses, setExpenses] = useState([]);
 
   const [forecastData, setForecastData] = useState([]);
@@ -232,35 +233,44 @@ export default function Analytics() {
       .gte("expense_date", format(new Date(startDate), "yyyy-MM-dd"))
       .lte("expense_date", format(new Date(endDate), "yyyy-MM-dd"));
 
+    let paymentQuery = supabase
+      .from("payments")
+      .select("amount, paid_at, payment_date, voided_at, order_id, branch, branch_id, orders!inner(id, status, branch, branch_id, service_types(name))")
+      .gte("paid_at", startDate)
+      .lte("paid_at", endDate)
+      .order("paid_at", { ascending: true });
+
     if (selectedBranch !== "all") {
       orderQuery = orderQuery.eq("branch", selectedBranch);
       expenseQuery = expenseQuery.eq("branch", selectedBranch);
+      paymentQuery = paymentQuery.eq("branch", selectedBranch);
     }
 
     let inventoryQuery = supabase.from("inventory_items").select("*");
     if (selectedBranch !== "all") inventoryQuery = inventoryQuery.eq("branch", selectedBranch);
-    const [ordersRes, expensesRes, staffRes, inventoryRes] = await Promise.all([
+    const [ordersRes, expensesRes, staffRes, inventoryRes, paymentsRes] = await Promise.all([
       orderQuery,
       expenseQuery,
       supabase.from("staff").select("id, full_name"),
       inventoryQuery,
+      paymentQuery,
     ]);
-    const requestError = ordersRes.error || expensesRes.error || staffRes.error || inventoryRes.error;
+    const requestError = ordersRes.error || expensesRes.error || staffRes.error || inventoryRes.error || paymentsRes.error;
     if (requestError) throw requestError;
 
     const orderData = (ordersRes.data || []).filter((order) => order.status !== "cancelled");
+    const paymentData = (paymentsRes.data || []).filter((payment) => payment.orders?.status !== 'cancelled' && recordedPaymentAmount(payment) > 0);
     const expenseData = expensesRes.data || [];
     const staffById = new Map((staffRes.data || []).map((staff) => [staff.id, staff.full_name || "Unassigned staff"]));
     const inventoryData = inventoryRes.data || [];
 
     setOrders(orderData);
+    setPayments(paymentData);
     setExpenses(expenseData);
 
     // Revenue is cash actually recorded against the order, including partial
     // payments, rather than only the price of fully paid orders.
-    const totalRevenue = orderData.reduce(
-      (s, o) => s + recordedRevenue(o), 0,
-    );
+    const totalRevenue = paymentData.reduce((sum, payment) => sum + recordedPaymentAmount(payment), 0);
 
     const totalExpenses = expenseData.reduce((s, e) => s + Number(e.amount), 0);
 
@@ -283,17 +293,21 @@ export default function Analytics() {
     const staffTotals = new Map();
     let completedOrders = 0;
     let turnaroundTotalHours = 0;
-    orderData.forEach((order) => {
+    paymentData.forEach((payment) => {
+      const order = payment.orders || {};
+      const amount = recordedPaymentAmount(payment);
       const serviceName = order.service_types?.name || "Unspecified service";
       const current = serviceTotals.get(serviceName) || { name: serviceName, orders: 0, revenue: 0 };
       current.orders += 1;
-      current.revenue += recordedRevenue(order);
+      current.revenue += amount;
       serviceTotals.set(serviceName, current);
-      if (order.customer_id) customerVisits.set(order.customer_id, (customerVisits.get(order.customer_id) || 0) + 1);
       const branchRecord = branchTotals.get(order.branch || "Unassigned") || { name: order.branch || "Unassigned", orders: 0, revenue: 0 };
       branchRecord.orders += 1;
-      branchRecord.revenue += recordedRevenue(order);
+      branchRecord.revenue += amount;
       branchTotals.set(branchRecord.name, branchRecord);
+    });
+    orderData.forEach((order) => {
+      if (order.customer_id) customerVisits.set(order.customer_id, (customerVisits.get(order.customer_id) || 0) + 1);
       const staffId = order.completed_by_staff_id || order.created_by_staff_id;
       if (staffId) {
         const staffRecord = staffTotals.get(staffId) || { name: staffById.get(staffId) || "Unassigned staff", completed: 0, created: 0 };
@@ -316,7 +330,7 @@ export default function Analytics() {
       averageTurnaroundHours: completedOrders ? turnaroundTotalHours / completedOrders : null,
     });
 
-    generateForecast(orderData);
+    generateForecast(paymentData);
     setHasLoadedAnalytics(true);
 
     } catch (error) {
@@ -332,14 +346,14 @@ export default function Analytics() {
   }
 
 
-  function buildDailyHistory(orderData) {
+  function buildDailyHistory(paymentData) {
     const totals = new Map();
-    orderData.forEach((order) => {
-      const date = format(new Date(order.created_at), "yyyy-MM-dd");
+    paymentData.forEach((payment) => {
+      const date = format(new Date(paymentTimestamp(payment)), "yyyy-MM-dd");
       const day = totals.get(date) || { date, revenue: 0, orders: 0, paidOrders: 0 };
       day.orders += 1;
-      if (recordedRevenue(order) > 0) {
-        day.revenue += recordedRevenue(order);
+      if (recordedPaymentAmount(payment) > 0) {
+        day.revenue += recordedPaymentAmount(payment);
         day.paidOrders += 1;
       }
       totals.set(date, day);
@@ -348,7 +362,7 @@ export default function Analytics() {
     return [...totals.values()].sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  async function generateForecast(orderData, { forceRefresh = false } = {}) {
+  async function generateForecast(paymentData, { forceRefresh = false } = {}) {
     try {
       setForecastLoading(true);
 
@@ -357,14 +371,14 @@ export default function Analytics() {
       // ─────────────────────────────────────
       const historicalRevenue = [];
 
-      orderData.forEach((o) => {
-        historicalRevenue.push(recordedRevenue(o));
+      paymentData.forEach((payment) => {
+        historicalRevenue.push(recordedPaymentAmount(payment));
       });
 
       // ─────────────────────────────────────
       // COMPUTE MOVING AVERAGE
       // ─────────────────────────────────────
-      const dailyHistory = buildDailyHistory(orderData);
+      const dailyHistory = buildDailyHistory(paymentData);
       const averageRevenue =
         dailyHistory.length > 0
           ? dailyHistory.reduce((sum, day) => sum + day.revenue, 0) /
@@ -698,7 +712,7 @@ Rules:
     }
   }
 
-  const descriptiveData = descriptiveChartData(orders, expenses, range, customRange);
+  const descriptiveData = paymentChartData(payments, expenses, range, customRange);
 
   const formatAiCacheTime = (timestamp) => timestamp
     ? new Date(timestamp).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })
@@ -741,31 +755,34 @@ Rules:
 
   function downloadReportCsv() {
     const rows = [
-      ["I&C Laundry Analytics Report"],
+      ["I&C Laundry Cash Collection & Analytics Report"],
       ["Scope", reportScope],
-      ["Period", reportPeriod],
+      ["Reporting period", reportPeriod],
       ["Generated", new Date().toLocaleString("en-PH")],
+      ["Revenue basis", "Cash received is recognized on the payment collection date (paid_at)."],
+      ["Historical data note", "Backfilled payments use the best available historical order timestamp."],
       [],
       ["Summary"],
-      ["Total Revenue", stats.totalRevenue || 0],
-      ["Total Expenses", stats.totalExpenses || 0],
-      ["Net Profit", stats.profit || 0],
-      ["Total Orders", stats.totalOrders || 0],
+      ["Cash Received (PHP)", stats.totalRevenue || 0],
+      ["Recorded Expenses (PHP)", stats.totalExpenses || 0],
+      ["Net Cash Position (PHP)", stats.profit || 0],
+      ["Orders Created", stats.totalOrders || 0],
+      ["Payment Entries", payments.length],
       [],
-      ["Revenue and Expense Trend"],
-      ["Period", "Revenue (PHP)", "Expenses (PHP)"],
+      ["Cash Received & Expense Trend"],
+      ["Period", "Cash Received (PHP)", "Expenses (PHP)"],
       ...descriptiveData.map((item) => [item.date, item.revenue || 0, item.expenses || 0]),
       [],
-      ["Revenue Forecast"],
-      ["Forecast Date", "Predicted Revenue (PHP)", "Predicted Orders", "Confidence"],
+      ["Cash-Receipt Forecast"],
+      ["Forecast Date", "Predicted Cash Received (PHP)", "Predicted Orders", "Confidence"],
       ...forecastData.map((item) => [item.forecastDate || item.date, item.predicted || 0, item.predictedOrders || 0, item.confidence || "low"]),
       [],
-      ["High-Performing Services"],
-      ["Service", "Orders", "Revenue Received (PHP)"],
+      ["Services by Cash Received"],
+      ["Service", "Payment Entries", "Cash Received (PHP)"],
       ...operationalSummary.topServices.map((item) => [item.name, item.orders, item.revenue]),
       [],
-      ["Branch Performance"],
-      ["Branch", "Orders", "Revenue Received (PHP)"],
+      ["Branches by Cash Received"],
+      ["Branch", "Payment Entries", "Cash Received (PHP)"],
       ...operationalSummary.topBranches.map((item) => [item.name, item.orders, item.revenue]),
       [],
       ["Decision Support Insights"],
@@ -788,9 +805,24 @@ Rules:
     const insightMarkup = aiInsights.length
       ? aiInsights.map((item) => `<li><strong>${html(item.title)}:</strong> ${html(item.description)}</li>`).join("")
       : "<li>No decision-support insights are available for this scope.</li>";
-    const serviceRows = operationalSummary.topServices.map((item) => `<tr><td>${html(item.name)}</td><td>${item.orders}</td><td>${peso(item.revenue)}</td></tr>`).join("") || "<tr><td colspan=\"3\">No service data</td></tr>";
-    const branchRows = operationalSummary.topBranches.map((item) => `<tr><td>${html(item.name)}</td><td>${item.orders}</td><td>${peso(item.revenue)}</td></tr>`).join("") || "<tr><td colspan=\"3\">No branch data</td></tr>";
-    popup.document.write(`<!doctype html><html><head><title>I&C Laundry Analytics Report</title><style>body{font-family:Arial,sans-serif;color:#172033;padding:32px;line-height:1.45}h1{color:#0f8fc4;margin:0}h2{font-size:16px;margin:28px 0 10px}.meta{color:#667085}.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:20px 0}.card{border:1px solid #dbe3ec;border-radius:8px;padding:12px}.label{color:#667085;font-size:12px}.value{font-size:19px;font-weight:700;margin-top:4px}table{width:100%;border-collapse:collapse;margin-top:8px}th,td{border:1px solid #dbe3ec;padding:8px;text-align:left;font-size:13px}th{background:#f3f8fb}li{margin:9px 0}@media print{body{padding:0}}</style></head><body><h1>I&C Laundry Analytics Report</h1><p class=\"meta\"><strong>Scope:</strong> ${html(reportScope)} &nbsp; | &nbsp; <strong>Period:</strong> ${html(reportPeriod)}<br><strong>Generated:</strong> ${html(new Date().toLocaleString("en-PH"))}</p><div class=\"cards\"><div class=\"card\"><div class=\"label\">Total Revenue</div><div class=\"value\">${peso(stats.totalRevenue)}</div></div><div class=\"card\"><div class=\"label\">Total Expenses</div><div class=\"value\">${peso(stats.totalExpenses)}</div></div><div class=\"card\"><div class=\"label\">Net Profit</div><div class=\"value\">${peso(stats.profit)}</div></div><div class=\"card\"><div class=\"label\">Total Orders</div><div class=\"value\">${stats.totalOrders || 0}</div></div></div><h2>High-Performing Services</h2><table><tr><th>Service</th><th>Orders</th><th>Revenue Received</th></tr>${serviceRows}</table><h2>Branch Performance</h2><table><tr><th>Branch</th><th>Orders</th><th>Revenue Received</th></tr>${branchRows}</table><h2>AI-Assisted Decision Support</h2><ul>${insightMarkup}</ul><p class=\"meta\">Forecast method: ${html(forecastModel || "Not available")}</p></body></html>`);
+    const trendRows = descriptiveData.map((item) => `<tr><td>${html(item.date)}</td><td class=\"money\">${peso(item.revenue)}</td><td class=\"money\">${peso(item.expenses)}</td></tr>`).join("") || "<tr><td colspan=\"3\">No cash-collection or expense data for this period.</td></tr>";
+    const forecastRows = forecastData.map((item) => `<tr><td>${html(item.forecastDate || item.date)}</td><td class=\"money\">${peso(item.predicted)}</td><td>${Number(item.predictedOrders) || 0}</td><td>${html(item.confidence || "low")}</td></tr>`).join("") || "<tr><td colspan=\"4\">No forecast is available for this scope.</td></tr>";
+    const serviceRows = operationalSummary.topServices.map((item) => `<tr><td>${html(item.name)}</td><td>${item.orders}</td><td class=\"money\">${peso(item.revenue)}</td></tr>`).join("") || "<tr><td colspan=\"3\">No service payment data</td></tr>";
+    const branchRows = operationalSummary.topBranches.map((item) => `<tr><td>${html(item.name)}</td><td>${item.orders}</td><td class=\"money\">${peso(item.revenue)}</td></tr>`).join("") || "<tr><td colspan=\"3\">No branch payment data</td></tr>";
+    popup.document.write(`<!doctype html>
+      <html><head><title>I&C Laundry Cash Collection & Analytics Report</title>
+      <style>
+        @page{margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#172033;line-height:1.45;margin:0;padding:28px;background:#fff}.header{border-bottom:3px solid #0f9ccf;padding-bottom:16px}.eyebrow{color:#087dac;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;margin:0 0 4px}h1{color:#10243e;font-size:25px;margin:0}.meta{color:#667085;font-size:12px;margin:9px 0 0}.basis{background:#edf8fc;border-left:4px solid #0f9ccf;border-radius:6px;color:#31536c;font-size:12px;margin:18px 0;padding:10px 12px}.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin:18px 0}.card{border:1px solid #dbe3ec;border-radius:8px;padding:11px;min-height:77px}.label{color:#667085;font-size:11px;font-weight:700;text-transform:uppercase}.value{font-size:17px;font-weight:700;margin-top:8px;color:#10243e}h2{border-bottom:1px solid #dbe3ec;color:#10243e;font-size:15px;margin:25px 0 9px;padding-bottom:6px}table{border-collapse:collapse;width:100%;margin:0 0 16px}th,td{border:1px solid #dbe3ec;padding:7px 8px;text-align:left;font-size:11px;vertical-align:top}th{background:#eaf6fb;color:#174765;font-weight:700}.money{text-align:right;white-space:nowrap}li{font-size:12px;margin:7px 0}.footer{border-top:1px solid #dbe3ec;color:#667085;font-size:10px;margin-top:22px;padding-top:10px}@media print{body{padding:0}.card,table{break-inside:avoid}h2{break-after:avoid}}
+      </style></head><body>
+      <header class=\"header\"><p class=\"eyebrow\">Payment-ledger report</p><h1>I&C Laundry Cash Collection &amp; Analytics Report</h1><p class=\"meta\"><strong>Scope:</strong> ${html(reportScope)} &nbsp;|&nbsp; <strong>Reporting period:</strong> ${html(reportPeriod)}<br><strong>Generated:</strong> ${html(new Date().toLocaleString("en-PH"))}</p></header>
+      <p class=\"basis\"><strong>Financial basis:</strong> Cash received is recognized on the payment collection date (<code>paid_at</code>). Historical backfill rows use the best available order timestamp. Expenses are reported on their recorded expense date.</p>
+      <section class=\"cards\"><div class=\"card\"><div class=\"label\">Cash received</div><div class=\"value\">${peso(stats.totalRevenue)}</div></div><div class=\"card\"><div class=\"label\">Recorded expenses</div><div class=\"value\">${peso(stats.totalExpenses)}</div></div><div class=\"card\"><div class=\"label\">Net cash position</div><div class=\"value\">${peso(stats.profit)}</div></div><div class=\"card\"><div class=\"label\">Orders created</div><div class=\"value\">${stats.totalOrders || 0}</div></div><div class=\"card\"><div class=\"label\">Payment entries</div><div class=\"value\">${payments.length}</div></div></section>
+      <h2>Cash Received &amp; Expense Trend</h2><table><thead><tr><th>Period</th><th>Cash Received</th><th>Expenses</th></tr></thead><tbody>${trendRows}</tbody></table>
+      <h2>Cash-Receipt Forecast</h2><table><thead><tr><th>Forecast date</th><th>Predicted cash received</th><th>Predicted orders</th><th>Confidence</th></tr></thead><tbody>${forecastRows}</tbody></table>
+      <h2>Services by Cash Received</h2><table><thead><tr><th>Service</th><th>Payment entries</th><th>Cash received</th></tr></thead><tbody>${serviceRows}</tbody></table>
+      <h2>Branches by Cash Received</h2><table><thead><tr><th>Branch</th><th>Payment entries</th><th>Cash received</th></tr></thead><tbody>${branchRows}</tbody></table>
+      <h2>AI-Assisted Decision Support</h2><ul>${insightMarkup}</ul><p class=\"footer\">Forecast method: ${html(forecastModel || "Not available")}. Forecasts are decision-support estimates and should be reviewed alongside current branch operations.</p>
+      </body></html>`);
     popup.document.close();
     popup.focus();
     window.setTimeout(() => popup.print(), 250);
@@ -892,7 +924,7 @@ Rules:
             ₱{stats.totalRevenue?.toLocaleString()}
           </div>
 
-          <div className="stat-label">Total Revenue</div>
+          <div className="stat-label">Cash Received</div>
         </div>
 
         <div className="stat-card red">
@@ -990,7 +1022,7 @@ Rules:
         {/* REVENUE EXPENSE */}
         <div className="card">
           <div className="card-header">
-            <h3>Revenue & Expense Trend</h3>
+            <h3>Cash Received & Expense Trend</h3>
 
             <p
               style={{

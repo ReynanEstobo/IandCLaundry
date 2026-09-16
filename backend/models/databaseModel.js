@@ -62,7 +62,7 @@ function compareOrdersForList(a, b) {
 // lookup/assignment is always performed on the server, not trusted from UI data.
 const BRANCH_SCOPED_TABLES = new Set([
   'orders', 'customers', 'inventory_items', 'inventory_usage_log',
-  'inventory_restocks', 'expenses',
+  'inventory_restocks', 'expenses', 'payments',
 ])
 
 function restrictStaffBranchRequest(table, request, identity) {
@@ -210,6 +210,9 @@ export async function execute(table, request, identity) {
     if (protectedPaymentFields.some(field => Object.hasOwn(request.payload || {}, field))) {
       throw Object.assign(new Error('Payment details cannot be edited after an order is placed. Use the secure payment-and-release workflow.'), { status: 403 })
     }
+  }
+  if (table === 'payments' && request.operation !== 'select') {
+    throw Object.assign(new Error('Payments can only be recorded through the secure collection workflow.'), { status: 403 })
   }
   if (BRANCH_SCOPED_TABLES.has(table)) {
     request = identity.role === 'admin'

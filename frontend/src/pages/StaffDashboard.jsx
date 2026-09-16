@@ -22,8 +22,8 @@ const STATUS_ICONS = {
   ready: '✅',
 }
 
-function buildBranchForecast(orderHistory, lowStockItems) {
-  const baseline = rollingDemandForecast(orderHistory)
+function buildBranchForecast(orderHistory, paymentHistory, lowStockItems) {
+  const baseline = rollingDemandForecast(orderHistory, paymentHistory)
 
   return {
     ...baseline,
@@ -36,6 +36,7 @@ export default function StaffDashboard() {
   const { branch } = useAuth()
   const [orders, setOrders] = useState([])
   const [orderHistory, setOrderHistory] = useState([])
+  const [paymentHistory, setPaymentHistory] = useState([])
   const [inventory, setInventory] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -46,21 +47,23 @@ export default function StaffDashboard() {
       setLoadError('')
     }
     try {
-      const [ordersRes, inventoryRes, historyRes] = await Promise.all([
+      const [ordersRes, inventoryRes, historyRes, paymentsRes] = await Promise.all([
         supabase.from('orders').select('*, customers(name, phone), service_types(name)')
           .not('status', 'in', '("released","cancelled")')
           .order('created_at', { ascending: false }),
         supabase.from('inventory_items').select('*, inventory_categories(name)'),
         // Row-level security restricts this data to the signed-in staff member's branch.
         supabase.from('orders').select('created_at, amount_paid, total_price, payment_status, status')
-          .not('status', 'eq', 'cancelled')
+          .not('status', 'eq', 'cancelled'),
+        supabase.from('payments').select('amount, paid_at, payment_date, voided_at')
       ])
-      if (ordersRes.error || inventoryRes.error || historyRes.error) {
-        throw ordersRes.error || inventoryRes.error || historyRes.error
+      if (ordersRes.error || inventoryRes.error || historyRes.error || paymentsRes.error) {
+        throw ordersRes.error || inventoryRes.error || historyRes.error || paymentsRes.error
       }
       setOrders([...(ordersRes.data || [])].sort(compareOrdersForList))
       setInventory(inventoryRes.data || [])
       setOrderHistory(historyRes.data || [])
+      setPaymentHistory(paymentsRes.data || [])
     } catch (error) {
       if (!background) setLoadError(error.message || 'Unable to load your branch dashboard.')
       else console.error('Background staff dashboard refresh failed:', error)
@@ -93,7 +96,7 @@ export default function StaffDashboard() {
 
   // Low stock
   const lowStockItems = inventory.filter(i => Number(i.current_stock) <= Number(i.minimum_stock))
-  const branchForecast = buildBranchForecast(orderHistory, lowStockItems)
+  const branchForecast = buildBranchForecast(orderHistory, paymentHistory, lowStockItems)
 
   if (loading) return <PageLoader label="Loading branch dashboard…" />
   if (loadError) return <PageError message={loadError} onRetry={loadData} />

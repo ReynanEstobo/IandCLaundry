@@ -32,7 +32,7 @@ import { useRealtime } from "../lib/useRealtime";
 import { generateDecisionSupport } from "../services/geminiService";
 import { PageError, PageLoader } from "../components/AsyncState";
 import { compareOrdersForList } from "../utils/orderListPriority";
-import { rollingDemandForecast } from "../utils/businessForecast";
+import { paymentTimestamp, recordedPaymentAmount, rollingDemandForecast } from "../utils/businessForecast";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -85,7 +85,7 @@ export default function Dashboard() {
   const loadDashboardCb = useCallback(() => loadDashboard(false), []);
   useRealtime(["orders", "customers", "inventory_items"], loadDashboardCb);
 
-  function buildChartData(orders, range) {
+  function buildChartData(orders, payments, range) {
     const data = [];
     const now = new Date();
 
@@ -102,7 +102,8 @@ export default function Dashboard() {
           label: format(date, "EEE, MMM d"),
           fullDate: format(date, "EEEE, MMMM d, yyyy"),
           orders: dayOrders.length,
-          revenue: dayOrders.reduce((s, o) => s + Number(o.total_price), 0),
+          revenue: payments.filter(payment => new Date(paymentTimestamp(payment)).toDateString() === date.toDateString())
+            .reduce((sum, payment) => sum + recordedPaymentAmount(payment), 0),
         });
       }
     }
@@ -119,7 +120,8 @@ export default function Dashboard() {
           label: format(date, "MMM d"),
           fullDate: format(date, "EEEE, MMMM d, yyyy"),
           orders: dayOrders.length,
-          revenue: dayOrders.reduce((s, o) => s + Number(o.total_price), 0),
+          revenue: payments.filter(payment => new Date(paymentTimestamp(payment)).toDateString() === date.toDateString())
+            .reduce((sum, payment) => sum + recordedPaymentAmount(payment), 0),
         });
       }
     }
@@ -136,7 +138,8 @@ export default function Dashboard() {
         data.push({
           label: String(year),
           orders: yearOrders.length,
-          revenue: yearOrders.reduce((s, o) => s + Number(o.total_price), 0),
+          revenue: payments.filter(payment => new Date(paymentTimestamp(payment)).getFullYear() === year)
+            .reduce((sum, payment) => sum + recordedPaymentAmount(payment), 0),
         });
       }
     }
@@ -159,6 +162,7 @@ export default function Dashboard() {
       recentRes,
       usageRes,
       categoriesRes,
+      paymentsRes,
     ] = await Promise.all([
       supabase.from("orders").select("*"),
       supabase.from("customers").select("id", { count: "exact", head: true }),
@@ -178,13 +182,14 @@ export default function Dashboard() {
         .order("logged_at", { ascending: false })
         .limit(500),
       supabase.from("inventory_categories").select("*"),
+      supabase.from("payments").select("amount, paid_at, payment_date, voided_at"),
     ]);
     const { data: settingsData } = await supabase
       .from("settings")
       .select("*")
       .single();
 
-    const requestError = ordersRes.error || customersRes.error || inventoryRes.error || recentRes.error || usageRes.error || categoriesRes.error;
+    const requestError = ordersRes.error || customersRes.error || inventoryRes.error || recentRes.error || usageRes.error || categoriesRes.error || paymentsRes.error;
     if (requestError) throw requestError;
 
     setSettings(settingsData || {});
@@ -192,11 +197,12 @@ export default function Dashboard() {
     const orders = ordersRes.data || [];
     const inventory = inventoryRes.data || [];
     const usageLogs = usageRes.data || [];
+    const payments = paymentsRes.data || [];
     const reportableOrders = orders.filter((o) => o.status !== "cancelled");
     const todayOrders = reportableOrders.filter((o) => o.created_at >= today);
-    const todayRevenue = todayOrders
-      .filter((o) => o.payment_status === "paid")
-      .reduce((sum, o) => sum + Number(o.total_price), 0);
+    const todayRevenue = payments
+      .filter(payment => new Date(paymentTimestamp(payment)) >= new Date(today))
+      .reduce((sum, payment) => sum + recordedPaymentAmount(payment), 0);
     const activeOrders = orders.filter(
       (o) => !["released", "cancelled"].includes(o.status),
     ).length;
@@ -229,12 +235,12 @@ export default function Dashboard() {
     setSuggestions(tips);
 
     // Generate AI forecasts
-    const fc = generateForecasts(orders, inventory, usageLogs);
+    const fc = generateForecasts(orders, payments, inventory, usageLogs);
     setForecasts(fc);
     setOverviewAlertPage(0);
     // Charts are ready as soon as the filtered operational data is ready.
     // Do not keep them blocked by the separate Gemini/DSS request below.
-    setWeeklyData(buildChartData(orders, range));
+    setWeeklyData(buildChartData(orders, payments, range));
     setChartLoading(false);
 
     // 🔥 GEMINI AI (Decision Support Layer)
@@ -250,7 +256,7 @@ export default function Dashboard() {
             profit: todayRevenue,
             totalOrders: reportableOrders.length,
             averageOrderValue: reportableOrders.length
-              ? reportableOrders.reduce((sum, order) => sum + Number(order.total_price || 0), 0) / reportableOrders.length
+              ? todayRevenue / reportableOrders.length
               : 0,
             operationalSignals: [
               `${activeOrders} active orders and ${readyForPickup} orders ready for pickup.`,
@@ -259,7 +265,7 @@ export default function Dashboard() {
               `Forecast monthly revenue: ₱${fc.predictedMonthlyRevenue.toLocaleString()}.`,
             ],
           },
-          trendData: buildChartData(reportableOrders, range),
+          trendData: buildChartData(reportableOrders, payments, range),
           forecastData: [{ date: "next-month", predictedRevenue: fc.predictedMonthlyRevenue, predictedOrders: Math.round(fc.avgDailyOrders * 30) }],
           branch: "All branches",
           range,
@@ -287,8 +293,8 @@ export default function Dashboard() {
     }
   }
 
-  function generateForecasts(orders, inventory, usageLogs) {
-    const baseline = rollingDemandForecast(orders);
+  function generateForecasts(orders, payments, inventory, usageLogs) {
+    const baseline = rollingDemandForecast(orders, payments);
 
     // --- Restock predictions ---
     const restockAlerts = [];
