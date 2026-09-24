@@ -1,6 +1,10 @@
+param(
+    [string]$DocumentPath = (Join-Path $PSScriptRoot '..\I-and-C-Laundry-ETL-Technical-Metadata.docx'),
+    [string]$PreviewPath = (Join-Path $PSScriptRoot 'layout-preview.pdf')
+)
 $ErrorActionPreference = 'Stop'
-$docPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\I-and-C-Laundry-ETL-Technical-Metadata.docx'))
-$pdfPath = Join-Path $PSScriptRoot 'layout-preview.pdf'
+$docPath = [IO.Path]::GetFullPath($DocumentPath)
+$pdfPath = [IO.Path]::GetFullPath($PreviewPath)
 $docApp = $null
 $docFile = $null
 try {

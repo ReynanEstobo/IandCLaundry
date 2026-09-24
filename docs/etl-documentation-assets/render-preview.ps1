@@ -1,3 +1,7 @@
+param(
+    [string]$PdfPath = (Join-Path $PSScriptRoot 'layout-preview.pdf'),
+    [string]$OutputDirectory = $PSScriptRoot
+)
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 Add-Type -AssemblyName System.Drawing
@@ -17,7 +21,8 @@ function Complete-WinRT($operation, [Type]$resultType) {
     $task = $asTask.MakeGenericMethod($resultType).Invoke($null, @($operation))
     $task.GetAwaiter().GetResult()
 }
-$pdfPath = Join-Path $PSScriptRoot 'layout-preview.pdf'
+$pdfPath = [IO.Path]::GetFullPath($PdfPath)
+[void][IO.Directory]::CreateDirectory($OutputDirectory)
 $file = Complete-WinRT ([Windows.Storage.StorageFile]::GetFileFromPathAsync($pdfPath)) ([Windows.Storage.StorageFile])
 $pdf = Complete-WinRT ([Windows.Data.Pdf.PdfDocument]::LoadFromFileAsync($file)) ([Windows.Data.Pdf.PdfDocument])
 for ($i = 0; $i -lt $pdf.PageCount; $i++) {
@@ -30,7 +35,7 @@ for ($i = 0; $i -lt $pdf.PageCount; $i++) {
     [void]$actionTask.GetAwaiter().GetResult()
     $memory.Seek(0)
     $readStream = [System.IO.WindowsRuntimeStreamExtensions]::AsStreamForRead($memory)
-    $pngPath = Join-Path $PSScriptRoot ('page-{0}.png' -f ($i + 1))
+    $pngPath = Join-Path $OutputDirectory ('page-{0}.png' -f ($i + 1))
     $writeStream = [IO.File]::Create($pngPath)
     $readStream.CopyTo($writeStream)
     $writeStream.Dispose()

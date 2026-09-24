@@ -151,7 +151,7 @@ export default function StaffDashboard() {
 
           <div className="staff-dss-metrics">
             <div className="staff-dss-metric workload">
-              <span>Expected workload</span>
+              <span>Expected workload today</span>
               <strong>{branchForecast.workloadLevel}</strong>
               <small>{branchForecast.workloadSummary}</small>
             </div>

@@ -26,48 +26,57 @@ export function recordedPaymentAmount(payment) {
 }
 
 /**
- * A transparent rolling 30-day baseline for dashboard decision support.
- * It deliberately uses the same received-revenue definition as Analytics.
+ * Today's demand uses the previous 30 completed days, excluding today's
+ * partial activity. Revenue keeps its rolling window through now so it
+ * continues to use the same received-revenue definition as Analytics.
  */
 export function rollingDemandForecast(orders = [], paymentsOrNow = [], suppliedNow = new Date()) {
   const payments = Array.isArray(paymentsOrNow) ? paymentsOrNow : []
   const now = Array.isArray(paymentsOrNow) ? suppliedNow : paymentsOrNow
   const today = startOfDay(now)
+  const validOrders = reportableOrders(orders)
   const windowStart = subDays(today, 29)
-  const history = reportableOrders(orders).filter(order => new Date(order.created_at) >= windowStart && new Date(order.created_at) <= now)
+  const revenueOrderHistory = validOrders.filter(order => new Date(order.created_at) >= windowStart && new Date(order.created_at) <= now)
   const historyDays = 30
+  const demandWindowStart = subDays(today, historyDays)
+  const history = validOrders.filter(order => new Date(order.created_at) >= demandWindowStart && new Date(order.created_at) < today)
+  const todayOrderCount = validOrders.filter(order => new Date(order.created_at) >= today && new Date(order.created_at) <= now).length
   const paymentHistory = payments.filter(payment => {
     const paidAt = paymentTimestamp(payment)
     return paidAt && new Date(paidAt) >= windowStart && new Date(paidAt) <= now
   })
   const totalRevenue = paymentHistory.length
     ? paymentHistory.reduce((sum, payment) => sum + recordedPaymentAmount(payment), 0)
-    : history.reduce((sum, order) => sum + recordedRevenue(order), 0)
+    : revenueOrderHistory.reduce((sum, order) => sum + recordedRevenue(order), 0)
   const averageDailyOrders = history.length / historyDays
 
-  const tomorrow = new Date(today)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const tomorrowDay = tomorrow.getDay()
-  const matchingDays = Array.from({ length: historyDays }, (_, index) => subDays(today, index))
-    .filter(day => day.getDay() === tomorrowDay).length
+  const todayDay = today.getDay()
+  const matchingDays = Array.from({ length: historyDays }, (_, index) => subDays(today, index + 1))
+    .filter(day => day.getDay() === todayDay).length
   // Blend the weekday pattern with the overall daily average. This avoids
   // dramatic-looking forecasts when a small data set happens to have one or
   // two orders on the same weekday.
-  const weekdayOrders = history.filter(order => new Date(order.created_at).getDay() === tomorrowDay).length
+  const weekdayOrders = history.filter(order => new Date(order.created_at).getDay() === todayDay).length
   const smoothingDays = 2
-  const expectedTomorrowOrders = (weekdayOrders + (averageDailyOrders * smoothingDays)) / (matchingDays + smoothingDays)
+  const expectedTodayOrders = (weekdayOrders + (averageDailyOrders * smoothingDays)) / (matchingDays + smoothingDays)
   const workloadPct = averageDailyOrders > 0
-    ? Math.round((expectedTomorrowOrders / averageDailyOrders) * 100)
+    ? Math.round((expectedTodayOrders / averageDailyOrders) * 100)
     : 0
   const workloadLevel = history.length < 7 ? 'Limited data'
     : workloadPct >= 125 ? 'Busier than usual'
       : workloadPct >= 75 ? 'Usual workload'
         : 'Lighter than usual'
-  const expectedOrderCount = Math.max(0, Math.round(expectedTomorrowOrders))
+  const expectedOrderCount = Math.max(0, Math.round(expectedTodayOrders))
   const usualOrderCount = Math.max(0, Math.round(averageDailyOrders))
+  const expectedOrdersText = expectedTodayOrders > 0 && expectedTodayOrders < 1
+    ? 'Less than 1 order'
+    : `About ${expectedOrderCount} ${expectedOrderCount === 1 ? 'order' : 'orders'}`
+  const usualOrdersText = averageDailyOrders > 0 && averageDailyOrders < 1
+    ? 'less than 1 order'
+    : `${usualOrderCount} ${usualOrderCount === 1 ? 'order' : 'orders'}`
   const workloadSummary = history.length < 7
-    ? 'Based on limited recent order history'
-    : `About ${expectedOrderCount} ${expectedOrderCount === 1 ? 'order' : 'orders'} expected tomorrow (usual: ${usualOrderCount} ${usualOrderCount === 1 ? 'order' : 'orders'} per day)` 
+    ? `Not enough history to estimate today's workload; ${todayOrderCount} received so far today`
+    : `${expectedOrdersText} expected today; ${todayOrderCount} received so far today (usual: ${usualOrdersText} per day)`
 
   const byDay = Array(7).fill(0)
   history.forEach(order => { byDay[new Date(order.created_at).getDay()] += 1 })
@@ -77,7 +86,7 @@ export function rollingDemandForecast(orders = [], paymentsOrNow = [], suppliedN
   const recentStart = subDays(today, 14)
   const previousStart = subDays(today, 29)
   const revenueEvents = paymentHistory.length ? paymentHistory.map(payment => ({ date: paymentTimestamp(payment), amount: recordedPaymentAmount(payment) }))
-    : history.map(order => ({ date: order.created_at, amount: recordedRevenue(order) }))
+    : revenueOrderHistory.map(order => ({ date: order.created_at, amount: recordedRevenue(order) }))
   const recentRevenue = revenueEvents.filter(event => new Date(event.date) >= recentStart)
     .reduce((sum, event) => sum + event.amount, 0)
   const previousRevenue = revenueEvents.filter(event => {
@@ -89,7 +98,8 @@ export function rollingDemandForecast(orders = [], paymentsOrNow = [], suppliedN
     historyDays,
     totalRevenue,
     averageDailyOrders,
-    expectedTomorrowOrders,
+    expectedTodayOrders,
+    todayOrderCount,
     workloadSummary,
     predictedMonthlyRevenue: Math.round(totalRevenue),
     workloadPct,
