@@ -55,7 +55,7 @@ export default function Inventory() {
     current_stock: "",
     minimum_stock: "",
     cost_per_unit: "",
-    is_order_addon: false,
+    usage_per_load: "",
   });
 
   const loadData = useCallback(async (background = false) => {
@@ -117,6 +117,26 @@ export default function Inventory() {
         return Math.floor(Number(item.current_stock) / dailyUsage);
     }
 
+    // Fallback: estimate from usage_per_load and recent order volume
+    const usagePerLoad = Number(item.usage_per_load);
+    if (usagePerLoad > 0 && Number(item.current_stock) > 0) {
+      // Estimate loads per day from all orders in last 30 days
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      // Use all usage logs (any item) as a proxy for loads processed
+      const recentLogs = usageLogs.filter(
+        (l) => new Date(l.logged_at) >= thirtyDaysAgo,
+      );
+      // Count unique order_ids as loads
+      const uniqueOrders = new Set(
+        recentLogs.map((l) => l.order_id).filter(Boolean),
+      );
+      const loadsPerDay = Math.max(uniqueOrders.size / 30, 0.5); // assume at least 0.5 loads/day
+      const dailyUsage = usagePerLoad * loadsPerDay;
+      if (dailyUsage > 0)
+        return Math.floor(Number(item.current_stock) / dailyUsage);
+    }
+
     return null;
   }
 
@@ -130,7 +150,7 @@ export default function Inventory() {
       current_stock: "",
       minimum_stock: "",
       cost_per_unit: "",
-      is_order_addon: false,
+      usage_per_load: "",
     });
     setShowModal(true);
   }
@@ -145,7 +165,7 @@ export default function Inventory() {
       current_stock: item.current_stock,
       minimum_stock: item.minimum_stock,
       cost_per_unit: item.cost_per_unit,
-      is_order_addon: Boolean(item.is_order_addon),
+      usage_per_load: item.usage_per_load,
     });
     setShowModal(true);
   }
@@ -158,8 +178,8 @@ export default function Inventory() {
       current_stock: parseFloat(form.current_stock) || 0,
       minimum_stock: parseFloat(form.minimum_stock) || 0,
       cost_per_unit: parseFloat(form.cost_per_unit) || 0,
+      usage_per_load: parseFloat(form.usage_per_load) || 0,
       category_id: form.category_id || null,
-      is_order_addon: Boolean(form.is_order_addon),
     };
 
     setSavingItem(true);
@@ -644,22 +664,19 @@ export default function Inventory() {
                     />
                   </div>
                 </div>
-                <p className="form-hint" style={{ marginTop: 4 }}>
-                  Automatic consumption is configured per service in Services → Service Inventory Requirements.
-                </p>
-                <label style={{ display: "block", marginTop: 14 }}>
+                <div className="form-group">
+                  <label>Usage per Load (for predictions)</label>
                   <input
-                    type="checkbox"
-                    checked={form.is_order_addon}
+                    className="form-control"
+                    type="number"
+                    step="0.0001"
+                    placeholder="Amount used per laundry load"
+                    value={form.usage_per_load}
                     onChange={(e) =>
-                      setForm((f) => ({ ...f, is_order_addon: e.target.checked }))
+                      setForm((f) => ({ ...f, usage_per_load: e.target.value }))
                     }
-                  />{" "}
-                  Available as an order add-on
-                </label>
-                <p className="form-hint" style={{ marginTop: 4 }}>
-                  This item can be selected as an add-on for orders in its branch. Staff chooses the quantity while creating the order.
-                </p>
+                  />
+                </div>
               </div>
               <div className="modal-footer">
                 <button
