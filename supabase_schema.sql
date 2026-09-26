@@ -108,6 +108,7 @@ CREATE TABLE inventory_items (
   minimum_stock NUMERIC(10,2) NOT NULL DEFAULT 0,
   cost_per_unit NUMERIC(10,2) NOT NULL DEFAULT 0,
   usage_per_load NUMERIC(10,4) NOT NULL DEFAULT 0,
+  is_order_addon BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

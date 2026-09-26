@@ -55,6 +55,7 @@ export default function Inventory() {
     current_stock: "",
     minimum_stock: "",
     cost_per_unit: "",
+    is_order_addon: false,
   });
 
   const loadData = useCallback(async (background = false) => {
@@ -129,6 +130,7 @@ export default function Inventory() {
       current_stock: "",
       minimum_stock: "",
       cost_per_unit: "",
+      is_order_addon: false,
     });
     setShowModal(true);
   }
@@ -143,6 +145,7 @@ export default function Inventory() {
       current_stock: item.current_stock,
       minimum_stock: item.minimum_stock,
       cost_per_unit: item.cost_per_unit,
+      is_order_addon: Boolean(item.is_order_addon),
     });
     setShowModal(true);
   }
@@ -156,6 +159,7 @@ export default function Inventory() {
       minimum_stock: parseFloat(form.minimum_stock) || 0,
       cost_per_unit: parseFloat(form.cost_per_unit) || 0,
       category_id: form.category_id || null,
+      is_order_addon: Boolean(form.is_order_addon),
     };
 
     setSavingItem(true);
@@ -642,6 +646,19 @@ export default function Inventory() {
                 </div>
                 <p className="form-hint" style={{ marginTop: 4 }}>
                   Automatic consumption is configured per service in Services → Service Inventory Requirements.
+                </p>
+                <label style={{ display: "block", marginTop: 14 }}>
+                  <input
+                    type="checkbox"
+                    checked={form.is_order_addon}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, is_order_addon: e.target.checked }))
+                    }
+                  />{" "}
+                  Available as an order add-on
+                </label>
+                <p className="form-hint" style={{ marginTop: 4 }}>
+                  This item can be selected as an add-on for orders in its branch. Staff chooses the quantity while creating the order.
                 </p>
               </div>
               <div className="modal-footer">

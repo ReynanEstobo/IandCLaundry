@@ -220,7 +220,9 @@ export default function Orders() {
   // repeats this check and refuses cross-branch item IDs before any stock is
   // deducted; this filter prevents a staff member from seeing them in the UI.
   const selectedAddOnBranch = isAdmin ? form.branch : branch;
-  const branchInventoryItems = soapItems.filter((item) => item.branch === selectedAddOnBranch);
+  const branchInventoryItems = soapItems.filter(
+    (item) => item.branch === selectedAddOnBranch && item.is_order_addon,
+  );
 
   const [phoneMatch, setPhoneMatch] = useState(null); // null = not searched, object = found, false = not found
   const [loyaltyPreview, setLoyaltyPreview] = useState(null);
@@ -1648,7 +1650,7 @@ export default function Orders() {
                           </div>
                           {inputLabel && <div className="form-group">
                             <label>{inputLabel} *</label>
-                            <input className="form-control" type="number" step={service?.pricing_type === 'per_piece' ? '1' : '0.1'} min={service?.pricing_type === 'per_piece' ? '1' : '0.1'} value={service?.pricing_type === 'per_piece' ? item.quantity : item.weight_kg} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, service?.pricing_type === 'per_piece' ? { quantity: event.target.value } : { weight_kg: event.target.value })} required />
+                            <input className="form-control" type="number" step="0.1" min="0.1" value={item.weight_kg} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { weight_kg: event.target.value })} required />
                           </div>}
                           <div className="form-group" style={{ alignSelf: 'end' }}>
                             <button type="button" className="btn btn-secondary btn-sm" onClick={() => removeServiceItem(index)} disabled={form.items.length === 1 || Boolean(editing && !['received'].includes(editing.status))}>Remove</button>
@@ -1741,7 +1743,7 @@ export default function Orders() {
                       <div className="pricing-header">Price Breakdown</div>
                     {form.items.map((serviceItem, index) => {
                       const service = serviceTypes.find((candidate) => String(candidate.id) === String(serviceItem.service_type_id));
-                      const unit = service?.pricing_type === 'per_kg' ? ` · ${serviceItem.weight_kg || 0} kg` : service?.pricing_type === 'per_piece' ? ` · ${serviceItem.quantity || 0} pc` : '';
+                      const unit = ` · ${serviceItem.weight_kg || 0} kg`;
                       return <div key={`summary-${index}`} className="pricing-row"><span>{service?.name || 'Service'}{unit}</span><span>₱{serviceItemSubtotal(serviceItem, service, settings).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>;
                     })}
                     <div className="pricing-row" style={{ display: "none" }}>

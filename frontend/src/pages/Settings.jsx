@@ -511,9 +511,9 @@ export default function Settings() {
 
           <div className="settings-divider" />
           <div className="settings-pricing-group">
-            <h4 className="settings-subtitle">Individual service prices & inventory</h4>
+            <h4 className="settings-subtitle">Service configuration & inventory</h4>
             <p className="form-hint" style={{ margin: "0 0 12px" }}>
-              Configure each service’s per-kg, per-piece, or fixed price—and the inventory items it consumes—in Services. Those rules are used for new multi-service orders.
+              Every service uses the bundle, excess-kilogram, and add-on prices above. In Services, choose which inventory items are deducted automatically for each service and how much of each item is used.
             </p>
             <Link className="btn btn-secondary" to="/dashboard/services">Manage services</Link>
           </div>
