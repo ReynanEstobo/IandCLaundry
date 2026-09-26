@@ -240,30 +240,22 @@ export default function Analytics() {
       .lte("paid_at", endDate)
       .order("paid_at", { ascending: true });
 
-    let serviceItemQuery = supabase
-      .from("order_items")
-      .select("id, order_id, service_name_snapshot, pricing_type_snapshot, weight_kg, quantity, subtotal, created_at, orders!inner(id, status, branch, branch_id)")
-      .gte("created_at", startDate)
-      .lte("created_at", endDate);
-
     if (selectedBranch !== "all") {
       orderQuery = orderQuery.eq("branch", selectedBranch);
       expenseQuery = expenseQuery.eq("branch", selectedBranch);
       paymentQuery = paymentQuery.eq("branch", selectedBranch);
-      serviceItemQuery = serviceItemQuery.eq("orders.branch", selectedBranch);
     }
 
     let inventoryQuery = supabase.from("inventory_items").select("*");
     if (selectedBranch !== "all") inventoryQuery = inventoryQuery.eq("branch", selectedBranch);
-    const [ordersRes, expensesRes, staffRes, inventoryRes, paymentsRes, serviceItemsRes] = await Promise.all([
+    const [ordersRes, expensesRes, staffRes, inventoryRes, paymentsRes] = await Promise.all([
       orderQuery,
       expenseQuery,
       supabase.from("staff").select("id, full_name"),
       inventoryQuery,
       paymentQuery,
-      serviceItemQuery,
     ]);
-    const requestError = ordersRes.error || expensesRes.error || staffRes.error || inventoryRes.error || paymentsRes.error || serviceItemsRes.error;
+    const requestError = ordersRes.error || expensesRes.error || staffRes.error || inventoryRes.error || paymentsRes.error;
     if (requestError) throw requestError;
 
     const orderData = (ordersRes.data || []).filter((order) => order.status !== "cancelled");
@@ -271,7 +263,6 @@ export default function Analytics() {
     const expenseData = expensesRes.data || [];
     const staffById = new Map((staffRes.data || []).map((staff) => [staff.id, staff.full_name || "Unassigned staff"]));
     const inventoryData = inventoryRes.data || [];
-    const serviceItems = (serviceItemsRes.data || []).filter((item) => item.orders?.status !== 'cancelled');
 
     setOrders(orderData);
     setPayments(paymentData);
@@ -302,19 +293,14 @@ export default function Analytics() {
     const staffTotals = new Map();
     let completedOrders = 0;
     let turnaroundTotalHours = 0;
-    serviceItems.forEach((item) => {
-      const serviceName = item.service_name_snapshot || "Unspecified service";
-      const current = serviceTotals.get(serviceName) || { name: serviceName, orders: 0, revenue: 0, weightKg: 0, quantity: 0 };
-      // `orders` here is intentionally service requests, not transaction count.
-      current.orders += 1;
-      current.revenue += Number(item.subtotal) || 0;
-      current.weightKg += Number(item.weight_kg) || 0;
-      current.quantity += Number(item.quantity) || 0;
-      serviceTotals.set(serviceName, current);
-    });
     paymentData.forEach((payment) => {
       const order = payment.orders || {};
       const amount = recordedPaymentAmount(payment);
+      const serviceName = order.service_types?.name || "Unspecified service";
+      const current = serviceTotals.get(serviceName) || { name: serviceName, orders: 0, revenue: 0 };
+      current.orders += 1;
+      current.revenue += amount;
+      serviceTotals.set(serviceName, current);
       const branchRecord = branchTotals.get(order.branch || "Unassigned") || { name: order.branch || "Unassigned", orders: 0, revenue: 0 };
       branchRecord.orders += 1;
       branchRecord.revenue += amount;
@@ -617,7 +603,7 @@ export default function Analytics() {
           totalOrders: orderData.length,
           averageOrderValue: stats.avgOrderValue || 0,
           operationalSignals: [
-            ...operationalSummary.topServices.map((service) => `Service ${service.name}: ${service.orders} requests, ₱${service.revenue.toLocaleString()} in service sales.`),
+            ...operationalSummary.topServices.map((service) => `Service ${service.name}: ${service.orders} orders, ₱${service.revenue.toLocaleString()} received.`),
             ...operationalSummary.topBranches.map((branchMetric) => `Branch ${branchMetric.name}: ${branchMetric.orders} orders, ₱${branchMetric.revenue.toLocaleString()} received.`),
             ...operationalSummary.staffPerformance.map((staff) => `${staff.name}: ${staff.completed} released, ${staff.created} created orders.`),
             ...operationalSummary.lowStockItems.map((item) => `Low stock: ${item.name} has ${item.current_stock} ${item.unit} left at ${item.branch || "the selected branch"}.`),
@@ -791,8 +777,8 @@ Rules:
       ["Forecast Date", "Predicted Cash Received (PHP)", "Predicted Orders", "Confidence"],
       ...forecastData.map((item) => [item.forecastDate || item.date, item.predicted || 0, item.predictedOrders || 0, item.confidence || "low"]),
       [],
-      ["Services by Service Sales"],
-      ["Service", "Service Requests", "Service Sales (PHP)"],
+      ["Services by Cash Received"],
+      ["Service", "Payment Entries", "Cash Received (PHP)"],
       ...operationalSummary.topServices.map((item) => [item.name, item.orders, item.revenue]),
       [],
       ["Branches by Cash Received"],
@@ -833,7 +819,7 @@ Rules:
       <section class=\"cards\"><div class=\"card\"><div class=\"label\">Cash received</div><div class=\"value\">${peso(stats.totalRevenue)}</div></div><div class=\"card\"><div class=\"label\">Recorded expenses</div><div class=\"value\">${peso(stats.totalExpenses)}</div></div><div class=\"card\"><div class=\"label\">Net cash position</div><div class=\"value\">${peso(stats.profit)}</div></div><div class=\"card\"><div class=\"label\">Orders created</div><div class=\"value\">${stats.totalOrders || 0}</div></div><div class=\"card\"><div class=\"label\">Payment entries</div><div class=\"value\">${payments.length}</div></div></section>
       <h2>Cash Received &amp; Expense Trend</h2><table><thead><tr><th>Period</th><th>Cash Received</th><th>Expenses</th></tr></thead><tbody>${trendRows}</tbody></table>
       <h2>Cash-Receipt Forecast</h2><table><thead><tr><th>Forecast date</th><th>Predicted cash received</th><th>Predicted orders</th><th>Confidence</th></tr></thead><tbody>${forecastRows}</tbody></table>
-      <h2>Services by Service Sales</h2><table><thead><tr><th>Service</th><th>Service requests</th><th>Service sales</th></tr></thead><tbody>${serviceRows}</tbody></table>
+      <h2>Services by Cash Received</h2><table><thead><tr><th>Service</th><th>Payment entries</th><th>Cash received</th></tr></thead><tbody>${serviceRows}</tbody></table>
       <h2>Branches by Cash Received</h2><table><thead><tr><th>Branch</th><th>Payment entries</th><th>Cash received</th></tr></thead><tbody>${branchRows}</tbody></table>
       <h2>AI-Assisted Decision Support</h2><ul>${insightMarkup}</ul><p class=\"footer\">Forecast method: ${html(forecastModel || "Not available")}. Forecasts are decision-support estimates and should be reviewed alongside current branch operations.</p>
       </body></html>`);
@@ -1004,7 +990,7 @@ Rules:
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(245px, 1fr))", gap: 14 }}>
-          <OperationalList icon={<TrendingUp size={17} />} title="High-Performing Services" accent="#8b5cf6" empty="No service data yet" items={operationalSummary.topServices.map((service) => `${service.name} · ${service.orders} service requests · ₱${service.revenue.toLocaleString()}`)} />
+          <OperationalList icon={<TrendingUp size={17} />} title="High-Performing Services" accent="#8b5cf6" empty="No service data yet" items={operationalSummary.topServices.map((service) => `${service.name} · ${service.orders} orders · ₱${service.revenue.toLocaleString()}`)} />
           <OperationalList icon={<Building2 size={17} />} title="Top Branches" accent="#0ea5e9" empty="No branch data yet" items={operationalSummary.topBranches.map((branchMetric) => `${branchMetric.name} · ${branchMetric.orders} orders · ₱${branchMetric.revenue.toLocaleString()}`)} />
           <OperationalList icon={<Users size={17} />} title="Staff Productivity" accent="#10b981" empty="No staff activity yet" items={operationalSummary.staffPerformance.map((staff) => `${staff.name} · ${staff.completed} released / ${staff.created} handled`)} />
         </div>
