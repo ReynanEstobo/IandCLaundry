@@ -18,15 +18,30 @@ async function resolveBranch(identity, requestedBranch) {
 export async function createOrder(body, identity) {
   const { customer = {}, order = {}, addons = {}, branch, loyaltyRewardId = null } = body || {}
   const selectedBranch = await resolveBranch(identity, branch)
+  const serviceItems = Array.isArray(order.items) ? order.items : (Array.isArray(body?.items) ? body.items : [])
   const weight = Number(order.weight_kg)
-  const total = Number(order.total_price)
+  const previewTotal = Number(order.total_price)
   const amountPaid = Number(order.amount_paid || 0)
-  if (!Number.isFinite(weight) || weight <= 0) throw Object.assign(new Error('A valid order weight is required.'), { status: 400 })
-  if (!Number.isFinite(total) || total < 0) throw Object.assign(new Error('A valid order total is required.'), { status: 400 })
+  if (!serviceItems.length && (!Number.isFinite(weight) || weight <= 0)) {
+    throw Object.assign(new Error('Add at least one service item or a valid order weight.'), { status: 400 })
+  }
+  for (const item of serviceItems) {
+    if (!item?.service_type_id) throw Object.assign(new Error('Choose a service for every service item.'), { status: 400 })
+    if (item.weight_kg !== undefined && item.weight_kg !== '' && (!Number.isFinite(Number(item.weight_kg)) || Number(item.weight_kg) <= 0)) {
+      throw Object.assign(new Error('Service weights must be greater than zero.'), { status: 400 })
+    }
+    if (item.quantity !== undefined && item.quantity !== '' && (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0)) {
+      throw Object.assign(new Error('Service quantities must be greater than zero.'), { status: 400 })
+    }
+  }
   if (!['number', 'string'].includes(typeof order.amount_paid) || !String(order.amount_paid).trim() || !Number.isFinite(amountPaid) || amountPaid < 0) {
     throw Object.assign(new Error('A valid non-negative payment amount is required.'), { status: 400 })
   }
-  if (amountPaid < total * 0.5) throw Object.assign(new Error(`Minimum 50% payment required: ₱${(total * 0.5).toLocaleString()}`), { status: 400 })
+  // Fast feedback for legacy/browser callers; the SQL RPC independently
+  // recalculates the real total and repeats this rule transactionally.
+  if (Number.isFinite(previewTotal) && previewTotal > 0 && amountPaid < previewTotal * 0.5) {
+    throw Object.assign(new Error(`Minimum 50% payment required: ₱${(previewTotal * 0.5).toLocaleString()}`), { status: 400 })
+  }
   // The order screen always supplies customer details. Legacy callers are
   // preserved here; the database RPC still rejects incomplete customers.
   const validatedCustomer = { ...customer }
@@ -34,14 +49,14 @@ export async function createOrder(body, identity) {
   if (Object.hasOwn(customer, 'phone')) validatedCustomer.phone = assertPhilippineMobile(customer.phone)
   if (Object.hasOwn(customer, 'email')) validatedCustomer.email = assertEmail(customer.email, { label: 'Customer email' })
   if (Object.hasOwn(customer, 'notes')) validatedCustomer.notes = assertText(customer.notes, { label: 'Customer notes', max: 1_000, required: false })
-  const loads = Math.max(1, Math.ceil(weight / Number(body.bundleKg || 8)))
   const payload = {
-    service_type_id: order.service_type_id || null,
-    weight_kg: weight,
-    total_price: total,
+    // The database resolves price snapshots. Client totals are previews only.
+    items: serviceItems,
+    service_type_id: order.service_type_id || serviceItems[0]?.service_type_id || null,
+    weight_kg: Number.isFinite(weight) ? weight : null,
     notes: order.notes || '',
     payment_method: order.payment_method || 'cash',
-    payment_status: amountPaid >= total ? 'paid' : 'partial',
+    payment_status: Number.isFinite(previewTotal) && amountPaid >= previewTotal ? 'paid' : 'partial',
     amount_paid: amountPaid,
   }
   const { data, error } = await database.rpc('create_branch_order', {
@@ -50,8 +65,49 @@ export async function createOrder(body, identity) {
     p_customer: validatedCustomer,
     p_order: payload,
     p_addons: addons,
-    p_loads: loads,
+    // Retained for legacy RPC callers; multi-service SQL no longer relies on
+    // this aggregate to deduct stock.
+    p_loads: Number.isFinite(weight) && weight > 0 ? Math.max(1, Math.ceil(weight / Number(body.bundleKg || 8))) : 0,
     p_loyalty_reward_id: loyaltyRewardId || null,
+  })
+  if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
+  return { data }
+}
+
+async function assertOrderAccess(orderId, identity) {
+  requireBranch(identity)
+  const { data: order, error } = await database.from('orders').select('id, branch_id, status').eq('id', orderId).maybeSingle()
+  if (error || !order) throw Object.assign(new Error('Order not found.'), { status: 404 })
+  if (identity.role !== 'admin' && order.branch_id !== identity.branchId) {
+    throw Object.assign(new Error('You can only update orders assigned to your branch.'), { status: 403 })
+  }
+  return order
+}
+
+export async function transitionOrderItem(body, identity) {
+  const itemId = String(body?.orderItemId || '').trim()
+  const status = String(body?.status || '').trim()
+  if (!itemId || !['on_process', 'completed'].includes(status)) {
+    throw Object.assign(new Error('A service item and a valid next stage are required.'), { status: 400 })
+  }
+  requireBranch(identity)
+  const { data, error } = await database.rpc('transition_order_item', {
+    p_order_item_id: itemId, p_staff_id: identity.staffId, p_new_status: status,
+  })
+  if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
+  return { data }
+}
+
+// Keeps the existing order-board controls useful: start begins all received
+// items and ready completes all in-process items, transactionally.
+export async function transitionAllOrderItems(body, identity) {
+  const orderId = String(body?.orderId || '').trim()
+  const requestedStatus = String(body?.status || '').trim()
+  const itemStatus = requestedStatus === 'on_process' ? 'on_process' : requestedStatus === 'ready' ? 'completed' : null
+  if (!orderId || !itemStatus) throw Object.assign(new Error('A valid order stage is required.'), { status: 400 })
+  await assertOrderAccess(orderId, identity)
+  const { data, error } = await database.rpc('transition_all_order_items', {
+    p_order_id: orderId, p_staff_id: identity.staffId, p_new_status: itemStatus,
   })
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
   return { data }
@@ -106,6 +162,14 @@ export async function transitionOrder(body, identity) {
   if (orderError || !order) throw Object.assign(new Error('Order not found.'), { status: 404 })
   if (identity.role !== 'admin' && order.branch_id !== identity.branchId) {
     throw Object.assign(new Error('You can only update orders assigned to your branch.'), { status: 403 })
+  }
+  if (nextStatus === 'on_process' || nextStatus === 'ready') {
+    const { data, error } = await database.rpc('transition_all_order_items', {
+      p_order_id: orderId, p_staff_id: identity.staffId,
+      p_new_status: nextStatus === 'ready' ? 'completed' : 'on_process',
+    })
+    if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
+    return { data }
   }
   const { data, error } = await database.rpc('transition_branch_order', {
     p_order_id: orderId,

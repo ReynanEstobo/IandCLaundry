@@ -1,6 +1,6 @@
 import { authenticate, requireAdmin } from '../backend/middleware/authenticate.js'
 import { handleData } from '../backend/controllers/dataController.js'
-import { cancelOrder, collectOrderPayment, createOrder, restockInventory, settleAndReleaseOrder, transitionOrder } from '../backend/controllers/operationController.js'
+import { cancelOrder, collectOrderPayment, createOrder, restockInventory, settleAndReleaseOrder, transitionAllOrderItems, transitionOrder, transitionOrderItem } from '../backend/controllers/operationController.js'
 import { listVisibleCustomers, lookupCustomer, registerCustomer } from '../backend/controllers/customerController.js'
 import { listAuditLog, restoreRecord } from '../backend/controllers/auditController.js'
 import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from '../backend/controllers/authController.js'
@@ -134,6 +134,8 @@ async function api(request, env) {
   if (method === 'POST' && path === 'public/contact') return json(await sendContactMessage(await body(request)))
   if (method === 'POST' && path === 'orders/create') return json(await createOrder(await body(request), await authenticate(request)))
   if (method === 'POST' && path === 'orders/transition') return json(await transitionOrder(await body(request), await authenticate(request)))
+  if (method === 'POST' && path === 'orders/items/transition') return json(await transitionOrderItem(await body(request), await authenticate(request)))
+  if (method === 'POST' && path === 'orders/items/transition-all') return json(await transitionAllOrderItems(await body(request), await authenticate(request)))
   if (method === 'POST' && path === 'orders/collect-payment') return json(await collectOrderPayment(await body(request), await authenticate(request)))
   if (method === 'POST' && path === 'orders/settle-and-release') return json(await settleAndReleaseOrder(await body(request), await authenticate(request)))
   if (method === 'POST' && path === 'orders/cancel') return json(await cancelOrder(await body(request), await authenticate(request)))

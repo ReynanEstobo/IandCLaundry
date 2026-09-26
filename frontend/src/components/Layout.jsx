@@ -31,6 +31,7 @@ const navigation = [
     icon: BarChart3,
     adminOnly: true,
   },
+  { name: "Services", path: "/dashboard/services", icon: ShoppingBag, adminOnly: true },
   {
     name: "Notifications",
     path: "/dashboard/sms",
@@ -53,6 +54,7 @@ const pageNames = {
   "/dashboard/customers": "Client",
   "/dashboard/inventory": "Inventory",
   "/dashboard/analytics": "Analytics",
+  "/dashboard/services": "Services",
   "/dashboard/sms": "Notifications",
   "/dashboard/staff": "Staff",
   "/dashboard/settings": "Settings",

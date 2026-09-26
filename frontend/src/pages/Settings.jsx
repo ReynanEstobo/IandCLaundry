@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { apiFetch } from "../services/api/client";
@@ -432,13 +433,13 @@ export default function Settings() {
               <DollarSign size={20} />
             </div>
             <div>
-              <h3>Pricing</h3>
-              <p>Set laundry bundle pricing and add-on costs</p>
+              <h3>Bundle & Add-on Pricing</h3>
+              <p>Set the shared bundle rule and order-level add-on cost</p>
             </div>
           </div>
 
           <div className="settings-pricing-group">
-            <h4 className="settings-subtitle">Laundry Bundle</h4>
+            <h4 className="settings-subtitle">Bundle-priced services</h4>
             <div className="form-row">
               <div className="form-group">
                 <label>Bundle Size (kg)</label>
@@ -480,6 +481,9 @@ export default function Settings() {
                 + ₱{Number(excessKgPrice).toLocaleString()} per excess kg
               </span>
             </div>
+            <p className="form-hint" style={{ marginTop: 10 }}>
+              This rule applies only to services configured as <strong>Bundle</strong>, such as Regular Clothing.
+            </p>
           </div>
 
           <div className="settings-divider" />
@@ -503,6 +507,15 @@ export default function Settings() {
                 add-on
               </span>
             </div>
+          </div>
+
+          <div className="settings-divider" />
+          <div className="settings-pricing-group">
+            <h4 className="settings-subtitle">Individual service prices & inventory</h4>
+            <p className="form-hint" style={{ margin: "0 0 12px" }}>
+              Configure each service’s per-kg, per-piece, or fixed price—and the inventory items it consumes—in Services. Those rules are used for new multi-service orders.
+            </p>
+            <Link className="btn btn-secondary" to="/dashboard/services">Manage services</Link>
           </div>
 
           <LoadingButton
