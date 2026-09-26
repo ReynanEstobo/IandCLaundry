@@ -108,7 +108,6 @@ CREATE TABLE inventory_items (
   minimum_stock NUMERIC(10,2) NOT NULL DEFAULT 0,
   cost_per_unit NUMERIC(10,2) NOT NULL DEFAULT 0,
   usage_per_load NUMERIC(10,4) NOT NULL DEFAULT 0,
-  is_order_addon BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -225,45 +224,3 @@ CREATE TRIGGER tr_customers_updated_at BEFORE UPDATE ON customers FOR EACH ROW E
 CREATE TRIGGER tr_orders_updated_at BEFORE UPDATE ON orders FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER tr_staff_updated_at BEFORE UPDATE ON staff FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE TRIGGER tr_inventory_items_updated_at BEFORE UPDATE ON inventory_items FOR EACH ROW EXECUTE FUNCTION update_updated_at();
-
--- ============================================
--- MULTI-SERVICE ORDER EXTENSION (2026-09-19)
--- The production schema is evolved by the timestamped migrations. This
--- reference records the current additions without removing legacy order fields.
--- ============================================
-ALTER TABLE service_types
-  ADD COLUMN IF NOT EXISTS pricing_type TEXT NOT NULL DEFAULT 'per_kg' CHECK (pricing_type IN ('bundle','per_kg','per_piece','fixed')),
-  ADD COLUMN IF NOT EXISTS unit_price NUMERIC(12,2),
-  ADD COLUMN IF NOT EXISTS processing_type TEXT NOT NULL DEFAULT 'full_service' CHECK (processing_type IN ('full_service','air_dry_only'));
-
-CREATE TABLE IF NOT EXISTS order_items (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  order_id UUID NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,
-  service_type_id UUID REFERENCES service_types(id) ON DELETE RESTRICT,
-  service_name_snapshot TEXT NOT NULL,
-  pricing_type_snapshot TEXT NOT NULL,
-  processing_type_snapshot TEXT NOT NULL,
-  weight_kg NUMERIC(10,2), quantity NUMERIC(10,2) NOT NULL DEFAULT 1,
-  unit_price_snapshot NUMERIC(12,2) NOT NULL, subtotal NUMERIC(12,2) NOT NULL,
-  status TEXT NOT NULL DEFAULT 'received' CHECK (status IN ('received','on_process','completed','cancelled')),
-  notes TEXT, processing_started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS service_inventory_requirements (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  branch_id UUID NOT NULL REFERENCES branches(id) ON DELETE CASCADE,
-  service_type_id UUID NOT NULL REFERENCES service_types(id) ON DELETE CASCADE,
-  inventory_item_id UUID NOT NULL REFERENCES inventory_items(id) ON DELETE RESTRICT,
-  usage_basis TEXT NOT NULL CHECK (usage_basis IN ('per_kg','per_piece','per_order')),
-  quantity_per_unit NUMERIC(12,4) NOT NULL CHECK (quantity_per_unit > 0),
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(branch_id, service_type_id, inventory_item_id)
-);
-
-ALTER TABLE inventory_usage_log
-  ADD COLUMN IF NOT EXISTS order_item_id UUID REFERENCES order_items(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS service_inventory_requirement_id UUID REFERENCES service_inventory_requirements(id) ON DELETE SET NULL,
-  ADD COLUMN IF NOT EXISTS deduction_key TEXT,
-  ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT 'Automatic service consumption';

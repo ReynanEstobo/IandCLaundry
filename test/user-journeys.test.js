@@ -147,7 +147,7 @@ test('staff journey: a staff member cannot transition an order from another bran
   assert.equal(rpcCalled, false)
 })
 
-test('staff journey: starting an order uses the multi-service inventory workflow', async t => {
+test('staff journey: an adjacent stage move calls the audited database workflow', async t => {
   let rpcName
   let rpcArgs
   withDatabaseMocks(t, {
@@ -161,9 +161,9 @@ test('staff journey: starting an order uses the multi-service inventory workflow
   const result = await transitionOrder({ orderId: 'order-1', status: 'on_process' }, {
     staffId: 'staff-1', role: 'staff', branchId: 'main-branch', branch: 'Main Branch',
   })
-  assert.equal(rpcName, 'transition_all_order_items')
+  assert.equal(rpcName, 'transition_branch_order')
   assert.deepEqual(rpcArgs, {
-    p_order_id: 'order-1', p_staff_id: 'staff-1', p_new_status: 'on_process',
+    p_order_id: 'order-1', p_staff_id: 'staff-1', p_new_status: 'on_process', p_correction_reason: null,
   })
   assert.equal(result.data.status, 'on_process')
 })
