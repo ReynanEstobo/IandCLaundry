@@ -81,7 +81,8 @@ const resourcePaths = {
   inventory_categories: '/api/inventory/categories', inventory_usage_log: '/api/inventory/usage',
   inventory_restocks: '/api/inventory/restocks', expenses: '/api/expenses', staff: '/api/staff',
   settings: '/api/settings', service_types: '/api/service-types', sms_log: '/api/sms-log',
-  payments: '/api/payments',
+  payments: '/api/payments', order_items: '/api/order-items',
+  service_inventory_requirements: '/api/service-inventory-requirements',
 }
 
 export function getStoredSession() {

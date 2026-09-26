@@ -6,4 +6,5 @@ export const resourceRoutes = new Map([
   ['inventory/restocks', 'inventory_restocks'], ['expenses', 'expenses'], ['staff', 'staff'],
   ['settings', 'settings'], ['service-types', 'service_types'], ['sms-log', 'sms_log'],
   ['branches', 'branches'], ['payments', 'payments'], ['ai-forecasts', 'ai_forecasts'],
+  ['order-items', 'order_items'], ['service-inventory-requirements', 'service_inventory_requirements'],
 ])

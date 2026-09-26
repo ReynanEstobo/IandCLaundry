@@ -7,6 +7,7 @@ export const TABLES = new Set([
   'customers', 'orders', 'inventory_items', 'inventory_categories',
   'inventory_usage_log', 'inventory_restocks', 'expenses', 'staff',
   'settings', 'service_types', 'sms_log', 'branches', 'payments', 'ai_forecasts',
+  'order_items', 'service_inventory_requirements',
 ])
 
 // These reference/operational records can be hidden and later restored.
@@ -17,6 +18,7 @@ const SOFT_DELETABLE_TABLES = new Set([
 ])
 const PROTECTED_TRANSACTION_TABLES = new Set([
   'orders', 'payments', 'inventory_usage_log', 'inventory_restocks', 'sms_log',
+  'order_items',
 ])
 
 function applyFilters(query, filters = []) {
@@ -155,12 +157,21 @@ function validateResourcePayload(table, payload, operation) {
     if (table === 'service_types') {
       if (needs('name')) value.name = assertText(value.name, { label: 'Service name', min: 2, max: 120 })
       if (has('price_per_kg')) value.price_per_kg = assertNonNegativeNumber(value.price_per_kg, 'Price per kilogram')
+      if (has('unit_price')) value.unit_price = assertNonNegativeNumber(value.unit_price, 'Unit price')
+      if (has('pricing_type') && !['bundle', 'per_kg', 'per_piece', 'fixed'].includes(value.pricing_type)) throw Object.assign(new Error('Select a valid pricing type.'), { status: 400 })
+      if (has('processing_type') && !['full_service', 'air_dry_only'].includes(value.processing_type)) throw Object.assign(new Error('Select a valid processing type.'), { status: 400 })
       if (has('estimated_minutes')) {
         const minutes = assertNonNegativeNumber(value.estimated_minutes, 'Estimated minutes')
         if (!Number.isInteger(minutes) || minutes > 10_080) throw Object.assign(new Error('Estimated minutes must be a whole number up to 10,080.'), { status: 400 })
         value.estimated_minutes = minutes
       }
       if (has('description')) value.description = assertText(value.description, { label: 'Service description', max: 500, required: false }) || null
+    }
+    if (table === 'service_inventory_requirements') {
+      if (!value.service_type_id || !value.inventory_item_id || !value.branch_id) throw Object.assign(new Error('Branch, service, and inventory item are required.'), { status: 400 })
+      if (!['per_kg', 'per_piece', 'per_order'].includes(value.usage_basis)) throw Object.assign(new Error('Select a valid inventory usage basis.'), { status: 400 })
+      value.quantity_per_unit = assertNonNegativeNumber(value.quantity_per_unit, 'Quantity per unit')
+      if (value.quantity_per_unit <= 0) throw Object.assign(new Error('Quantity per unit must be greater than zero.'), { status: 400 })
     }
     if (table === 'expenses') {
       if (needs('category')) value.category = assertText(value.category, { label: 'Expense category', min: 2, max: 80 })
@@ -192,6 +203,12 @@ export async function execute(table, request, identity) {
   }
   if (table === 'settings' && request.operation !== 'select' && identity.role !== 'admin') {
     throw Object.assign(new Error('Only administrators can change business settings.'), { status: 403 })
+  }
+  if (['service_types', 'service_inventory_requirements'].includes(table) && request.operation !== 'select' && identity.role !== 'admin') {
+    throw Object.assign(new Error('Only administrators can change service configuration.'), { status: 403 })
+  }
+  if (table === 'order_items' && request.operation !== 'select') {
+    throw Object.assign(new Error('Order service items can only be changed through the secure order workflow.'), { status: 403 })
   }
   if (table === 'staff' && ['insert', 'update'].includes(request.operation)) {
     throw Object.assign(new Error('Staff accounts can only be created or changed through the secure staff-provisioning workflow.'), { status: 403 })

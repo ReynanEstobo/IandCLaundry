@@ -20,6 +20,14 @@ export async function transitionBranchOrder(orderId, status, correctionReason = 
   return apiFetch('/api/orders/transition', { method: 'POST', body: JSON.stringify({ orderId, status, correctionReason }) })
 }
 
+export async function transitionOrderServiceItem(orderItemId, status) {
+  return apiFetch('/api/orders/items/transition', { method: 'POST', body: JSON.stringify({ orderItemId, status }) })
+}
+
+export async function transitionAllOrderServiceItems(orderId, status) {
+  return apiFetch('/api/orders/items/transition-all', { method: 'POST', body: JSON.stringify({ orderId, status }) })
+}
+
 export async function restockBranchInventory(payload) {
   return apiFetch('/api/inventory/restock', { method: 'POST', body: JSON.stringify(payload) })
 }

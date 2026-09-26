@@ -18,6 +18,7 @@ const Inventory = lazy(() => import('./pages/Inventory'))
 const Analytics = lazy(() => import('./pages/Analytics'))
 const SMS = lazy(() => import('./pages/SMS'))
 const Settings = lazy(() => import('./pages/Settings'))
+const ServiceManagement = lazy(() => import('./pages/ServiceManagement'))
 const Staff = lazy(() => import('./pages/Staff'))
 const StaffDashboard = lazy(() => import('./pages/StaffDashboard'))
 const AuditLog = lazy(() => import('./pages/RecycleBin'))
@@ -76,6 +77,7 @@ function AppRoutes() {
         <Route path="sms" element={<AdminRoute><SMS /></AdminRoute>} />
         <Route path="staff" element={<AdminRoute><Staff /></AdminRoute>} />
         <Route path="settings" element={<AdminRoute><Settings /></AdminRoute>} />
+        <Route path="services" element={<AdminRoute><ServiceManagement /></AdminRoute>} />
         <Route path="audit-log" element={<AdminRoute><AuditLog /></AdminRoute>} />
         <Route path="recycle-bin" element={<Navigate to="/dashboard/audit-log" replace />} />
       </Route>
