@@ -92,7 +92,7 @@ export async function registerCustomer(body, identity) {
   const branch = await resolveBranch(identity, body?.branch)
   const name = assertText(body?.name, { label: 'Customer name', min: 2, max: 120 })
   const phone = assertPhilippineMobile(body?.phone)
-  const email = assertEmail(body?.email, { label: 'Customer email' })
+  const email = assertEmail(body?.email, { label: 'Customer email', required: true })
   const notes = assertText(body?.notes, { label: 'Notes', max: 1_000, required: false })
   const { data, error } = await database.rpc('register_branch_customer', {
     p_branch_id: branch.id,

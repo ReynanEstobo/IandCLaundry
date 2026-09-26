@@ -48,7 +48,7 @@ export default function StaffDashboard() {
     }
     try {
       const [ordersRes, inventoryRes, historyRes, paymentsRes] = await Promise.all([
-        supabase.from('orders').select('*, customers(name, phone), service_types(name)')
+        supabase.from('orders').select('*, customers(name, phone), service_types(name), order_items(service_name_snapshot, weight_kg, status)')
           .not('status', 'in', '("released","cancelled")')
           .order('created_at', { ascending: false }),
         supabase.from('inventory_items').select('*, inventory_categories(name)'),
@@ -227,7 +227,7 @@ export default function StaffDashboard() {
                       <span>{order.customers?.name || 'Walk-in'}</span>
                     </div>
                     <div className="kanban-card-details">
-                      <span>{order.service_types?.name}</span>
+                      <span>{order.order_items?.length ? order.order_items.map(item => item.service_name_snapshot).join(', ') : order.service_types?.name}</span>
                       <span>{order.weight_kg} kg</span>
                     </div>
                     <div className="kanban-card-footer">

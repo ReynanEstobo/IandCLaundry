@@ -6,7 +6,7 @@ import {
   Brain,
   CheckCircle2,
   Clock,
-  DollarSign,
+  PhilippinePeso,
   Lightbulb,
   Package,
   ShoppingBag,
@@ -161,12 +161,11 @@ export default function Dashboard() {
       inventoryRes,
       recentRes,
       usageRes,
-      categoriesRes,
       paymentsRes,
     ] = await Promise.all([
       supabase.from("orders").select("*"),
       supabase.from("customers").select("id", { count: "exact", head: true }),
-      supabase.from("inventory_items").select("*, inventory_categories(name)"),
+      supabase.from("inventory_items").select("*"),
       supabase
         .from("orders")
         .select("*, customers(name, phone), service_types(name)", {
@@ -181,7 +180,6 @@ export default function Dashboard() {
         .select("*")
         .order("logged_at", { ascending: false })
         .limit(500),
-      supabase.from("inventory_categories").select("*"),
       supabase.from("payments").select("amount, paid_at, payment_date"),
     ]);
     const { data: settingsData } = await supabase
@@ -189,7 +187,7 @@ export default function Dashboard() {
       .select("*")
       .single();
 
-    const requestError = ordersRes.error || customersRes.error || inventoryRes.error || recentRes.error || usageRes.error || categoriesRes.error || paymentsRes.error;
+    const requestError = ordersRes.error || customersRes.error || inventoryRes.error || recentRes.error || usageRes.error || paymentsRes.error;
     if (requestError) throw requestError;
 
     setSettings(settingsData || {});
@@ -364,7 +362,7 @@ export default function Dashboard() {
       const needRestock = lowItems.filter((i) => Number(i.current_stock) > 0);
       if (needRestock.length > 0) {
         tips.push({
-          type: "warning",
+          type: "critical",
           icon: ShoppingCart,
           title: "Restock Needed",
           message: `Running low on ${needRestock.map((i) => `${i.name} (${i.current_stock} ${i.unit} left)`).join(", ")}. Consider restocking soon.`,
@@ -401,7 +399,7 @@ export default function Dashboard() {
             !lowItems.find((l) => l.id === item.id)
           ) {
             tips.push({
-              type: "warning",
+              type: "critical",
               icon: TrendingUp,
               title: `${item.name} Running Out`,
               message: `Based on usage trends, ${item.name} will run out in ~${daysLeft} day${daysLeft !== 1 ? "s" : ""}. Buy more to avoid shortage.`,
@@ -436,7 +434,7 @@ export default function Dashboard() {
       );
       tips.push({
         type: "warning",
-        icon: DollarSign,
+        icon: PhilippinePeso,
         title: `${unpaidOrders.length} Unpaid Order${unpaidOrders.length > 1 ? "s" : ""}`,
         message: `You have ₱${unpaidTotal.toLocaleString()} in outstanding payments. Follow up with customers to collect.`,
         action: "View Orders",
@@ -504,7 +502,7 @@ export default function Dashboard() {
         </div>
         <div className="stat-card green">
           <div className="stat-icon">
-            <DollarSign size={22} />
+            <PhilippinePeso size={22} />
           </div>
           <div className="stat-value">
             ₱{stats.todayRevenue.toLocaleString()}
@@ -555,9 +553,9 @@ export default function Dashboard() {
               const TipIcon = tip.icon;
               const colors = {
                 critical: {
-                  bg: "#fef2f2",
+                  bg: "#fee2e2",
                   border: "#fecaca",
-                  icon: "#dc2626",
+                  icon: "#991b1b",
                   text: "#991b1b",
                 },
                 warning: {
@@ -720,8 +718,8 @@ export default function Dashboard() {
                   <div
                     className="forecast-icon-wrap"
                     style={{
-                      background: "rgba(245,158,11,0.12)",
-                      color: "#f59e0b",
+                      background: "#fee2e2",
+                      color: "#991b1b",
                     }}
                   >
                     <AlertTriangle size={20} />

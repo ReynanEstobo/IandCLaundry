@@ -21,9 +21,11 @@ BEGIN
 END $$;
 
 DROP TRIGGER IF EXISTS tr_cancel_order_service_items ON public.orders;
+DROP TRIGGER IF EXISTS tr_sync_order_service_items_after_correction ON public.orders;
 DROP TRIGGER IF EXISTS tr_prevent_multi_service_stage_rollback ON public.orders;
 DROP TRIGGER IF EXISTS tr_validate_order_addons ON public.orders;
 DROP FUNCTION IF EXISTS public.cancel_order_service_items();
+DROP FUNCTION IF EXISTS public.sync_order_service_items_after_correction();
 DROP FUNCTION IF EXISTS public.prevent_multi_service_stage_rollback();
 DROP FUNCTION IF EXISTS public.validate_order_addons();
 DROP FUNCTION IF EXISTS public.transition_all_order_items(UUID, UUID, TEXT);
@@ -38,11 +40,16 @@ ALTER TABLE public.inventory_usage_log
 DROP INDEX IF EXISTS public.inventory_usage_log_deduction_key_unique;
 DROP INDEX IF EXISTS public.idx_inventory_usage_order_item;
 
+DROP TABLE IF EXISTS public.order_item_addons;
 DROP TABLE IF EXISTS public.service_addon_items;
 DROP FUNCTION IF EXISTS public.validate_service_addon_item();
 DROP TABLE IF EXISTS public.service_inventory_requirements;
 DROP FUNCTION IF EXISTS public.validate_service_inventory_requirement();
+DROP FUNCTION IF EXISTS public.validate_service_inventory_configuration();
 DROP TABLE IF EXISTS public.order_items;
+
+DROP INDEX IF EXISTS public.orders_client_request_id_unique;
+ALTER TABLE public.orders DROP COLUMN IF EXISTS client_request_id;
 
 ALTER TABLE public.inventory_items DROP COLUMN IF EXISTS is_order_addon;
 

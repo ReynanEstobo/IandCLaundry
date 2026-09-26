@@ -10,7 +10,7 @@ export async function trackOrder(orderNumber) {
     throw Object.assign(new Error('Enter the complete tracking number from your receipt.'), { status: 400 })
   }
   const { data, error } = await database.from('orders')
-    .select('order_number, status, weight_kg, created_at, estimated_ready_at, original_estimated_ready_at, eta_revised_at, eta_source, service_types(name)')
+    .select('order_number, status, weight_kg, created_at, estimated_ready_at, original_estimated_ready_at, eta_revised_at, eta_source, service_types(name), order_items(service_name_snapshot, weight_kg, status)')
     .eq('order_number', number)
     .neq('status', 'cancelled')
     .order('created_at', { ascending: false })

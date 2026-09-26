@@ -147,7 +147,7 @@ test('staff journey: a staff member cannot transition an order from another bran
   assert.equal(rpcCalled, false)
 })
 
-test('staff journey: an adjacent stage move calls the audited database workflow', async t => {
+test('staff journey: starting an order uses the multi-service inventory workflow', async t => {
   let rpcName
   let rpcArgs
   withDatabaseMocks(t, {
@@ -161,9 +161,9 @@ test('staff journey: an adjacent stage move calls the audited database workflow'
   const result = await transitionOrder({ orderId: 'order-1', status: 'on_process' }, {
     staffId: 'staff-1', role: 'staff', branchId: 'main-branch', branch: 'Main Branch',
   })
-  assert.equal(rpcName, 'transition_branch_order')
+  assert.equal(rpcName, 'transition_all_order_items')
   assert.deepEqual(rpcArgs, {
-    p_order_id: 'order-1', p_staff_id: 'staff-1', p_new_status: 'on_process', p_correction_reason: null,
+    p_order_id: 'order-1', p_staff_id: 'staff-1', p_new_status: 'on_process',
   })
   assert.equal(result.data.status, 'on_process')
 })
@@ -191,8 +191,8 @@ test('staff journey: valid order creation derives loads and uses the secure orde
     },
   })
   const result = await createOrder({
-    customer: { name: 'Customer', phone: '09123456789' },
-    order: { weight_kg: 17, total_price: 300, amount_paid: 150 },
+    customer: { name: 'Customer', phone: '09123456789', email: 'customer@example.com' },
+    order: { weight_kg: 17, total_price: 300, amount_paid: 150, items: [{ service_type_id: 'regular', weight_kg: 17 }] },
     addons: { soap: 1 },
     bundleKg: 8,
   }, {
@@ -203,6 +203,7 @@ test('staff journey: valid order creation derives loads and uses the secure orde
   assert.equal(rpcArgs.p_staff_id, 'staff-1')
   assert.equal(rpcArgs.p_loads, 3)
   assert.equal(rpcArgs.p_order.payment_status, 'partial')
+  assert.match(rpcArgs.p_order.client_request_id, /^[0-9a-f-]{36}$/i)
   assert.equal(result.data.status, 'received')
 })
 

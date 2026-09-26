@@ -108,8 +108,8 @@ export default function Customers() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.name.trim() || !form.phone.trim())
-      return toast.error("Name and phone are required");
+    if (!form.name.trim() || !form.phone.trim() || !form.email.trim())
+      return toast.error("Name, phone, and email are required");
     if (!isValidPhilippineMobile(form.phone))
       return toast.error("Phone number must start with 09 and contain exactly 11 digits.");
     if (isAdmin && !form.branch)
@@ -409,7 +409,7 @@ export default function Customers() {
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Email</label>
+                  <label>Email *</label>
                   <input
                     className="form-control"
                     type="email"
@@ -418,6 +418,7 @@ export default function Customers() {
                     onChange={(e) =>
                       setForm((f) => ({ ...f, email: e.target.value }))
                     }
+                    required
                   />
                 </div>
                 {isAdmin && (

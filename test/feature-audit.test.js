@@ -5,10 +5,18 @@ import { execute } from '../backend/models/databaseModel.js'
 import { trackOrder } from '../backend/controllers/publicController.js'
 import { listVisibleCustomers } from '../backend/controllers/customerController.js'
 import { cancelOrder, createOrder, restockInventory } from '../backend/controllers/operationController.js'
-import { listRecycleBin, restoreRecord } from '../backend/controllers/auditController.js'
+import { describeAuditEvent, listRecycleBin, restoreRecord } from '../backend/controllers/auditController.js'
 
 const staff = {role:'staff', staffId:'staff-a', branchId:'branch-a', branch:'Main'}
 const admin = {role:'admin', staffId:'admin-a'}
+
+test('cancelled orders are described with their reason in the Audit Log', () => {
+  const description = describeAuditEvent({
+    action: 'cancel', table_name: 'orders',
+    after_data: { order_number: 'ORD-1001', branch: 'Main', cancellation_reason: 'Customer request' },
+  })
+  assert.equal(description, 'order ORD-1001 was cancelled: Customer request at Main.')
+})
 
 function mockDatabase(t, rows = []) {
   const originalFrom = database.from
@@ -45,6 +53,42 @@ test('staff cannot alter settings, directly set stages, or delete transaction hi
     ['staff','insert',{}], ['orders','delete',{}],
   ]) await assert.rejects(execute(table,{operation,payload},staff))
   assert.equal(calls.length,0)
+})
+
+test('placed order pricing, services, inventory selections, and ownership are immutable', async t => {
+  const calls = mockDatabase(t)
+  for (const payload of [
+    { total_price: 1 }, { service_type_id: 'other-service' }, { weight_kg: 1 },
+    { addons: {} }, { customer_id: 'other-customer' }, { branch_id: 'other-branch' },
+  ]) await assert.rejects(execute('orders', { operation: 'update', payload, filters: [{ type: 'eq', column: 'id', value: 'order-1' }] }, staff))
+  assert.equal(calls.length, 0)
+})
+
+test('new client records and order clients require a valid email', async t => {
+  const calls = mockDatabase(t)
+  await assert.rejects(
+    execute('customers', { operation: 'insert', payload: { name: 'Test Client', phone: '09123456789' } }, staff),
+    /email/i,
+  )
+  await assert.rejects(
+    createOrder({
+      customer: { name: 'Test Client', phone: '09123456789' },
+      order: { weight_kg: 8, total_price: 200, amount_paid: 100 },
+    }, staff),
+    /email/i,
+  )
+  assert.equal(calls.length, 0)
+})
+
+test('staff cannot overwrite current inventory stock outside audited workflows', async t => {
+  const calls = mockDatabase(t)
+  for (const payload of [{ current_stock: 999 }, { branch: 'Other' }, { branch_id: 'other' }, { unit: 'kg' }]) {
+    await assert.rejects(execute('inventory_items', {
+      operation: 'update', payload,
+      filters: [{ type: 'eq', column: 'id', value: 'inventory-1' }],
+    }, staff), /cannot be edited directly|branch and unit are locked/)
+  }
+  assert.equal(calls.length, 0)
 })
 
 test('staff cannot use recycle-bin administration', async t => {
@@ -131,7 +175,10 @@ test('admin may still archive another account and its audit is written', async t
 test('valid numeric payment strings retain partial and paid order behavior', async t => {
   const calls = mockDatabase(t)
   for (const amount_paid of ['100','200']) {
-    await createOrder({order:{weight_kg:8,total_price:200,amount_paid}},staff)
+    await createOrder({
+      customer: { name: 'Test Customer', phone: '09123456789', email: 'customer@example.com' },
+      order:{weight_kg:8,total_price:200,amount_paid},
+    },staff)
   }
   assert.deepEqual(calls.filter(call => call.rpc).map(call => [
     call.args.p_order.amount_paid,call.args.p_order.payment_status,

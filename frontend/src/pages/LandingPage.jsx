@@ -303,7 +303,9 @@ export default function LandingPage() {
       );
       const enriched = (orders || []).map((o) => ({
         ...o,
-        service_name: o.service_types?.name || "Service",
+        service_name: o.order_items?.length
+          ? o.order_items.map((item) => item.service_name_snapshot).join(", ")
+          : o.service_types?.name || "Service",
       }));
       setTrackResults(enriched.length > 0 ? enriched : null);
       if (enriched.length === 0)
@@ -327,7 +329,9 @@ export default function LandingPage() {
           if (data) {
             const enriched = data.map((o) => ({
               ...o,
-              service_name: o.service_types?.name || "Service",
+              service_name: o.order_items?.length
+                ? o.order_items.map((item) => item.service_name_snapshot).join(", ")
+                : o.service_types?.name || "Service",
             }));
             setTrackResults(enriched.length > 0 ? enriched : null);
           }

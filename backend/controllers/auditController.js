@@ -32,7 +32,8 @@ export function describeAuditEvent(log) {
   if (log.action === 'restore') return withOrderBranch(log, `${record} was restored to the active system.`)
   if (log.action === 'cancel') {
     const reason = log.reason || after.cancellation_reason || before.cancellation_reason
-    return withOrderBranch(log, `${record} was cancelled${reason ? `: ${reason}` : '.'}`)
+    const reasonText = reason ? `: ${String(reason).replace(/\.$/, '')}.` : '.'
+    return withOrderBranch(log, `${record} was cancelled${reasonText}`)
   }
   if (log.action === 'password_changed') return 'A staff password was changed.'
   if (log.action === 'email_changed') return 'A staff recovery email was changed.'

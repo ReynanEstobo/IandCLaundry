@@ -30,18 +30,37 @@ CREATE OR REPLACE FUNCTION public.cancel_branch_order(
   p_order_id UUID, p_staff_id UUID, p_reason TEXT
 ) RETURNS public.orders
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-DECLARE v_order public.orders; v_usage RECORD; v_before JSONB;
+DECLARE v_order public.orders; v_usage RECORD; v_item RECORD; v_actor RECORD; v_before JSONB;
 BEGIN
   IF COALESCE(trim(p_reason), '') = '' THEN RAISE EXCEPTION 'A cancellation reason is required'; END IF;
   SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
   IF v_order.id IS NULL THEN RAISE EXCEPTION 'Order not found'; END IF;
   IF v_order.status = 'released' THEN RAISE EXCEPTION 'Released orders cannot be cancelled'; END IF;
   IF v_order.status = 'cancelled' THEN RAISE EXCEPTION 'This order is already cancelled'; END IF;
+  SELECT id, role, branch_id INTO v_actor FROM public.staff
+  WHERE id = p_staff_id AND deleted_at IS NULL;
+  IF v_actor.id IS NULL THEN RAISE EXCEPTION 'A valid active staff account is required'; END IF;
+  IF lower(COALESCE(v_actor.role, 'staff')) <> 'admin'
+    AND v_actor.branch_id IS DISTINCT FROM v_order.branch_id THEN
+    RAISE EXCEPTION 'You can only cancel orders assigned to your branch';
+  END IF;
   v_before := to_jsonb(v_order);
+
+  -- Different orders can use the same inventory items. Lock those item rows in
+  -- one deterministic order before restoring anything to avoid deadlocks.
+  FOR v_item IN
+    SELECT i.id FROM public.inventory_items i
+    WHERE i.id IN (
+      SELECT u.item_id FROM public.inventory_usage_log u
+      WHERE u.order_id = p_order_id AND u.reversed_at IS NULL
+    )
+    ORDER BY i.id FOR UPDATE OF i
+  LOOP NULL; END LOOP;
 
   FOR v_usage IN
     SELECT * FROM public.inventory_usage_log
-    WHERE order_id = p_order_id AND reversed_at IS NULL FOR UPDATE
+    WHERE order_id = p_order_id AND reversed_at IS NULL
+    ORDER BY item_id, id FOR UPDATE
   LOOP
     UPDATE public.inventory_items
     SET current_stock = current_stock + v_usage.quantity_used
@@ -53,6 +72,10 @@ BEGIN
     WHERE id = v_usage.id;
   END LOOP;
 
+  -- The stage-history trigger reads this transaction-local metadata.
+  PERFORM set_config('app.order_transition_type', 'cancel', true);
+  PERFORM set_config('app.order_correction_reason', trim(p_reason), true);
+  PERFORM set_config('app.order_eta_before', COALESCE(v_order.estimated_ready_at::TEXT, ''), true);
   UPDATE public.orders
   SET status = 'cancelled', cancelled_at = now(), cancelled_by_staff_id = p_staff_id,
       cancellation_reason = trim(p_reason), last_updated_by_staff_id = p_staff_id,
@@ -65,6 +88,9 @@ BEGIN
     v_before, to_jsonb(v_order));
   RETURN v_order;
 END $$;
+
+REVOKE EXECUTE ON FUNCTION public.cancel_branch_order(UUID, UUID, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cancel_branch_order(UUID, UUID, TEXT) TO service_role;
 
 CREATE INDEX IF NOT EXISTS idx_orders_cancelled_at ON public.orders(cancelled_at) WHERE cancelled_at IS NOT NULL;
 COMMIT;

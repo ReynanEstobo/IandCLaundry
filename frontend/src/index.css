@@ -3515,7 +3515,7 @@ textarea.form-control {
   background: #eef8fd;
 }
 .forecast-restock {
-  background: #fffbeb;
+  background: #fee2e2;
 }
 
 .forecast-icon-wrap {
@@ -4160,7 +4160,7 @@ textarea.form-control {
   background: rgba(46, 167, 224, 0.08);
 }
 [data-theme="dark"] .forecast-restock {
-  background: rgba(245, 158, 11, 0.08);
+  background: rgba(220, 38, 38, 0.14);
 }
 [data-theme="dark"] .forecast-row:hover {
   background: rgba(255, 255, 255, 0.03);

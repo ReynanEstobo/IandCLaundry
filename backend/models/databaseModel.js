@@ -7,6 +7,7 @@ export const TABLES = new Set([
   'customers', 'orders', 'inventory_items', 'inventory_categories',
   'inventory_usage_log', 'inventory_restocks', 'expenses', 'staff',
   'settings', 'service_types', 'sms_log', 'branches', 'payments', 'ai_forecasts',
+  'order_items', 'order_item_addons', 'service_inventory_requirements', 'service_addon_items',
 ])
 
 // These reference/operational records can be hidden and later restored.
@@ -17,6 +18,7 @@ const SOFT_DELETABLE_TABLES = new Set([
 ])
 const PROTECTED_TRANSACTION_TABLES = new Set([
   'orders', 'payments', 'inventory_usage_log', 'inventory_restocks', 'sms_log',
+  'order_items', 'order_item_addons',
 ])
 
 function applyFilters(query, filters = []) {
@@ -63,6 +65,7 @@ function compareOrdersForList(a, b) {
 const BRANCH_SCOPED_TABLES = new Set([
   'orders', 'customers', 'inventory_items', 'inventory_usage_log',
   'inventory_restocks', 'expenses', 'payments',
+  'order_items', 'order_item_addons', 'service_inventory_requirements', 'service_addon_items',
 ])
 
 function restrictStaffBranchRequest(table, request, identity) {
@@ -70,10 +73,13 @@ function restrictStaffBranchRequest(table, request, identity) {
   if (identity.role !== 'staff') throw Object.assign(new Error('This account has no staff profile. Contact an administrator to assign a role and branch.'), { status: 403 })
   if (!identity.staffId || !identity.branch) throw Object.assign(new Error(`Your staff account must be assigned to a branch before you can access ${table}.`), { status: 403 })
 
-  const scoped = { ...request, filters: [...(request.filters || []), { type: 'eq', column: 'branch', value: identity.branch }] }
+  const usesBranchId = ['order_items', 'order_item_addons', 'service_inventory_requirements', 'service_addon_items'].includes(table)
+  const branchColumn = usesBranchId ? 'branch_id' : 'branch'
+  const branchValue = usesBranchId ? identity.branchId : identity.branch
+  const scoped = { ...request, filters: [...(request.filters || []), { type: 'eq', column: branchColumn, value: branchValue }] }
   const applyBranch = payload => ({
     ...payload,
-    branch: identity.branch,
+    ...(usesBranchId ? {} : { branch: identity.branch }),
     ...(identity.branchId ? { branch_id: identity.branchId } : {}),
   })
 
@@ -97,6 +103,12 @@ async function attachAdminBranch(table, request, identity) {
   if (!['insert', 'update'].includes(request.operation)) return request
 
   async function resolveBranch(payload) {
+    const branchIdOnly = ['order_items', 'order_item_addons', 'service_inventory_requirements', 'service_addon_items'].includes(table)
+    if (branchIdOnly && payload?.branch_id) {
+      const { data: branch, error } = await database.from('branches').select('id').eq('id', payload.branch_id).maybeSingle()
+      if (error || !branch) throw Object.assign(new Error('The selected branch does not exist.'), { status: 400 })
+      return payload
+    }
     // Payment/status-only updates retain the order's existing branch.
     if (!payload?.branch) {
       if (request.operation === 'insert') {
@@ -143,24 +155,42 @@ function validateResourcePayload(table, payload, operation) {
     if (table === 'customers') {
       if (needs('name')) value.name = assertText(value.name, { label: 'Customer name', min: 2, max: 120 })
       if (needs('phone')) value.phone = assertPhilippineMobile(value.phone)
-      if (has('email')) value.email = assertEmail(value.email, { label: 'Customer email' }) || null
+      if (needs('email')) value.email = assertEmail(value.email, { label: 'Customer email', required: true })
       if (has('notes')) value.notes = assertText(value.notes, { label: 'Customer notes', max: 1_000, required: false }) || null
     }
     if (table === 'inventory_items') {
       if (needs('name')) value.name = assertText(value.name, { label: 'Item name', min: 2, max: 120 })
       if (needs('unit')) value.unit = assertText(value.unit, { label: 'Unit', min: 1, max: 20 })
-      for (const field of ['current_stock', 'minimum_stock', 'cost_per_unit', 'usage_per_load']) if (has(field)) value[field] = assertNonNegativeNumber(value[field], field.replaceAll('_', ' '))
+      for (const field of ['current_stock', 'minimum_stock', 'cost_per_unit']) if (has(field)) value[field] = assertNonNegativeNumber(value[field], field.replaceAll('_', ' '))
     }
     if (table === 'inventory_categories' && needs('name')) value.name = assertText(value.name, { label: 'Category name', min: 2, max: 80 })
     if (table === 'service_types') {
       if (needs('name')) value.name = assertText(value.name, { label: 'Service name', min: 2, max: 120 })
       if (has('price_per_kg')) value.price_per_kg = assertNonNegativeNumber(value.price_per_kg, 'Price per kilogram')
+      if (has('bundle_kg')) {
+        value.bundle_kg = assertNonNegativeNumber(value.bundle_kg, 'Kilograms per load')
+        if (value.bundle_kg <= 0) throw Object.assign(new Error('Kilograms per load must be greater than zero.'), { status: 400 })
+      }
+      if (has('bundle_price')) value.bundle_price = assertNonNegativeNumber(value.bundle_price, 'Price per load')
+      if (has('excess_kg_price')) value.excess_kg_price = assertNonNegativeNumber(value.excess_kg_price, 'Excess kilogram price')
+      if (has('processing_type') && !['full_service', 'air_dry_only'].includes(value.processing_type)) throw Object.assign(new Error('Select a valid processing type.'), { status: 400 })
       if (has('estimated_minutes')) {
         const minutes = assertNonNegativeNumber(value.estimated_minutes, 'Estimated minutes')
         if (!Number.isInteger(minutes) || minutes > 10_080) throw Object.assign(new Error('Estimated minutes must be a whole number up to 10,080.'), { status: 400 })
         value.estimated_minutes = minutes
       }
       if (has('description')) value.description = assertText(value.description, { label: 'Service description', max: 500, required: false }) || null
+    }
+    if (table === 'service_inventory_requirements') {
+      if (operation === 'insert' && (!value.service_type_id || !value.inventory_item_id || !value.branch_id)) throw Object.assign(new Error('Branch, service, and inventory item are required.'), { status: 400 })
+      if (has('quantity_per_load')) {
+        value.quantity_per_load = assertNonNegativeNumber(value.quantity_per_load, 'Quantity per load')
+        if (value.quantity_per_load <= 0) throw Object.assign(new Error('Quantity per load must be greater than zero.'), { status: 400 })
+      }
+    }
+    if (table === 'service_addon_items') {
+      if (operation === 'insert' && (!value.service_type_id || !value.inventory_item_id || !value.branch_id)) throw Object.assign(new Error('Branch, service, and inventory item are required.'), { status: 400 })
+      if (has('unit_price')) value.unit_price = assertNonNegativeNumber(value.unit_price, 'Add-on unit price')
     }
     if (table === 'expenses') {
       if (needs('category')) value.category = assertText(value.category, { label: 'Expense category', min: 2, max: 80 })
@@ -193,6 +223,12 @@ export async function execute(table, request, identity) {
   if (table === 'settings' && request.operation !== 'select' && identity.role !== 'admin') {
     throw Object.assign(new Error('Only administrators can change business settings.'), { status: 403 })
   }
+  if (['service_types', 'service_inventory_requirements', 'service_addon_items'].includes(table) && request.operation !== 'select' && identity.role !== 'admin') {
+    throw Object.assign(new Error('Only administrators can change service configuration.'), { status: 403 })
+  }
+  if (['order_items', 'order_item_addons'].includes(table) && request.operation !== 'select') {
+    throw Object.assign(new Error('Order service items can only be changed through the secure order workflow.'), { status: 403 })
+  }
   if (table === 'staff' && ['insert', 'update'].includes(request.operation)) {
     throw Object.assign(new Error('Staff accounts can only be created or changed through the secure staff-provisioning workflow.'), { status: 403 })
   }
@@ -206,9 +242,19 @@ export async function execute(table, request, identity) {
     throw Object.assign(new Error('Order stages can only be changed through the secure workflow.'), { status: 403 })
   }
   if (table === 'orders' && request.operation === 'update') {
-    const protectedPaymentFields = ['amount_paid', 'payment_status', 'payment_method', 'loyalty_reward_id', 'loyalty_original_total', 'loyalty_discount_amount']
-    if (protectedPaymentFields.some(field => Object.hasOwn(request.payload || {}, field))) {
-      throw Object.assign(new Error('Payment details cannot be edited after an order is placed. Use the secure payment-and-release workflow.'), { status: 403 })
+    const allowedOrderUpdates = new Set(['notes'])
+    const attemptedFields = Object.keys(request.payload || {})
+    if (attemptedFields.some(field => !allowedOrderUpdates.has(field))) {
+      throw Object.assign(new Error('Placed order details are locked. Only notes may be edited; use the secure payment, stage, or cancellation workflow for other changes.'), { status: 403 })
+    }
+  }
+  if (table === 'inventory_items' && request.operation === 'update') {
+    const updates = request.payload || {}
+    if (Object.hasOwn(updates, 'current_stock')) {
+      throw Object.assign(new Error('Current stock cannot be edited directly. Use the Restock workflow or an audited inventory operation.'), { status: 403 })
+    }
+    if (['branch', 'branch_id', 'unit'].some(field => Object.hasOwn(updates, field))) {
+      throw Object.assign(new Error('An inventory item\'s branch and unit are locked after creation so its usage history remains consistent.'), { status: 403 })
     }
   }
   if (table === 'payments' && request.operation !== 'select') {

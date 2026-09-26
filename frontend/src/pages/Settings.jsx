@@ -92,12 +92,6 @@ export default function Settings() {
   const [darkMode, setDarkMode] = useState(false);
   const [notifications, setNotifications] = useState(true);
 
-  // Pricing settings
-  const [bundleKg, setBundleKg] = useState(8);
-  const [bundlePrice, setBundlePrice] = useState(200);
-  const [addonPrice, setAddonPrice] = useState(15);
-  const [excessKgPrice, setExcessKgPrice] = useState(30);
-
   // ETA settings
   const [defaultProcessingMinutes, setDefaultProcessingMinutes] = useState(100);
   const [etaBufferMinutes, setEtaBufferMinutes] = useState(15);
@@ -123,11 +117,6 @@ export default function Settings() {
 
         setDarkMode(data.darkmode || false);
         setNotifications(data.notifications !== false);
-
-        setBundleKg(data.bundlekg || 8);
-        setBundlePrice(data.bundleprice || 200);
-        setAddonPrice(data.addonprice || 15);
-        setExcessKgPrice(data.excesskgprice || 30);
 
         setDefaultProcessingMinutes(data.default_processing_minutes || ((data.etawash || 45) + (data.etadrying || 40) + (data.etafolding || 15)));
         setEtaBufferMinutes(data.eta_buffer_minutes ?? 15);
@@ -160,11 +149,6 @@ export default function Settings() {
             setCloseTime(data.closetime || "20:00");
             setDarkMode(data.darkmode || false);
             setNotifications(data.notifications !== false);
-
-            setBundleKg(data.bundlekg || 8);
-            setBundlePrice(data.bundleprice || 200);
-            setAddonPrice(data.addonprice || 15);
-            setExcessKgPrice(data.excesskgprice || 30);
 
             setDefaultProcessingMinutes(data.default_processing_minutes || ((data.etawash || 45) + (data.etadrying || 40) + (data.etafolding || 15)));
             setEtaBufferMinutes(data.eta_buffer_minutes ?? 15);
@@ -237,10 +221,6 @@ export default function Settings() {
         .update({
           darkmode: darkMode,
           notifications,
-          bundlekg: Number(bundleKg),
-          bundleprice: Number(bundlePrice),
-          addonprice: Number(addonPrice),
-          excesskgprice: Number(excessKgPrice),
           default_processing_minutes: Number(defaultProcessingMinutes),
           eta_buffer_minutes: Number(etaBufferMinutes),
           eta_min_completed_orders: Number(etaMinCompletedOrders),
@@ -423,97 +403,6 @@ export default function Settings() {
               <div className="settings-toggle-knob" />
             </button>
           </div>
-        </div>
-
-        {/* ====== PRICING ====== */}
-        <div className="card settings-card">
-          <div className="settings-card-header">
-            <div className="settings-card-icon amber">
-              <DollarSign size={20} />
-            </div>
-            <div>
-              <h3>Pricing</h3>
-              <p>Set laundry bundle pricing and add-on costs</p>
-            </div>
-          </div>
-
-          <div className="settings-pricing-group">
-            <h4 className="settings-subtitle">Laundry Bundle</h4>
-            <div className="form-row">
-              <div className="form-group">
-                <label>Bundle Size (kg)</label>
-                <input
-                  className="form-control"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={bundleKg}
-                  onChange={(e) => setBundleKg(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>Price per Bundle (₱)</label>
-                <input
-                  className="form-control"
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={bundlePrice}
-                  onChange={(e) => setBundlePrice(e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>Excess Price per KG (₱)</label>
-                <input
-                  className="form-control"
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={excessKgPrice}
-                  onChange={(e) => setExcessKgPrice(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="settings-pricing-preview">
-              <span>
-                ₱{Number(bundlePrice).toLocaleString()} minimum for {bundleKg}kg
-                + ₱{Number(excessKgPrice).toLocaleString()} per excess kg
-              </span>
-            </div>
-          </div>
-
-          <div className="settings-divider" />
-
-          <div className="settings-pricing-group">
-            <h4 className="settings-subtitle">Add-ons (Soap / Detergent)</h4>
-            <div className="form-group">
-              <label>Price per Add-on Item (₱)</label>
-              <input
-                className="form-control"
-                type="number"
-                min="0"
-                step="1"
-                value={addonPrice}
-                onChange={(e) => setAddonPrice(e.target.value)}
-              />
-            </div>
-            <div className="settings-pricing-preview">
-              <span>
-                ₱{Number(addonPrice).toLocaleString()} per soap / detergent
-                add-on
-              </span>
-            </div>
-          </div>
-
-          <LoadingButton
-            className="btn btn-primary"
-            loading={settingsSaving}
-            loadingLabel="Saving…"
-            onClick={handleSaveBusinessSettings}
-            style={{ marginTop: 12 }}
-          >
-            <Save size={15} /> Save Pricing
-          </LoadingButton>
         </div>
 
         {/* ====== ETA / PROCESS TIMES ====== */}

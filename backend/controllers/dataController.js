@@ -3,8 +3,8 @@ import { events } from '../services/realtimeService.js'
 
 function validate(table, { operation, payload = {} }) {
   if (!['insert', 'update'].includes(operation)) return
-  if (table === 'customers' && ((!payload.name && operation === 'insert') || (!payload.phone && operation === 'insert'))) {
-    throw Object.assign(new Error('Name and phone are required'), { status: 400 })
+  if (table === 'customers' && operation === 'insert' && (!payload.name || !payload.phone || !payload.email)) {
+    throw Object.assign(new Error('Name, phone, and email are required'), { status: 400 })
   }
   if (table === 'orders' && operation === 'insert' && (!Number(payload.weight_kg) || Number(payload.weight_kg) <= 0)) {
     throw Object.assign(new Error('A valid order weight is required'), { status: 400 })

@@ -6,15 +6,10 @@ import FacebookIcon from './FacebookIcon';
 const topics = ['Prices per load', 'Shop location', 'Contact management', 'Opening hours', 'Track my order', 'Pickup / delivery', 'Payment'];
 const topicIcons = [Tag, MapPin, Mail, Clock, Search, Truck, Wallet];
 const contact = 'Call 0967-281-3602, email iclaundryshop@gmail.com, or message I and C Laundry Hub on Facebook. You can also use the Contact Us form below.';
-const price = value => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(Number(value));
-const valid = value => value !== undefined && value !== null && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0;
-
 export function answerQuestion(question, settings = {}) {
   const q = question.toLowerCase().trim();
   if (/price|cost|magkano|presyo|per load|extra|add.?on|kilo|\bkg\b/.test(q)) {
-    if (!valid(settings.bundleprice) || !valid(settings.bundlekg) || Number(settings.bundlekg) <= 0)
-      return { text: 'Current prices are unavailable right now. Please contact the shop for the latest rates.', section: 'contact' };
-    return { text: `Our base laundry bundle is ${price(settings.bundleprice)} for up to ${Number(settings.bundlekg)} kg.${valid(settings.excesskgprice) ? ` Excess weight costs ${price(settings.excesskgprice)} per additional kg, rounded up to the next whole kg.` : ''}${valid(settings.addonprice) ? ` Add-ons cost ${price(settings.addonprice)} per unit.` : ''} Staff will confirm your final total after weighing your laundry.`, section: 'contact' };
+    return { text: 'Prices are configured separately for each service, such as regular laundry, comforters, pads, and air-dry-only gowns. Add-on prices also depend on the selected service and branch. Please contact the shop so staff can confirm the current per-load rate and final total.', section: 'contact' };
   }
   if (/location|address|branch|map|directions|(?:where|saan).*(?:shop|store|located|kayo)/.test(q))
     return { text: 'Our listed shop address is Paz Street, Brgy. 7, Balayan, Batangas. Contact management for directions or details about other branches.', section: 'contact', map: true };

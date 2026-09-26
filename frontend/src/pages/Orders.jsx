@@ -3,7 +3,6 @@ import {
   ArrowRight,
   CheckCircle2,
   Clock,
-  Edit2,
   LayoutGrid,
   List,
   Loader2,
@@ -21,12 +20,13 @@ import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { sendEmail, sendSms } from "../services/api/notificationApi";
-import { cancelBranchOrder, collectBranchOrderPayment, createBranchOrder, getVisibleCustomers, lookupCustomerByPhone, settleAndReleaseBranchOrder, transitionBranchOrder } from "../services/api/operationsApi";
+import { cancelBranchOrder, collectBranchOrderPayment, createBranchOrder, getVisibleCustomers, lookupCustomerByPhone, settleAndReleaseBranchOrder, transitionAllOrderServiceItems, transitionBranchOrder } from "../services/api/operationsApi";
 import { useAuth } from "../context/AuthContext";
 import { PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from "../components/LoadingButton";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { isValidPhilippineMobile } from "../utils/validation";
+import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
 
 const PROCESS_FLOW = [
   "received",
@@ -147,7 +147,7 @@ async function sendOrderReceivedEmail(
 }
 
 export default function Orders() {
-  const { role } = useAuth();
+  const { role, branch } = useAuth();
   const isAdmin = role === "admin";
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showAdditionalPaymentModal, setShowAdditionalPaymentModal] = useState(false);
@@ -183,6 +183,7 @@ export default function Orders() {
   const [correctionReason, setCorrectionReason] = useState("");
   const [tableLoading, setTableLoading] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
+  const orderRequestId = useRef(globalThis.crypto.randomUUID());
   const hasLoadedOrders = useRef(false);
   const paginationRefresh = useRef(false);
 
@@ -199,7 +200,6 @@ export default function Orders() {
   };
   const BUNDLE_KG = Number(mappedSettings.bundleKg) || 8;
   const BUNDLE_PRICE = Number(mappedSettings.bundlePrice) || 200;
-  const SOAP_PRICE = Number(mappedSettings.addonPrice) || 15;
   const EXCESS_KG_PRICE = Number(settings.excesskgprice) || 30;
 
   const [form, setForm] = useState({
@@ -207,8 +207,7 @@ export default function Orders() {
     customer_phone: "",
     customer_name: "",
     customer_email: "",
-    service_type_id: "",
-    weight_kg: "",
+    items: [{ service_type_id: "", weight_kg: "", quantity: "1", notes: "" }],
     notes: "",
     payment_method: "cash",
     payment_status: "unpaid",
@@ -216,21 +215,25 @@ export default function Orders() {
     branch: "Main - Brgy 7",
     addons: {},
   });
-  // Staff data is already branch-scoped by the backend. Admins may create an
-  // order for any branch, so their add-on list is narrowed immediately when
-  // the branch selection changes.
-  const branchInventoryItems = isAdmin
-    ? soapItems.filter((item) => item.branch === form.branch)
-    : soapItems;
+  // Add-ons are always taken from the selected order branch. The database
+  // repeats this check and refuses cross-branch item IDs before any stock is
+  // deducted; this filter prevents a staff member from seeing them in the UI.
+  const selectedAddOnBranch = isAdmin ? form.branch : branch;
+  const selectedServiceIds = new Set(form.items.map(item => String(item.service_type_id)).filter(Boolean));
+  const branchInventoryItems = soapItems.filter(
+    item => item.branch === selectedAddOnBranch && selectedServiceIds.has(String(item.service_type_id)),
+  );
 
   const [phoneMatch, setPhoneMatch] = useState(null); // null = not searched, object = found, false = not found
   const [loyaltyPreview, setLoyaltyPreview] = useState(null);
 
-  function calcPrice(weight, addons) {
-    if (!weight || weight <= 0) return 0;
+  function calcPrice(items, addons) {
+    const serviceTotal = orderItemsTotal(items, serviceTypes, settings);
+    const weight = 0; // Bundle/excess pricing is now resolved per service item.
+    if (false) return 0;
 
     // 🔥 BASE PRICE
-    let laundryPrice = BUNDLE_PRICE;
+    let laundryPrice = serviceTotal;
 
     // 🔥 EXCESS KG AFTER 8KG
     if (weight > BUNDLE_KG) {
@@ -240,12 +243,11 @@ export default function Orders() {
     }
 
     // 🔥 ADD-ONS
-    const totalAddonUnits = Object.values(addons || {}).reduce(
-      (sum, qty) => sum + qty,
-      0,
-    );
-
-    return laundryPrice + totalAddonUnits * SOAP_PRICE;
+    const addonTotal = Object.entries(addons || {}).reduce((sum, [id, qty]) => {
+      const option = branchInventoryItems.find(item => String(item.id) === String(id));
+      return sum + (Number(qty) || 0) * (Number(option?.unit_price) || 0);
+    }, 0);
+    return laundryPrice + addonTotal;
   }
 
   function loyaltyPrice(rawTotal, reward) {
@@ -255,7 +257,8 @@ export default function Orders() {
     }
     // A free-load claim covers the standard base service only. Extra weight
     // and selected add-ons remain part of the order total.
-    return Math.max(0, rawTotal - BUNDLE_PRICE);
+    const firstService = serviceTypes.find(service => String(service.id) === String(form.items[0]?.service_type_id));
+    return Math.max(0, rawTotal - (Number(firstService?.bundle_price) || BUNDLE_PRICE));
   }
 
   function updateAddon(itemId, delta) {
@@ -282,7 +285,7 @@ export default function Orders() {
 
     let ordersQuery = supabase
       .from("orders")
-      .select("*, customers(name, phone, email)", { count: "exact" });
+      .select("*, customers(name, phone, email), order_items(*)", { count: "exact" });
 
     if (filter !== "all") {
       ordersQuery = ordersQuery.eq("status", filter);
@@ -298,17 +301,16 @@ export default function Orders() {
     const [ordersRes, custRes, soapRes, servicesRes] = await Promise.all([
       ordersQuery,
       getVisibleCustomers(),
-      supabase
-        .from("inventory_items")
-        .select("*, inventory_categories(name)")
-        .order("name"),
+      supabase.from("service_addon_items")
+        .select("id, branch_id, service_type_id, unit_price, inventory_items(id, name, unit, current_stock, branch, branch_id)")
+        .eq("is_active", true),
       supabase.from("service_types").select("*").eq("is_active", true).order("name"),
     ]);
 
     // 🔥 fetch ALL orders for search (no pagination)
     const { data: allData } = await supabase
       .from("orders")
-      .select("*, customers(name, phone, email)")
+      .select("*, customers(name, phone, email), order_items(*)")
       .order("created_at", { ascending: false });
 
     const error = ordersRes.error || custRes.error || soapRes.error || servicesRes.error;
@@ -320,7 +322,12 @@ export default function Orders() {
     setOrders(sortedVisible.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE));
     setTotalCount(sortedVisible.length);
     setCustomers(custRes.data || []);
-    setSoapItems(soapRes.data || []);
+    setSoapItems((soapRes.data || []).map(option => ({
+      id: option.id, service_type_id: option.service_type_id, unit_price: option.unit_price,
+      inventory_item_id: option.inventory_items?.id, name: option.inventory_items?.name,
+      unit: option.inventory_items?.unit, current_stock: option.inventory_items?.current_stock,
+      branch: option.inventory_items?.branch, branch_id: option.inventory_items?.branch_id,
+    })).filter(option => option.inventory_item_id));
     setServiceTypes(servicesRes.data || []);
     } catch (error) {
       if (!background) setLoadError(error.message || "Unable to load order data.");
@@ -344,7 +351,7 @@ export default function Orders() {
   }, [filter]);
 
   // Realtime: refresh when orders, customers, or inventory change
-  useRealtime(["orders", "customers", "inventory_items"], () => loadData(true));
+  useRealtime(["orders", "order_items", "customers", "inventory_items", "service_addon_items"], () => loadData(true));
   useEffect(() => {
     async function loadSettings() {
       const { data, error } = await supabase
@@ -372,6 +379,37 @@ export default function Orders() {
     setPage(nextPage);
   }
 
+  function updateServiceItem(index, changes) {
+    setForm((current) => {
+      const items = current.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...changes } : item);
+      const selectedIds = new Set(items.map((item) => String(item.service_type_id)).filter(Boolean));
+      const selectedBranch = isAdmin ? current.branch : branch;
+      const addons = Object.fromEntries(Object.entries(current.addons).filter(([configurationId]) => {
+        const option = soapItems.find((candidate) => String(candidate.id) === String(configurationId));
+        return option?.branch === selectedBranch && selectedIds.has(String(option.service_type_id));
+      }));
+      return { ...current, items, addons };
+    });
+  }
+
+  function addServiceItem() {
+    setForm((current) => ({ ...current, items: [...current.items, { service_type_id: "", weight_kg: "", quantity: "1", notes: "" }] }));
+  }
+
+  function removeServiceItem(index) {
+    setForm((current) => {
+      if (current.items.length === 1) return current;
+      const items = current.items.filter((_, itemIndex) => itemIndex !== index);
+      const selectedIds = new Set(items.map((item) => String(item.service_type_id)).filter(Boolean));
+      const selectedBranch = isAdmin ? current.branch : branch;
+      const addons = Object.fromEntries(Object.entries(current.addons).filter(([configurationId]) => {
+        const option = soapItems.find((candidate) => String(candidate.id) === String(configurationId));
+        return option?.branch === selectedBranch && selectedIds.has(String(option.service_type_id));
+      }));
+      return { ...current, items, addons };
+    });
+  }
+
   function openNew() {
     setEditing(null);
     setForm({
@@ -379,8 +417,7 @@ export default function Orders() {
       customer_phone: "",
       customer_name: "",
       customer_email: "",
-      service_type_id: "",
-      weight_kg: "",
+      items: [{ service_type_id: "", weight_kg: "", quantity: "1", notes: "" }],
       notes: "",
       payment_method: "cash",
       payment_status: "unpaid",
@@ -390,6 +427,7 @@ export default function Orders() {
     });
     setPhoneMatch(null);
     setLoyaltyPreview(null);
+    orderRequestId.current = globalThis.crypto.randomUUID();
     setShowModal(true);
   }
 
@@ -400,8 +438,7 @@ export default function Orders() {
       customer_phone: order.customers?.phone || "",
       customer_name: order.customers?.name || "",
       customer_email: order.customers?.email || "",
-      service_type_id: order.service_type_id || "",
-      weight_kg: order.weight_kg,
+      items: order.order_items?.length ? order.order_items.map((item) => ({ service_type_id: item.service_type_id || "", weight_kg: item.weight_kg ?? "", quantity: item.quantity ?? "1", notes: item.notes || "" })) : [{ service_type_id: order.service_type_id || "", weight_kg: order.weight_kg ?? "", quantity: "1", notes: "" }],
       notes: order.notes || "",
       payment_method: order.payment_method || "cash",
       payment_status: order.payment_status,
@@ -459,20 +496,23 @@ export default function Orders() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (savingOrder) return;
+    if (editing?.order_items?.length) {
+      return toast.error("Service items are locked after placement. Cancel and recreate the order if its services must change.");
+    }
     if (!form.customer_phone.trim())
       return toast.error("Phone number is required");
     if (!isValidPhilippineMobile(form.customer_phone))
       return toast.error("Phone number must start with 09 and contain exactly 11 digits");
     if (!form.customer_name.trim())
       return toast.error("Client name is required");
-    if (!editing && serviceTypes.length > 0 && !form.service_type_id)
-      return toast.error("Please select a service type");
+    if (!form.customer_email.trim())
+      return toast.error("Client email is required");
+    if (!form.items?.length || form.items.some((item) => !validServiceItem(item, serviceTypes.find((service) => String(service.id) === String(item.service_type_id)))))
+      return toast.error("Choose a service and enter its required weight or quantity.");
     if (isAdmin && !form.branch)
       return toast.error("Please assign this order to a branch");
 
-    const weight = parseFloat(form.weight_kg);
-    if (!weight || weight <= 0)
-      return toast.error("Please enter a valid weight");
+    const totalWeight = form.items.reduce((total, item) => total + (Number(item.weight_kg) || 0), 0);
 
     const addonEntries = Object.entries(form.addons).filter(
       ([, qty]) => qty > 0,
@@ -491,7 +531,7 @@ export default function Orders() {
       }
     }
 
-    const rawTotal = calcPrice(weight, form.addons);
+    const rawTotal = calcPrice(form.items, form.addons);
     const total_price = loyaltyPrice(rawTotal, loyaltyPreview);
     const amountPaid = parseFloat(form.amount_paid) || 0;
     const minRequired = total_price * 0.5;
@@ -515,10 +555,12 @@ export default function Orders() {
 
     const payload = {
       customer_id: form.customer_id || null,
-      service_type_id: form.service_type_id || null,
-      weight_kg: weight,
+      items: form.items,
+      service_type_id: form.items[0]?.service_type_id || null,
+      weight_kg: totalWeight || null,
       total_price,
       addons: form.addons, // ✅ now supported
+      client_request_id: orderRequestId.current,
       notes: form.notes,
       ...(!editing && {
         payment_method: form.payment_method,
@@ -545,10 +587,11 @@ export default function Orders() {
           customer: {
             name: form.customer_name.trim(),
             phone: form.customer_phone.trim(),
-            email: form.customer_email.trim() || null,
+            email: form.customer_email.trim(),
           },
           order: payload,
           addons: form.addons,
+          clientRequestId: orderRequestId.current,
           loyaltyRewardId: null,
         });
         orderData = result.data;
@@ -562,70 +605,6 @@ export default function Orders() {
       return toast.error(error.message);
     }
 
-    // Track stage start time for new orders
-    if (false && !editing && orderData) {
-    }
-
-    // New orders are stock-validated and deducted atomically by the backend
-    // for the selected branch. This legacy client-side code remains disabled.
-    if (false && !editing && orderData) {
-      try {
-        // 🔥 1. Compute loads
-        const loads = Math.ceil(weight / BUNDLE_KG);
-
-        // 🔥 2. Get ALL inventory items
-        const { data: allItems, error } = await supabase
-          .from("inventory_items")
-          .select("*");
-
-        if (error) throw error;
-
-        const operations = [];
-
-        for (const item of allItems) {
-          const usagePerLoad = Number(item.usage_per_load) || 0;
-
-          // ✅ DEFAULT deduction (always applies)
-          const defaultDeduction = usagePerLoad * loads;
-
-          // ✅ ADD-ON deduction (only if selected)
-          const addonQty = form.addons[item.id] || 0;
-
-          // ✅ TOTAL deduction
-          const totalDeduction = defaultDeduction + addonQty;
-
-          if (totalDeduction <= 0) continue;
-
-          const newStock = Math.max(
-            0,
-            Number(item.current_stock) - totalDeduction,
-          );
-
-          // 🔥 Update stock
-          operations.push(
-            supabase
-              .from("inventory_items")
-              .update({ current_stock: newStock })
-              .eq("id", item.id),
-          );
-
-          // 🔥 Log usage
-          operations.push(
-            supabase.from("inventory_usage_log").insert({
-              item_id: item.id,
-              quantity_used: totalDeduction,
-              order_id: orderData.id,
-            }),
-          );
-        }
-
-        await Promise.all(operations);
-      } catch (err) {
-        console.error("Inventory deduction error:", err);
-        toast.error("Failed to deduct inventory");
-      }
-    }
-
     // Send order received email for new orders
     if (
       !editing &&
@@ -637,8 +616,8 @@ export default function Orders() {
         orderData.order_number,
         form.customer_name.trim(),
         email,
-        "Laundry Service",
-        weight,
+        form.items.map((item) => serviceTypes.find((service) => String(service.id) === String(item.service_type_id))?.name || "Laundry service").join(", "),
+        totalWeight,
         total_price,
         orderData.estimated_ready_at,
       );
@@ -650,8 +629,8 @@ export default function Orders() {
         form.customer_phone.trim(),
         orderData.order_number,
         form.customer_name.trim(),
-        "Laundry Service",
-        weight,
+        form.items.map((item) => serviceTypes.find((service) => String(service.id) === String(item.service_type_id))?.name || "Laundry service").join(", "),
+        totalWeight,
         total_price,
         orderData.estimated_ready_at,
       );
@@ -758,7 +737,9 @@ export default function Orders() {
 
     setUpdatingOrderId(order.id);
     try {
-      if (PROCESS_FLOW.includes(newStatus) || newStatus === "released") {
+      if (["on_process", "ready"].includes(newStatus) && order.order_items?.length) {
+        await transitionAllOrderServiceItems(order.id, newStatus);
+      } else if (PROCESS_FLOW.includes(newStatus) || newStatus === "released") {
         await transitionBranchOrder(order.id, newStatus, correctionNote);
       } else {
         const { error } = await supabase
@@ -803,6 +784,9 @@ export default function Orders() {
   function canDropIntoStage(order, targetStatus) {
     const currentIndex = PROCESS_FLOW.indexOf(order?.status);
     const targetIndex = PROCESS_FLOW.indexOf(targetStatus);
+    // Reversing a parent order without reversing each service item and its
+    // stock consumption would corrupt the multi-service workflow.
+    if (order?.order_items?.length && targetIndex < currentIndex) return false;
     return currentIndex >= 0 && targetIndex >= 0 && Math.abs(targetIndex - currentIndex) === 1;
   }
 
@@ -1025,7 +1009,7 @@ export default function Orders() {
                           )}
                           <div className="kanban-card-details">
                             <span className="kanban-card-kg">
-                              {order.weight_kg}kg
+                              {order.order_items?.length ? `${order.order_items.length} service${order.order_items.length === 1 ? '' : 's'}` : `${order.weight_kg}kg`}
                             </span>
                             <span className="kanban-card-price">
                               {"\u20B1"}
@@ -1090,7 +1074,7 @@ export default function Orders() {
                   <th>Order #</th>
                   <th>Customer</th>
                   {isAdmin && <th className="orders-column-branch">Branch</th>}
-                  <th className="orders-column-weight">Weight</th>
+                  <th className="orders-column-weight">Services</th>
                   <th>Status</th>
                   <th className="orders-column-eta">Estimated Ready</th>
                   <th className="orders-column-payment">Payment</th>
@@ -1128,7 +1112,9 @@ export default function Orders() {
                           {order.branch || "Unassigned"}
                         </td>
                       )}
-                      <td className="orders-column-weight">{order.weight_kg} kg</td>
+                      <td className="orders-column-weight" title={(order.order_items || []).map((item) => item.service_name_snapshot).join(', ')}>
+                        {order.order_items?.length ? `${order.order_items[0].service_name_snapshot}${order.order_items.length > 1 ? ` +${order.order_items.length - 1}` : ''}` : `${order.weight_kg} kg`}
+                      </td>
                       <td>
                         <div className="status-track">
                           <div className="status-dots">
@@ -1223,15 +1209,6 @@ export default function Orders() {
                       </td>
                       <td>
                         <div className="orders-row-actions">
-                          {order.status !== "cancelled" && (
-                            <button
-                              className="btn-icon"
-                              title="Edit"
-                              onClick={() => openEdit(order)}
-                            >
-                              <Edit2 size={16} />
-                            </button>
-                          )}
                           {!['released', 'cancelled'].includes(order.status) && Number(order.amount_paid || 0) < Number(order.total_price || 0) && (
                             <button
                               className="btn-icon"
@@ -1448,7 +1425,7 @@ export default function Orders() {
                 <div className="order-section">
                   <div className="order-section-title">Client & Service</div>
                   <div className="form-row">
-                    {serviceTypes.length > 0 && (
+                    {false && serviceTypes.length > 0 && (
                       <div className="form-group">
                         <label>Service Type *</label>
                         <select
@@ -1572,10 +1549,11 @@ export default function Orders() {
                       </div>
                     )}
                   </div>
-                  {/* Show email input for new clients */}
-                  {phoneMatch === false && form.customer_phone.length >= 11 && (
+                  {/* Every client must have an email. Existing emails are shown
+                      read-only; older client records without one can be completed here. */}
+                  {!editing && form.customer_phone.length >= 11 && (
                     <div className="form-group">
-                      <label>Client Email</label>
+                      <label>Client Email *</label>
                       <input
                         className="form-control"
                         type="email"
@@ -1587,6 +1565,8 @@ export default function Orders() {
                             customer_email: e.target.value,
                           }))
                         }
+                        required
+                        disabled={Boolean(phoneMatch?.email)}
                       />
                       <span
                         style={{
@@ -1608,22 +1588,33 @@ export default function Orders() {
                       </span>
                     </div>
                   )}
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>Weight (kg) *</label>
-                      <input
-                        className="form-control"
-                        type="number"
-                        step="0.1"
-                        min="0.1"
-                        placeholder="e.g. 3.5"
-                        value={form.weight_kg}
-                        onChange={(e) =>
-                          setForm((f) => ({ ...f, weight_kg: e.target.value }))
-                        }
-                        required
-                      />
-                    </div>
+                  <div className="order-section" style={{ marginTop: 16, marginBottom: 0 }}>
+                    <div className="order-section-title">Services</div>
+                    {form.items.map((item, index) => {
+                      const service = serviceTypes.find((candidate) => String(candidate.id) === String(item.service_type_id));
+                      const inputLabel = pricingInputLabel(service);
+                      const subtotal = serviceItemSubtotal(item, service, settings);
+                      return <div key={index} className="pricing-card" style={{ marginBottom: 10 }}>
+                        <div className="form-row">
+                          <div className="form-group" style={{ flex: 2 }}>
+                            <label>Service {index + 1} *</label>
+                            <select className="form-control" value={item.service_type_id} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { service_type_id: event.target.value, weight_kg: '', quantity: '1' })} required>
+                              <option value="">Select service</option>
+                              {serviceTypes.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
+                            </select>
+                          </div>
+                          {inputLabel && <div className="form-group">
+                            <label>{inputLabel} *</label>
+                            <input className="form-control" type="number" step="0.1" min="0.1" value={item.weight_kg} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { weight_kg: event.target.value })} required />
+                          </div>}
+                          <div className="form-group" style={{ alignSelf: 'end' }}>
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => removeServiceItem(index)} disabled={form.items.length === 1 || Boolean(editing && !['received'].includes(editing.status))}>Remove</button>
+                          </div>
+                        </div>
+                        {service && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{service.processing_type === 'air_dry_only' ? 'Air-dry only' : 'Full service'} · Subtotal: ₱{subtotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>}
+                      </div>;
+                    })}
+                    {!editing || editing.status === 'received' ? <button type="button" className="btn btn-secondary btn-sm" onClick={addServiceItem}><Plus size={15} /> Add another service</button> : <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 13 }}>Service details are locked after processing starts so inventory remains accurate.</p>}
                   </div>
                 </div>
 
@@ -1631,9 +1622,7 @@ export default function Orders() {
                 <div className="order-section">
                   <div className="order-section-title">
                     Add-ons{" "}
-                    <span className="order-section-optional">
-                      ₱{SOAP_PRICE} each
-                    </span>
+                    <span className="order-section-optional">Available for the selected services</span>
                   </div>
                   <div className="addon-grid">
                     {branchInventoryItems.map((item) => {
@@ -1647,7 +1636,9 @@ export default function Orders() {
                           <div className="addon-info">
                             <span className="addon-name">{item.name}</span>
                             <span className="addon-stock">
-                              {item.current_stock} {item.unit} in stock
+                              {serviceTypes.find((service) => String(service.id) === String(item.service_type_id))?.name || "Service"}
+                              {" · "}₱{Number(item.unit_price || 0).toLocaleString()} / {item.unit}
+                              {" · "}{item.current_stock} {item.unit} in stock
                             </span>
                           </div>
                           <div className="addon-qty">
@@ -1704,8 +1695,13 @@ export default function Orders() {
                     </div>
                   )}
                   <div className="pricing-card">
-                    <div className="pricing-header">Price Breakdown</div>
-                    <div className="pricing-row">
+                      <div className="pricing-header">Price Breakdown</div>
+                    {form.items.map((serviceItem, index) => {
+                      const service = serviceTypes.find((candidate) => String(candidate.id) === String(serviceItem.service_type_id));
+                      const unit = ` · ${serviceItem.weight_kg || 0} kg`;
+                      return <div key={`summary-${index}`} className="pricing-row"><span>{service?.name || 'Service'}{unit}</span><span>₱{serviceItemSubtotal(serviceItem, service, settings).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span></div>;
+                    })}
+                    <div className="pricing-row" style={{ display: "none" }}>
                       <span>
                         Laundry (
                         {form.weight_kg
@@ -1742,12 +1738,12 @@ export default function Orders() {
                             <span>
                               {item?.name || "Add-on"} ×{qty}
                             </span>
-                            <span>₱{(qty * SOAP_PRICE).toLocaleString()}</span>
+                            <span>₱{(qty * Number(item?.unit_price || 0)).toLocaleString()}</span>
                           </div>
                         );
                       })}
                     {(() => {
-                      const rawTotal = calcPrice(parseFloat(form.weight_kg) || 0, form.addons);
+                      const rawTotal = calcPrice(form.items, form.addons);
                       const reward = loyaltyPreview;
                       const total = loyaltyPrice(rawTotal, reward);
                       return <>
@@ -1818,7 +1814,7 @@ export default function Orders() {
                         required
                       />
                       {(() => {
-                        const rawTotal = calcPrice(parseFloat(form.weight_kg) || 0, form.addons);
+                        const rawTotal = calcPrice(form.items, form.addons);
                         const reward = loyaltyPreview;
                         const total = loyaltyPrice(rawTotal, reward);
                         const paid = parseFloat(form.amount_paid) || 0;
@@ -1829,7 +1825,7 @@ export default function Orders() {
                             : paid >= total
                               ? "paid"
                               : "partial";
-                        if (!form.weight_kg || total <= 0) return null;
+                        if (!form.items?.length || total <= 0) return null;
                         return (
                           <div
                             style={{

@@ -28,8 +28,9 @@ const BRANCHES = [
 export default function Inventory() {
   const { role, branch } = useAuth();
   const [items, setItems] = useState([]);
-  const [categories, setCategories] = useState([]);
   const [usageLogs, setUsageLogs] = useState([]);
+  const [serviceRecipes, setServiceRecipes] = useState([]);
+  const [serviceOrderItems, setServiceOrderItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -49,13 +50,11 @@ export default function Inventory() {
 
   const [form, setForm] = useState({
     name: "",
-    category_id: "",
     branch: "Main - Brgy 7",
     unit: "pcs",
     current_stock: "",
     minimum_stock: "",
     cost_per_unit: "",
-    usage_per_load: "",
   });
 
   const loadData = useCallback(async (background = false) => {
@@ -64,16 +63,18 @@ export default function Inventory() {
       setLoadError("");
     }
     try {
-      const [itemsRes, catRes, usageRes] = await Promise.all([
-        supabase.from("inventory_items").select("*, inventory_categories(name)").order("name"),
-        supabase.from("inventory_categories").select("*").order("name"),
+      const [itemsRes, usageRes, recipesRes, orderItemsRes] = await Promise.all([
+        supabase.from("inventory_items").select("*").order("name"),
         supabase.from("inventory_usage_log").select("*").order("logged_at", { ascending: false }).limit(500),
+        supabase.from("service_inventory_requirements").select("inventory_item_id, service_type_id, branch_id, quantity_per_load, is_active").eq("is_active", true),
+        supabase.from("order_items").select("service_type_id, branch_id, loads, status, created_at").not("status", "eq", "cancelled").order("created_at", { ascending: false }).limit(1000),
       ]);
-      const error = itemsRes.error || catRes.error || usageRes.error;
+      const error = itemsRes.error || usageRes.error || recipesRes.error || orderItemsRes.error;
       if (error) throw error;
       setItems(itemsRes.data || []);
-      setCategories(catRes.data || []);
       setUsageLogs(usageRes.data || []);
+      setServiceRecipes(recipesRes.data || []);
+      setServiceOrderItems(orderItemsRes.data || []);
     } catch (error) {
       if (!background) setLoadError(error.message || "Unable to load inventory data.");
       else console.error("Background inventory refresh failed:", error);
@@ -90,16 +91,17 @@ export default function Inventory() {
   useRealtime(
     [
       "inventory_items",
-      "inventory_categories",
       "inventory_usage_log",
       "inventory_restocks",
+      "service_inventory_requirements",
+      "order_items",
     ],
     () => loadData(true),
   );
 
   // ===== STOCK PREDICTION =====
   function predictDaysLeft(item) {
-    const itemLogs = usageLogs.filter((l) => l.item_id === item.id);
+    const itemLogs = usageLogs.filter((l) => l.item_id === item.id && !l.reversed_at);
     if (itemLogs.length >= 2) {
       const sortedLogs = [...itemLogs].sort(
         (a, b) => new Date(a.logged_at) - new Date(b.logged_at),
@@ -117,24 +119,30 @@ export default function Inventory() {
         return Math.floor(Number(item.current_stock) / dailyUsage);
     }
 
-    // Fallback: estimate from usage_per_load and recent order volume
-    const usagePerLoad = Number(item.usage_per_load);
-    if (usagePerLoad > 0 && Number(item.current_stock) > 0) {
-      // Estimate loads per day from all orders in last 30 days
+    // For new items with limited usage history, estimate from the actual
+    // service recipes and loads placed during the last 30 days.
+    const recipes = serviceRecipes.filter(
+      (recipe) => recipe.inventory_item_id === item.id && recipe.branch_id === item.branch_id,
+    );
+    if (recipes.length && Number(item.current_stock) > 0) {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      // Use all usage logs (any item) as a proxy for loads processed
-      const recentLogs = usageLogs.filter(
-        (l) => new Date(l.logged_at) >= thirtyDaysAgo,
+      const recentItems = serviceOrderItems.filter(
+        (orderItem) => orderItem.branch_id === item.branch_id &&
+          new Date(orderItem.created_at) >= thirtyDaysAgo,
       );
-      // Count unique order_ids as loads
-      const uniqueOrders = new Set(
-        recentLogs.map((l) => l.order_id).filter(Boolean),
-      );
-      const loadsPerDay = Math.max(uniqueOrders.size / 30, 0.5); // assume at least 0.5 loads/day
-      const dailyUsage = usagePerLoad * loadsPerDay;
-      if (dailyUsage > 0)
-        return Math.floor(Number(item.current_stock) / dailyUsage);
+      const configuredUsage = recentItems.reduce((total, orderItem) => {
+        const recipe = recipes.find((candidate) => candidate.service_type_id === orderItem.service_type_id);
+        return total + (recipe ? Number(recipe.quantity_per_load) * Math.max(Number(orderItem.loads) || 1, 1) : 0);
+      }, 0);
+      if (configuredUsage > 0) {
+        const firstDate = recentItems.reduce((earliest, row) => {
+          const date = new Date(row.created_at);
+          return !earliest || date < earliest ? date : earliest;
+        }, null);
+        const observedDays = Math.max(1, Math.min(30, differenceInDays(new Date(), firstDate) + 1));
+        return Math.floor(Number(item.current_stock) / (configuredUsage / observedDays));
+      }
     }
 
     return null;
@@ -144,13 +152,11 @@ export default function Inventory() {
     setEditing(null);
     setForm({
       name: "",
-      category_id: "",
       branch: role === "staff" ? branch : "Main - Brgy 7",
       unit: "pcs",
       current_stock: "",
       minimum_stock: "",
       cost_per_unit: "",
-      usage_per_load: "",
     });
     setShowModal(true);
   }
@@ -159,13 +165,11 @@ export default function Inventory() {
     setEditing(item);
     setForm({
       name: item.name,
-      category_id: item.category_id || "",
       branch: item.branch || "Main - Brgy 7",
       unit: item.unit,
       current_stock: item.current_stock,
       minimum_stock: item.minimum_stock,
       cost_per_unit: item.cost_per_unit,
-      usage_per_load: item.usage_per_load,
     });
     setShowModal(true);
   }
@@ -178,13 +182,15 @@ export default function Inventory() {
       current_stock: parseFloat(form.current_stock) || 0,
       minimum_stock: parseFloat(form.minimum_stock) || 0,
       cost_per_unit: parseFloat(form.cost_per_unit) || 0,
-      usage_per_load: parseFloat(form.usage_per_load) || 0,
-      category_id: form.category_id || null,
     };
 
     setSavingItem(true);
     let error;
     if (editing) {
+      delete payload.current_stock;
+      delete payload.branch;
+      delete payload.branch_id;
+      delete payload.unit;
       ({ error } = await supabase
         .from("inventory_items")
         .update(payload)
@@ -349,14 +355,13 @@ export default function Inventory() {
                 <th>Min Level</th>
                 <th>Status</th>
                 <th>Forecast</th>
-                <th>Cost/Unit</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={role === "admin" ? 8 : 7} className="empty-state">
+                  <td colSpan={role === "admin" ? 7 : 6} className="empty-state">
                     <p>No items found</p>
                   </td>
                 </tr>
@@ -496,7 +501,6 @@ export default function Inventory() {
                           </span>
                         )}
                       </td>
-                      <td>₱{Number(item.cost_per_unit).toLocaleString()}</td>
                       <td>
                         <div style={{ display: "flex", gap: 4 }}>
                           <button
@@ -560,23 +564,6 @@ export default function Inventory() {
                       required
                     />
                   </div>
-                  <div className="form-group">
-                    <label>Category</label>
-                    <select
-                      className="form-control"
-                      value={form.category_id}
-                      onChange={(e) =>
-                        setForm((f) => ({ ...f, category_id: e.target.value }))
-                      }
-                    >
-                      <option value="">No Category</option>
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
                 </div>
                 <div className="form-row">
                   {/* BRANCH */}
@@ -588,6 +575,7 @@ export default function Inventory() {
                       <select
                         className="form-control"
                         value={form.branch}
+                        disabled={Boolean(editing)}
                         onChange={(e) =>
                           setForm((f) => ({
                             ...f,
@@ -611,6 +599,7 @@ export default function Inventory() {
                     <select
                       className="form-control"
                       value={form.unit}
+                      disabled={Boolean(editing)}
                       onChange={(e) =>
                         setForm((f) => ({
                           ...f,
@@ -638,6 +627,7 @@ export default function Inventory() {
                       step="0.01"
                       placeholder="0"
                       value={form.current_stock}
+                      disabled={Boolean(editing)}
                       onChange={(e) =>
                         setForm((f) => ({
                           ...f,
@@ -646,6 +636,7 @@ export default function Inventory() {
                       }
                       required
                     />
+                    {editing && <span className="form-hint">Use the Restock action to increase stock. Order usage and cancellations update it automatically.</span>}
                   </div>
                   <div className="form-group">
                     <label>Minimum Stock Level</label>
@@ -664,19 +655,9 @@ export default function Inventory() {
                     />
                   </div>
                 </div>
-                <div className="form-group">
-                  <label>Usage per Load (for predictions)</label>
-                  <input
-                    className="form-control"
-                    type="number"
-                    step="0.0001"
-                    placeholder="Amount used per laundry load"
-                    value={form.usage_per_load}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, usage_per_load: e.target.value }))
-                    }
-                  />
-                </div>
+                <p className="form-hint">
+                  Automatic deductions are configured per service and branch from the Services page. Inventory forecasts use those configured items together with recorded usage.
+                </p>
               </div>
               <div className="modal-footer">
                 <button
