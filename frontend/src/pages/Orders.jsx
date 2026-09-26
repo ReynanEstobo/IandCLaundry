@@ -474,6 +474,9 @@ export default function Orders() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (savingOrder) return;
+    if (editing?.order_items?.length) {
+      return toast.error("Service items are locked after placement. Cancel and recreate the order if its services must change.");
+    }
     if (!form.customer_phone.trim())
       return toast.error("Phone number is required");
     if (!isValidPhilippineMobile(form.customer_phone))
@@ -819,6 +822,9 @@ export default function Orders() {
   function canDropIntoStage(order, targetStatus) {
     const currentIndex = PROCESS_FLOW.indexOf(order?.status);
     const targetIndex = PROCESS_FLOW.indexOf(targetStatus);
+    // Reversing a parent order without reversing each service item and its
+    // stock consumption would corrupt the multi-service workflow.
+    if (order?.order_items?.length && targetIndex < currentIndex) return false;
     return currentIndex >= 0 && targetIndex >= 0 && Math.abs(targetIndex - currentIndex) === 1;
   }
 

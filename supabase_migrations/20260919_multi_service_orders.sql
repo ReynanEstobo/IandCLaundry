@@ -45,6 +45,7 @@ WHERE NOT EXISTS (SELECT 1 FROM public.service_types s WHERE lower(s.name) = low
 CREATE TABLE IF NOT EXISTS public.order_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   order_id UUID NOT NULL REFERENCES public.orders(id) ON DELETE RESTRICT,
+  branch_id UUID REFERENCES public.branches(id) ON DELETE RESTRICT,
   service_type_id UUID REFERENCES public.service_types(id) ON DELETE RESTRICT,
   service_name_snapshot TEXT NOT NULL,
   pricing_type_snapshot TEXT NOT NULL CHECK (pricing_type_snapshot IN ('bundle', 'per_kg', 'per_piece', 'fixed', 'legacy')),
@@ -57,6 +58,7 @@ CREATE TABLE IF NOT EXISTS public.order_items (
   notes TEXT,
   processing_started_at TIMESTAMPTZ,
   completed_at TIMESTAMPTZ,
+  last_updated_by_staff_id UUID REFERENCES public.staff(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK (weight_kg IS NULL OR weight_kg > 0),
@@ -64,6 +66,11 @@ CREATE TABLE IF NOT EXISTS public.order_items (
   CHECK (unit_price_snapshot >= 0),
   CHECK (subtotal >= 0)
 );
+-- These fields make branch scoping and the audit trail explicit even for an
+-- item that is viewed without joining back to its parent order.
+ALTER TABLE public.order_items
+  ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES public.branches(id) ON DELETE RESTRICT,
+  ADD COLUMN IF NOT EXISTS last_updated_by_staff_id UUID REFERENCES public.staff(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON public.order_items(order_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_order_items_service ON public.order_items(service_type_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_order_items_status ON public.order_items(order_id, status);
@@ -86,9 +93,13 @@ CREATE INDEX IF NOT EXISTS idx_service_inventory_requirements_service_branch
 ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_inventory_requirements ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Authenticated order item access" ON public.order_items;
-CREATE POLICY "Authenticated order item access" ON public.order_items FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Authenticated order item read access" ON public.order_items;
+CREATE POLICY "Authenticated order item read access" ON public.order_items
+  FOR SELECT USING (auth.role() = 'authenticated');
 DROP POLICY IF EXISTS "Authenticated service recipe access" ON public.service_inventory_requirements;
-CREATE POLICY "Authenticated service recipe access" ON public.service_inventory_requirements FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Authenticated service recipe read access" ON public.service_inventory_requirements;
+CREATE POLICY "Authenticated service recipe read access" ON public.service_inventory_requirements
+  FOR SELECT USING (auth.role() = 'authenticated');
 
 ALTER TABLE public.inventory_usage_log
   ADD COLUMN IF NOT EXISTS order_item_id UUID REFERENCES public.order_items(id) ON DELETE SET NULL,
@@ -110,20 +121,64 @@ FOR EACH ROW EXECUTE FUNCTION public.capture_audit_change();
 -- Every historical order becomes one legacy item. Its stored total is kept as
 -- the snapshot because historic add-ons/discounts cannot be separated safely.
 INSERT INTO public.order_items(
-  order_id, service_type_id, service_name_snapshot, pricing_type_snapshot,
+  order_id, branch_id, service_type_id, service_name_snapshot, pricing_type_snapshot,
   processing_type_snapshot, weight_kg, quantity, unit_price_snapshot, subtotal,
-  status, processing_started_at, completed_at, created_at, updated_at
+  status, processing_started_at, completed_at, last_updated_by_staff_id, created_at, updated_at
 )
-SELECT o.id, o.service_type_id, COALESCE(s.name, 'Legacy laundry service'), 'legacy', 'legacy',
+SELECT o.id, o.branch_id, o.service_type_id, COALESCE(s.name, 'Legacy laundry service'), 'legacy', 'legacy',
   NULLIF(o.weight_kg, 0), 1, COALESCE(o.total_price, 0), COALESCE(o.total_price, 0),
   CASE o.status WHEN 'on_process' THEN 'on_process' WHEN 'ready' THEN 'completed'
     WHEN 'released' THEN 'completed' WHEN 'cancelled' THEN 'cancelled' ELSE 'received' END,
   o.processing_started_at,
   CASE WHEN o.status IN ('ready', 'released') THEN COALESCE(o.ready_at, o.actual_completion, o.updated_at) END,
+  COALESCE(o.last_updated_by_staff_id, o.created_by_staff_id),
   o.created_at, COALESCE(o.updated_at, o.created_at)
 FROM public.orders o
 LEFT JOIN public.service_types s ON s.id = o.service_type_id
 WHERE NOT EXISTS (SELECT 1 FROM public.order_items oi WHERE oi.order_id = o.id);
+
+UPDATE public.order_items oi
+SET branch_id = o.branch_id,
+    last_updated_by_staff_id = COALESCE(oi.last_updated_by_staff_id, o.last_updated_by_staff_id, o.created_by_staff_id)
+FROM public.orders o
+WHERE o.id = oi.order_id AND oi.branch_id IS NULL;
+
+-- A cancellation is final for every service item. The existing cancellation
+-- RPC still performs the corresponding inventory return from usage logs.
+CREATE OR REPLACE FUNCTION public.cancel_order_service_items()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NEW.status = 'cancelled' AND OLD.status IS DISTINCT FROM NEW.status THEN
+    UPDATE public.order_items
+    SET status = 'cancelled', updated_at = now(), last_updated_by_staff_id = NEW.cancelled_by_staff_id
+    WHERE order_id = NEW.id AND status <> 'cancelled';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS tr_cancel_order_service_items ON public.orders;
+CREATE TRIGGER tr_cancel_order_service_items
+AFTER UPDATE OF status ON public.orders
+FOR EACH ROW EXECUTE FUNCTION public.cancel_order_service_items();
+
+-- The legacy parent-order correction procedure cannot safely undo individual
+-- service work or recipe deductions. Multi-service orders are forward-only;
+-- cancel and recreate them if the services themselves must change.
+CREATE OR REPLACE FUNCTION public.prevent_multi_service_stage_rollback()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_old_rank INTEGER; v_new_rank INTEGER;
+BEGIN
+  IF NEW.status IS NOT DISTINCT FROM OLD.status OR NEW.status = 'cancelled' THEN RETURN NEW; END IF;
+  v_old_rank := CASE OLD.status WHEN 'received' THEN 1 WHEN 'on_process' THEN 2 WHEN 'ready' THEN 3 WHEN 'released' THEN 4 ELSE 0 END;
+  v_new_rank := CASE NEW.status WHEN 'received' THEN 1 WHEN 'on_process' THEN 2 WHEN 'ready' THEN 3 WHEN 'released' THEN 4 ELSE 0 END;
+  IF v_new_rank < v_old_rank AND EXISTS (SELECT 1 FROM public.order_items WHERE order_id = OLD.id) THEN
+    RAISE EXCEPTION 'Multi-service order stages cannot move backward. Cancel and recreate the order if its services must change.';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS tr_prevent_multi_service_stage_rollback ON public.orders;
+CREATE TRIGGER tr_prevent_multi_service_stage_rollback
+BEFORE UPDATE OF status ON public.orders
+FOR EACH ROW EXECUTE FUNCTION public.prevent_multi_service_stage_rollback();
 
 CREATE OR REPLACE FUNCTION public.order_item_price(
   p_pricing_type TEXT, p_unit_price NUMERIC, p_weight NUMERIC, p_quantity NUMERIC
@@ -256,11 +311,11 @@ BEGIN
 
   FOR v_entry IN SELECT value FROM jsonb_array_elements(v_resolved) LOOP
     INSERT INTO public.order_items(order_id, service_type_id, service_name_snapshot, pricing_type_snapshot,
-      processing_type_snapshot, weight_kg, quantity, unit_price_snapshot, subtotal, notes)
+      processing_type_snapshot, weight_kg, quantity, unit_price_snapshot, subtotal, notes, branch_id, last_updated_by_staff_id)
     VALUES (v_order.id, (v_entry->>'service_type_id')::UUID, v_entry->>'name', v_entry->>'pricing_type',
       v_entry->>'processing_type', NULLIF(v_entry->>'weight_kg', '')::NUMERIC,
       (v_entry->>'quantity')::NUMERIC, (v_entry->>'unit_price')::NUMERIC,
-      (v_entry->>'subtotal')::NUMERIC, NULLIF(v_entry->>'notes', ''));
+      (v_entry->>'subtotal')::NUMERIC, NULLIF(v_entry->>'notes', ''), p_branch_id, p_staff_id);
   END LOOP;
   IF v_reward_type IS NOT NULL THEN
     INSERT INTO public.loyalty_rewards(customer_id, earned_order_id, reward_type, status, discount_percent, free_load_kg, expires_at, redeemed_at, redeemed_order_id)
@@ -295,6 +350,19 @@ BEGIN
     RAISE EXCEPTION 'You can only process service items assigned to your branch';
   END IF;
   IF p_new_status = 'on_process' AND v_item.status = 'received' THEN
+    -- Stock for historical orders was already deducted when the order was
+    -- created under the old workflow. Never apply a new recipe to it again.
+    IF v_item.pricing_type_snapshot = 'legacy' THEN
+      UPDATE public.order_items
+      SET status = 'on_process', processing_started_at = COALESCE(processing_started_at, now()),
+          updated_at = now(), last_updated_by_staff_id = p_staff_id
+      WHERE id = v_item.id;
+      UPDATE public.orders
+      SET status = 'on_process', processing_started_at = COALESCE(processing_started_at, now()),
+          last_updated_by_staff_id = p_staff_id, updated_at = now()
+      WHERE id = v_order.id RETURNING * INTO v_result;
+      RETURN v_result;
+    END IF;
     -- Lock and validate every configured requirement before changing stock.
     FOR v_requirement IN SELECT r.*, i.name, i.unit, i.current_stock FROM public.service_inventory_requirements r
       JOIN public.inventory_items i ON i.id = r.inventory_item_id
@@ -343,11 +411,13 @@ BEGIN
       ON CONFLICT (deduction_key) WHERE deduction_key IS NOT NULL DO NOTHING;
       IF FOUND THEN UPDATE public.inventory_items SET current_stock = current_stock - v_addon.quantity WHERE id = v_addon.item_id::UUID; END IF;
     END LOOP;
-    UPDATE public.order_items SET status = 'on_process', processing_started_at = COALESCE(processing_started_at, now()), updated_at = now() WHERE id = v_item.id;
+    UPDATE public.order_items SET status = 'on_process', processing_started_at = COALESCE(processing_started_at, now()),
+      updated_at = now(), last_updated_by_staff_id = p_staff_id WHERE id = v_item.id;
     UPDATE public.orders SET status = 'on_process', processing_started_at = COALESCE(processing_started_at, now()), last_updated_by_staff_id = p_staff_id, updated_at = now() WHERE id = v_order.id RETURNING * INTO v_result;
     RETURN v_result;
   ELSIF p_new_status = 'completed' AND v_item.status = 'on_process' THEN
-    UPDATE public.order_items SET status = 'completed', completed_at = now(), updated_at = now() WHERE id = v_item.id;
+    UPDATE public.order_items SET status = 'completed', completed_at = now(), updated_at = now(),
+      last_updated_by_staff_id = p_staff_id WHERE id = v_item.id;
     IF NOT EXISTS (SELECT 1 FROM public.order_items WHERE order_id = v_order.id AND status NOT IN ('completed', 'cancelled')) THEN
       UPDATE public.orders SET status = 'ready', ready_at = now(), actual_completion = now(), last_updated_by_staff_id = p_staff_id, updated_at = now() WHERE id = v_order.id RETURNING * INTO v_result;
     ELSE

@@ -17,24 +17,41 @@ export default function ServiceManagement() {
   const [editing, setEditing] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [recipeSetupError, setRecipeSetupError] = useState('')
 
   const load = useCallback(async () => {
-    setLoading(true); setError('')
+    setLoading(true); setError(''); setRecipeSetupError('')
     const [serviceRes, recipeRes, branchRes, inventoryRes] = await Promise.all([
       runQuery('service_types', { operation: 'select', selection: '*', orders: [{ column: 'name', options: { ascending: true } }] }),
       runQuery('service_inventory_requirements', { operation: 'select', selection: '*' }),
       runQuery('branches', { operation: 'select', selection: 'id, name', orders: [{ column: 'name', options: { ascending: true } }] }),
       runQuery('inventory_items', { operation: 'select', selection: 'id, name, unit, branch_id, branch', orders: [{ column: 'name', options: { ascending: true } }] }),
     ])
-    const firstError = [serviceRes, recipeRes, branchRes, inventoryRes].find((result) => result.error)?.error
+    const firstError = [serviceRes, branchRes, inventoryRes].find((result) => result.error)?.error
     if (firstError) setError(firstError.message || 'Unable to load service configuration.')
-    else { setServices(serviceRes.data || []); setRequirements(recipeRes.data || []); setBranches(branchRes.data || []); setInventory(inventoryRes.data || []) }
+    else {
+      setServices((serviceRes.data || []).map((service) => ({
+        ...service,
+        // Old deployments do not have the 20260919 columns yet. Defaults
+        // keep the existing service list readable while setup is completed.
+        pricing_type: service.pricing_type || 'per_kg',
+        processing_type: service.processing_type || 'full_service',
+        unit_price: service.unit_price ?? service.price_per_kg ?? 0,
+      })))
+      setRequirements(recipeRes.data || [])
+      setBranches(branchRes.data || [])
+      setInventory(inventoryRes.data || [])
+      if (recipeRes.error) {
+        setRecipeSetupError('Inventory recipes are not available yet. Run and deploy supabase_migrations/20260919_multi_service_orders.sql, then reload this page.')
+      }
+    }
     setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
 
   async function saveService(event) {
     event.preventDefault()
+    if (recipeSetupError) return toast.error('Service configuration needs the 20260919 database migration before it can be saved.')
     const payload = { ...serviceForm, unit_price: Number(serviceForm.unit_price) || 0, estimated_minutes: Number(serviceForm.estimated_minutes) || 0 }
     const result = await runQuery('service_types', editing
       ? { operation: 'update', payload, filters: [{ type: 'eq', column: 'id', value: editing.id }], returning: true }
@@ -51,6 +68,7 @@ export default function ServiceManagement() {
   }
   async function saveRecipe(event) {
     event.preventDefault()
+    if (recipeSetupError) return toast.error('Inventory recipes need the 20260919 database migration before they can be saved.')
     const result = await runQuery('service_inventory_requirements', { operation: 'insert', payload: { ...recipeForm, quantity_per_unit: Number(recipeForm.quantity_per_unit) }, returning: true })
     if (result.error) return toast.error(result.error.message)
     toast.success('Inventory requirement saved.'); setRecipeForm(blankRecipe); load()
@@ -85,6 +103,7 @@ export default function ServiceManagement() {
     </div>
     <div className="card settings-card">
       <div className="settings-card-header"><div><h3>Service Inventory Requirements</h3><p>Choose which branch stock is consumed when a service item starts processing. No quantity is deducted when the order is merely received.</p></div></div>
+      {recipeSetupError && <div className="alert alert-warning" role="status">{recipeSetupError}</div>}
       <form onSubmit={saveRecipe}><div className="form-row"><div className="form-group"><label>Branch *</label><select className="form-control" required value={recipeForm.branch_id} onChange={(e) => setRecipeForm((f) => ({ ...f, branch_id: e.target.value, inventory_item_id: '' }))}><option value="">Select branch</option>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></div><div className="form-group"><label>Service *</label><select className="form-control" required value={recipeForm.service_type_id} onChange={(e) => setRecipeForm((f) => ({ ...f, service_type_id: e.target.value }))}><option value="">Select service</option>{services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></div><div className="form-group"><label>Inventory item *</label><select className="form-control" required value={recipeForm.inventory_item_id} onChange={(e) => setRecipeForm((f) => ({ ...f, inventory_item_id: e.target.value }))}><option value="">Select item</option>{selectedInventory.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.unit})</option>)}</select></div></div><div className="form-row"><div className="form-group"><label>Usage basis *</label><select className="form-control" value={recipeForm.usage_basis} onChange={(e) => setRecipeForm((f) => ({ ...f, usage_basis: e.target.value }))}><option value="per_kg">Per kilogram</option><option value="per_piece">Per piece</option><option value="per_order">Per order</option></select></div><div className="form-group"><label>Quantity per unit *</label><input className="form-control" required min="0.0001" step="0.0001" type="number" value={recipeForm.quantity_per_unit} onChange={(e) => setRecipeForm((f) => ({ ...f, quantity_per_unit: e.target.value }))} /></div></div><button className="btn btn-primary" type="submit"><Plus size={16} /> Add requirement</button></form>
       <div className="table-wrapper" style={{ marginTop: 18 }}><table><thead><tr><th>Branch</th><th>Service</th><th>Inventory item</th><th>Formula</th><th /></tr></thead><tbody>{requirements.map((requirement) => <tr key={requirement.id}><td>{branchNames.get(requirement.branch_id) || 'Branch'}</td><td>{names.get(requirement.service_type_id) || 'Service'}</td><td>{itemNames.get(requirement.inventory_item_id) || 'Item'}</td><td>{Number(requirement.quantity_per_unit)} × {requirement.usage_basis.replace('_', ' ')}</td><td><button className="btn btn-danger btn-sm" onClick={() => removeRecipe(requirement.id)}><Trash2 size={14} /></button></td></tr>)}</tbody></table></div>
     </div>
