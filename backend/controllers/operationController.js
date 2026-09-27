@@ -168,7 +168,7 @@ export async function transitionOrder(body, identity) {
   if (identity.role !== 'admin' && order.branch_id !== identity.branchId) {
     throw Object.assign(new Error('You can only update orders assigned to your branch.'), { status: 403 })
   }
-  if (nextStatus === 'on_process' || nextStatus === 'ready') {
+  if (!correctionReason && (nextStatus === 'on_process' || nextStatus === 'ready')) {
     const { data, error } = await database.rpc('transition_all_order_items', {
       p_order_id: orderId, p_staff_id: identity.staffId,
       p_new_status: nextStatus === 'ready' ? 'completed' : 'on_process',

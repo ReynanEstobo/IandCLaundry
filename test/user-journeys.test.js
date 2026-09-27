@@ -168,6 +168,32 @@ test('staff journey: starting an order uses the multi-service inventory workflow
   assert.equal(result.data.status, 'on_process')
 })
 
+test('staff journey: moving a garment backward uses the audited correction workflow', async t => {
+  let rpcName
+  let rpcArgs
+  withDatabaseMocks(t, {
+    from: () => queryResult({ id: 'order-1', branch_id: 'main-branch', status: 'ready' }),
+    rpc: async (name, args) => {
+      rpcName = name
+      rpcArgs = args
+      return { data: { id: 'order-1', status: 'on_process' }, error: null }
+    },
+  })
+  const result = await transitionOrder({
+    orderId: 'order-1', status: 'on_process', correctionReason: 'Marked ready by mistake',
+  }, {
+    staffId: 'staff-1', role: 'staff', branchId: 'main-branch', branch: 'Main Branch',
+  })
+  assert.equal(rpcName, 'transition_branch_order')
+  assert.deepEqual(rpcArgs, {
+    p_order_id: 'order-1',
+    p_staff_id: 'staff-1',
+    p_new_status: 'on_process',
+    p_correction_reason: 'Marked ready by mistake',
+  })
+  assert.equal(result.data.status, 'on_process')
+})
+
 test('staff journey: invalid orders never reach the database', async t => {
   let rpcCalled = false
   withDatabaseMocks(t, { rpc: async () => { rpcCalled = true; return { data: null, error: null } } })

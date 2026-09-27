@@ -228,7 +228,7 @@ export default function Orders() {
   const [loyaltyPreview, setLoyaltyPreview] = useState(null);
 
   function calcPrice(items, addons) {
-    const serviceTotal = orderItemsTotal(items, serviceTypes, settings);
+    const serviceTotal = orderItemsTotal(items, serviceTypes);
     const weight = 0; // Bundle/excess pricing is now resolved per service item.
     if (false) return 0;
 
@@ -258,7 +258,7 @@ export default function Orders() {
     // A free-load claim covers the standard base service only. Extra weight
     // and selected add-ons remain part of the order total.
     const firstService = serviceTypes.find(service => String(service.id) === String(form.items[0]?.service_type_id));
-    return Math.max(0, rawTotal - (Number(firstService?.bundle_price) || BUNDLE_PRICE));
+    return Math.max(0, rawTotal - Math.max(Number(firstService?.bundle_price ?? 0), 0));
   }
 
   function updateAddon(itemId, delta) {
@@ -737,7 +737,7 @@ export default function Orders() {
 
     setUpdatingOrderId(order.id);
     try {
-      if (["on_process", "ready"].includes(newStatus) && order.order_items?.length) {
+      if (!correctionNote && ["on_process", "ready"].includes(newStatus) && order.order_items?.length) {
         await transitionAllOrderServiceItems(order.id, newStatus);
       } else if (PROCESS_FLOW.includes(newStatus) || newStatus === "released") {
         await transitionBranchOrder(order.id, newStatus, correctionNote);
@@ -784,9 +784,6 @@ export default function Orders() {
   function canDropIntoStage(order, targetStatus) {
     const currentIndex = PROCESS_FLOW.indexOf(order?.status);
     const targetIndex = PROCESS_FLOW.indexOf(targetStatus);
-    // Reversing a parent order without reversing each service item and its
-    // stock consumption would corrupt the multi-service workflow.
-    if (order?.order_items?.length && targetIndex < currentIndex) return false;
     return currentIndex >= 0 && targetIndex >= 0 && Math.abs(targetIndex - currentIndex) === 1;
   }
 

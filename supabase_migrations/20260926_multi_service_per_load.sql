@@ -149,13 +149,25 @@ ALTER TABLE public.order_item_addons ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_inventory_requirements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.service_addon_items ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Authenticated order item read access" ON public.order_items;
-CREATE POLICY "Authenticated order item read access" ON public.order_items FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated order item read access" ON public.order_items FOR SELECT TO authenticated USING (
+  public.current_staff_role() = 'admin'
+  OR (public.current_staff_role() = 'staff' AND branch_id = public.current_staff_branch_id())
+);
 DROP POLICY IF EXISTS "Authenticated order item add-on read access" ON public.order_item_addons;
-CREATE POLICY "Authenticated order item add-on read access" ON public.order_item_addons FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated order item add-on read access" ON public.order_item_addons FOR SELECT TO authenticated USING (
+  public.current_staff_role() = 'admin'
+  OR (public.current_staff_role() = 'staff' AND branch_id = public.current_staff_branch_id())
+);
 DROP POLICY IF EXISTS "Authenticated service recipe read access" ON public.service_inventory_requirements;
-CREATE POLICY "Authenticated service recipe read access" ON public.service_inventory_requirements FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated service recipe read access" ON public.service_inventory_requirements FOR SELECT TO authenticated USING (
+  public.current_staff_role() = 'admin'
+  OR (public.current_staff_role() = 'staff' AND branch_id = public.current_staff_branch_id())
+);
 DROP POLICY IF EXISTS "Authenticated service add-on read access" ON public.service_addon_items;
-CREATE POLICY "Authenticated service add-on read access" ON public.service_addon_items FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated service add-on read access" ON public.service_addon_items FOR SELECT TO authenticated USING (
+  public.current_staff_role() = 'admin'
+  OR (public.current_staff_role() = 'staff' AND branch_id = public.current_staff_branch_id())
+);
 
 DROP TRIGGER IF EXISTS tr_audit_order_items ON public.order_items;
 CREATE TRIGGER tr_audit_order_items AFTER INSERT OR UPDATE OR DELETE ON public.order_items
@@ -340,7 +352,7 @@ CREATE OR REPLACE FUNCTION public.create_branch_order(
 ) RETURNS public.orders
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
-  v_customer_id UUID; v_customer_email TEXT; v_branch_name TEXT; v_order public.orders; v_service public.service_types;
+  v_customer_id UUID; v_customer_email TEXT; v_branch_name TEXT; v_order public.orders; v_service public.service_types; v_actor RECORD;
   v_entry JSONB; v_items JSONB; v_resolved JSONB := '[]'::JSONB; v_weight NUMERIC;
   v_subtotal NUMERIC; v_raw_total NUMERIC := 0; v_final_total NUMERIC; v_amount_paid NUMERIC;
   v_first_service UUID; v_first_bundle_price NUMERIC := 0; v_total_weight NUMERIC := 0;
@@ -365,6 +377,13 @@ BEGIN
 
   SELECT name INTO v_branch_name FROM public.branches WHERE id = p_branch_id AND is_active IS TRUE;
   IF v_branch_name IS NULL THEN RAISE EXCEPTION 'Selected branch does not exist or is inactive'; END IF;
+  SELECT id, role, branch_id INTO v_actor FROM public.staff
+  WHERE id = p_staff_id AND deleted_at IS NULL;
+  IF v_actor.id IS NULL THEN RAISE EXCEPTION 'A valid active staff account is required'; END IF;
+  IF lower(COALESCE(v_actor.role, 'staff')) <> 'admin'
+    AND v_actor.branch_id IS DISTINCT FROM p_branch_id THEN
+    RAISE EXCEPTION 'You can only create orders for your assigned branch';
+  END IF;
   IF COALESCE(trim(p_customer->>'phone'), '') = '' OR COALESCE(trim(p_customer->>'name'), '') = ''
     OR COALESCE(trim(p_customer->>'email'), '') = '' THEN
     RAISE EXCEPTION 'Customer name, phone, and email are required';
@@ -639,13 +658,26 @@ CREATE OR REPLACE FUNCTION public.transition_all_order_items(
   p_order_id UUID, p_staff_id UUID, p_new_status TEXT
 ) RETURNS public.orders
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-DECLARE v_item RECORD; v_result public.orders;
+DECLARE v_item RECORD; v_result public.orders; v_order public.orders; v_actor RECORD;
 BEGIN
+  IF p_new_status NOT IN ('on_process', 'completed') THEN
+    RAISE EXCEPTION 'Service items can only move to On Process or Completed';
+  END IF;
+  SELECT * INTO v_order FROM public.orders WHERE id = p_order_id FOR UPDATE;
+  IF v_order.id IS NULL THEN RAISE EXCEPTION 'Order not found'; END IF;
+  IF v_order.status IN ('released', 'cancelled') THEN RAISE EXCEPTION 'Released and cancelled orders are locked'; END IF;
+  SELECT id, role, branch_id INTO v_actor FROM public.staff
+  WHERE id = p_staff_id AND deleted_at IS NULL;
+  IF v_actor.id IS NULL THEN RAISE EXCEPTION 'A valid active staff account is required'; END IF;
+  IF lower(COALESCE(v_actor.role, 'staff')) <> 'admin'
+    AND v_actor.branch_id IS DISTINCT FROM v_order.branch_id THEN
+    RAISE EXCEPTION 'You can only process service items assigned to your branch';
+  END IF;
   FOR v_item IN SELECT id FROM public.order_items WHERE order_id = p_order_id
     AND status = CASE WHEN p_new_status = 'on_process' THEN 'received'
       WHEN p_new_status = 'completed' THEN 'on_process' ELSE NULL END ORDER BY created_at
   LOOP SELECT * INTO v_result FROM public.transition_order_item(v_item.id, p_staff_id, p_new_status); END LOOP;
-  IF v_result.id IS NULL THEN SELECT * INTO v_result FROM public.orders WHERE id = p_order_id; END IF;
+  IF v_result.id IS NULL THEN v_result := v_order; END IF;
   RETURN v_result;
 END $$;
 

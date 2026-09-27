@@ -12,6 +12,8 @@ test('multi-service migration applies and duplicate order requests deduct stock 
     CREATE FUNCTION uuid_generate_v4() RETURNS uuid LANGUAGE sql AS $$ SELECT gen_random_uuid() $$;
     CREATE SCHEMA auth;
     CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS $$ SELECT 'authenticated'::text $$;
+    CREATE FUNCTION current_staff_role() RETURNS text LANGUAGE sql AS $$ SELECT 'admin'::text $$;
+    CREATE FUNCTION current_staff_branch_id() RETURNS uuid LANGUAGE sql AS $$ SELECT NULL::uuid $$;
     CREATE TABLE branches (id uuid PRIMARY KEY DEFAULT uuid_generate_v4(), name text, is_active boolean DEFAULT true);
     CREATE TABLE staff (id uuid PRIMARY KEY DEFAULT uuid_generate_v4(), role text, branch_id uuid, deleted_at timestamptz);
     CREATE TABLE customers (id uuid PRIMARY KEY DEFAULT uuid_generate_v4(), name text, phone text, email text,
@@ -108,6 +110,18 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   await db.query('INSERT INTO branches(id,name) VALUES ($1,$2)', [otherBranchId, 'Other'])
   await db.query("INSERT INTO staff(id,role,branch_id) VALUES ($1,'staff',$2)", [otherStaffId, otherBranchId])
   await assert.rejects(call(order, otherBranchId, otherStaffId), /already been used by another staff account or branch/)
+  await assert.rejects(
+    call({ ...order, client_request_id: randomUUID() }, branchId, otherStaffId),
+    /only create orders for your assigned branch/,
+  )
+  await assert.rejects(
+    call({ ...order, client_request_id: randomUUID() }, branchId, randomUUID()),
+    /valid active staff account/,
+  )
+  await assert.rejects(
+    db.query("SELECT transition_all_order_items($1,$2,'on_process')", [first.rows[0].id, otherStaffId]),
+    /only process service items assigned to your branch/,
+  )
 
   await db.query("SELECT transition_all_order_items($1,$2,'on_process')", [first.rows[0].id, staffId])
   await db.query("SELECT transition_all_order_items($1,$2,'completed')", [first.rows[0].id, staffId])
