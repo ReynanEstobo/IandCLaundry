@@ -33,7 +33,8 @@ import { generateAiForecast, generateDecisionSupport } from "../services/geminiS
 import { LoadingVisual, PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from '../components/LoadingButton'
 import { analyticsPeriod, chartTooltipDate, dailyChartLabel, paymentChartData } from '../utils/chartDates'
-import { paymentTimestamp, recordedPaymentAmount } from '../utils/businessForecast'
+import { recordedPaymentAmount } from '../utils/businessForecast'
+import { analyticsDailyHistory, branchPerformance } from '../utils/analyticsMetrics'
 
 // ─── Custom tooltip ────────────────────────────────────────────────────────────
 const CustomTooltip = ({ active, payload, label }) => {
@@ -193,7 +194,7 @@ export default function Analytics() {
     loadAnalytics(hasLoadedAnalytics);
   }, [range, customRange.start, customRange.end, selectedBranch]);
 
-  useRealtime(["orders", "expenses"], () => {
+  useRealtime(["orders", "payments", "expenses"], () => {
     loadAnalytics(true);
   });
   useEffect(() => {
@@ -298,7 +299,7 @@ export default function Analytics() {
 
     const serviceTotals = new Map();
     const customerVisits = new Map();
-    const branchTotals = new Map();
+    const branchTotals = branchPerformance(orderData, paymentData);
     const staffTotals = new Map();
     let completedOrders = 0;
     let turnaroundTotalHours = 0;
@@ -311,14 +312,6 @@ export default function Analytics() {
       current.weightKg += Number(item.weight_kg) || 0;
       current.quantity += Number(item.quantity) || 0;
       serviceTotals.set(serviceName, current);
-    });
-    paymentData.forEach((payment) => {
-      const order = payment.orders || {};
-      const amount = recordedPaymentAmount(payment);
-      const branchRecord = branchTotals.get(order.branch || "Unassigned") || { name: order.branch || "Unassigned", orders: 0, revenue: 0 };
-      branchRecord.orders += 1;
-      branchRecord.revenue += amount;
-      branchTotals.set(branchRecord.name, branchRecord);
     });
     orderData.forEach((order) => {
       if (order.customer_id) customerVisits.set(order.customer_id, (customerVisits.get(order.customer_id) || 0) + 1);
@@ -336,7 +329,7 @@ export default function Analytics() {
     });
     setOperationalSummary({
       topServices: [...serviceTotals.values()].sort((a, b) => b.revenue - a.revenue || b.orders - a.orders).slice(0, 3),
-      topBranches: [...branchTotals.values()].sort((a, b) => b.revenue - a.revenue || b.orders - a.orders).slice(0, 3),
+      topBranches: branchTotals.sort((a, b) => b.revenue - a.revenue || b.orders - a.orders).slice(0, 3),
       staffPerformance: [...staffTotals.values()].sort((a, b) => b.completed - a.completed || b.created - a.created).slice(0, 3),
       lowStockItems: inventoryData.filter((item) => Number(item.current_stock) <= Number(item.minimum_stock)).slice(0, 5),
       repeatCustomers: [...customerVisits.values()].filter((visits) => visits > 1).length,
@@ -344,7 +337,7 @@ export default function Analytics() {
       averageTurnaroundHours: completedOrders ? turnaroundTotalHours / completedOrders : null,
     });
 
-    generateForecast(paymentData);
+    generateForecast(orderData, paymentData);
     setHasLoadedAnalytics(true);
 
     } catch (error) {
@@ -360,42 +353,25 @@ export default function Analytics() {
   }
 
 
-  function buildDailyHistory(paymentData) {
-    const totals = new Map();
-    paymentData.forEach((payment) => {
-      const date = format(new Date(paymentTimestamp(payment)), "yyyy-MM-dd");
-      const day = totals.get(date) || { date, revenue: 0, orders: 0, paidOrders: 0 };
-      day.orders += 1;
-      if (recordedPaymentAmount(payment) > 0) {
-        day.revenue += recordedPaymentAmount(payment);
-        day.paidOrders += 1;
-      }
-      totals.set(date, day);
-    });
-
-    return [...totals.values()].sort((a, b) => a.date.localeCompare(b.date));
-  }
-
-  async function generateForecast(paymentData, { forceRefresh = false } = {}) {
+  async function generateForecast(orderData, paymentData, { forceRefresh = false } = {}) {
     try {
       setForecastLoading(true);
 
       // ─────────────────────────────────────
       // GET HISTORICAL REVENUE
       // ─────────────────────────────────────
-      const historicalRevenue = [];
-
-      paymentData.forEach((payment) => {
-        historicalRevenue.push(recordedPaymentAmount(payment));
-      });
-
       // ─────────────────────────────────────
       // COMPUTE MOVING AVERAGE
       // ─────────────────────────────────────
-      const dailyHistory = buildDailyHistory(paymentData);
+      const dailyHistory = analyticsDailyHistory(orderData, paymentData);
       const averageRevenue =
         dailyHistory.length > 0
           ? dailyHistory.reduce((sum, day) => sum + day.revenue, 0) /
+            dailyHistory.length
+          : 0;
+      const averageOrders =
+        dailyHistory.length > 0
+          ? dailyHistory.reduce((sum, day) => sum + day.orders, 0) /
             dailyHistory.length
           : 0;
 
@@ -473,6 +449,8 @@ export default function Analytics() {
           date: label,
           forecastDate: format(futureDate, "yyyy-MM-dd"),
           predicted: predictedRevenue,
+          predictedOrders: Math.max(0, Math.round(averageOrders * (1 + i * growthRate))),
+          confidence: "low",
           isPrediction: true,
         });
       }
@@ -490,7 +468,7 @@ export default function Analytics() {
       const forecastVersion = `${dailyHistory.map((day) => `${day.date}:${day.revenue}:${day.orders}`).join("|")}_${futureForecast.map((item) => item.forecastDate).join("|")}`;
       // v2 intentionally ignores prior cached labels from before the
       // resilient forecast response format was introduced.
-      const forecastCacheKey = `ai_forecast_v3_${selectedBranch}_${range}_${forecastVersion}`;
+      const forecastCacheKey = `ai_forecast_v4_${selectedBranch}_${range}_${forecastVersion}`;
       const cachedForecast = localStorage.getItem(forecastCacheKey);
       const cachedForecastTime = localStorage.getItem(`${forecastCacheKey}_time`);
       const SIX_HOURS = 6 * 60 * 60 * 1000;
@@ -618,7 +596,7 @@ export default function Analytics() {
           averageOrderValue: stats.avgOrderValue || 0,
           operationalSignals: [
             ...operationalSummary.topServices.map((service) => `Service ${service.name}: ${service.orders} requests, ₱${service.revenue.toLocaleString()} in service sales.`),
-            ...operationalSummary.topBranches.map((branchMetric) => `Branch ${branchMetric.name}: ${branchMetric.orders} orders, ₱${branchMetric.revenue.toLocaleString()} received.`),
+            ...operationalSummary.topBranches.map((branchMetric) => `Branch ${branchMetric.name}: ${branchMetric.orders} orders created, ₱${branchMetric.revenue.toLocaleString()} received.`),
             ...operationalSummary.staffPerformance.map((staff) => `${staff.name}: ${staff.completed} released, ${staff.created} created orders.`),
             ...operationalSummary.lowStockItems.map((item) => `Low stock: ${item.name} has ${item.current_stock} ${item.unit} left at ${item.branch || "the selected branch"}.`),
             `Repeat customers in the selected scope: ${operationalSummary.repeatCustomers}.`,
@@ -741,7 +719,7 @@ Rules:
     if (manualAiRefresh || forecastLoading || aiLoading) return;
     setManualAiRefresh(true);
     try {
-      const freshForecast = await generateForecast(orders, { forceRefresh: true });
+      const freshForecast = await generateForecast(orders, payments, { forceRefresh: true });
       await generateAIInsights(orders, expenses, {
         forceRefresh: true,
         forecastOverride: freshForecast || forecastData,
@@ -796,7 +774,7 @@ Rules:
       ...operationalSummary.topServices.map((item) => [item.name, item.orders, item.revenue]),
       [],
       ["Branches by Cash Received"],
-      ["Branch", "Payment Entries", "Cash Received (PHP)"],
+      ["Branch", "Orders Created", "Cash Received (PHP)"],
       ...operationalSummary.topBranches.map((item) => [item.name, item.orders, item.revenue]),
       [],
       ["Decision Support Insights"],
@@ -834,7 +812,7 @@ Rules:
       <h2>Cash Received &amp; Expense Trend</h2><table><thead><tr><th>Period</th><th>Cash Received</th><th>Expenses</th></tr></thead><tbody>${trendRows}</tbody></table>
       <h2>Cash-Receipt Forecast</h2><table><thead><tr><th>Forecast date</th><th>Predicted cash received</th><th>Predicted orders</th><th>Confidence</th></tr></thead><tbody>${forecastRows}</tbody></table>
       <h2>Services by Service Sales</h2><table><thead><tr><th>Service</th><th>Service requests</th><th>Service sales</th></tr></thead><tbody>${serviceRows}</tbody></table>
-      <h2>Branches by Cash Received</h2><table><thead><tr><th>Branch</th><th>Payment entries</th><th>Cash received</th></tr></thead><tbody>${branchRows}</tbody></table>
+      <h2>Branches by Cash Received</h2><table><thead><tr><th>Branch</th><th>Orders created</th><th>Cash received</th></tr></thead><tbody>${branchRows}</tbody></table>
       <h2>AI-Assisted Decision Support</h2><ul>${insightMarkup}</ul><p class=\"footer\">Forecast method: ${html(forecastModel || "Not available")}. Forecasts are decision-support estimates and should be reviewed alongside current branch operations.</p>
       </body></html>`);
     popup.document.close();
@@ -1005,7 +983,7 @@ Rules:
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(245px, 1fr))", gap: 14 }}>
           <OperationalList icon={<TrendingUp size={17} />} title="High-Performing Services" accent="#8b5cf6" empty="No service data yet" items={operationalSummary.topServices.map((service) => `${service.name} · ${service.orders} service requests · ₱${service.revenue.toLocaleString()}`)} />
-          <OperationalList icon={<Building2 size={17} />} title="Top Branches" accent="#0ea5e9" empty="No branch data yet" items={operationalSummary.topBranches.map((branchMetric) => `${branchMetric.name} · ${branchMetric.orders} orders · ₱${branchMetric.revenue.toLocaleString()}`)} />
+          <OperationalList icon={<Building2 size={17} />} title="Top Branches" accent="#0ea5e9" empty="No branch data yet" items={operationalSummary.topBranches.map((branchMetric) => `${branchMetric.name} · ${branchMetric.orders} orders created · ₱${branchMetric.revenue.toLocaleString()}`)} />
           <OperationalList icon={<Users size={17} />} title="Staff Productivity" accent="#10b981" empty="No staff activity yet" items={operationalSummary.staffPerformance.map((staff) => `${staff.name} · ${staff.completed} released / ${staff.created} handled`)} />
         </div>
       </div>
