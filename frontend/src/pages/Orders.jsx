@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import {
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
   Clock,
   LayoutGrid,
   List,
@@ -15,7 +16,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
@@ -37,6 +38,7 @@ const STATUS_FILTERS = ["all", ...PROCESS_FLOW, "released", "cancelled"];
 const STATUS_LABELS = {
   received: "Received",
   on_process: "On Process",
+  completed: "Completed",
   ready: "Ready for pick-up",
   released: "Released",
   cancelled: "Cancelled",
@@ -54,6 +56,55 @@ const BRANCHES = [
   "2nd Branch - Brgy Calzada",
   "3rd Branch - Nasugbu",
 ];
+
+function serviceItemsForDisplay(order) {
+  if (order?.order_items?.length) return order.order_items;
+  return [{
+    id: `legacy-${order?.id}`,
+    service_name_snapshot: order?.service_types?.name || "Laundry service",
+    weight_kg: order?.weight_kg,
+    loads: 1,
+    subtotal: order?.total_price,
+    status: order?.status,
+    pricing_type_snapshot: "legacy",
+  }];
+}
+
+function OrderServicesDetail({ order, id }) {
+  const items = serviceItemsForDisplay(order);
+  return (
+    <section id={id} className="order-services-detail" aria-label={`Services in order ${order.order_number}`}>
+      <div className="order-services-detail-heading">
+        <div>
+          <span className="order-services-detail-eyebrow">Order services</span>
+          <strong>{order.order_number}</strong>
+        </div>
+        <span className="order-services-total">{items.length} service{items.length === 1 ? "" : "s"}</span>
+      </div>
+      <div className="order-services-detail-grid">
+        {items.map((item, index) => (
+          <article className="order-service-detail-card" key={item.id || `${order.id}-${index}`}>
+            <div className="order-service-detail-topline">
+              <div className="order-service-detail-name">
+                <span className="order-service-number">{index + 1}</span>
+                <strong>{item.service_name_snapshot || "Laundry service"}</strong>
+              </div>
+              <span className={`badge badge-${item.status || order.status}`}>
+                {STATUS_LABELS[item.status || order.status] || item.status || order.status}
+              </span>
+            </div>
+            <div className="order-service-detail-facts">
+              <span><small>Weight</small><b>{Number(item.weight_kg || 0).toLocaleString()} kg</b></span>
+              <span><small>Loads</small><b>{Number(item.loads || 1).toLocaleString()}</b></span>
+              <span><small>Subtotal</small><b>₱{Number(item.subtotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></span>
+            </div>
+            {item.notes && <p className="order-service-detail-notes">{item.notes}</p>}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function formatOrderEta(order) {
   if (!order?.estimated_ready_at) return "ETA unavailable";
@@ -176,6 +227,7 @@ export default function Orders() {
   const [searchInput, setSearchInput] = useState("");
   const [settings, setSettings] = useState({});
   const [viewMode, setViewMode] = useState("table");
+  const [expandedServicesOrderId, setExpandedServicesOrderId] = useState(null);
   const [dragOrder, setDragOrder] = useState(null);
   const [updatingOrderId, setUpdatingOrderId] = useState(null);
   const [correctionOrder, setCorrectionOrder] = useState(null);
@@ -1005,9 +1057,22 @@ export default function Orders() {
                             </div>
                           )}
                           <div className="kanban-card-details">
-                            <span className="kanban-card-kg">
-                              {order.order_items?.length ? `${order.order_items.length} service${order.order_items.length === 1 ? '' : 's'}` : `${order.weight_kg}kg`}
-                            </span>
+                            <button
+                              type="button"
+                              className="order-services-trigger order-services-trigger-board"
+                              draggable={false}
+                              aria-expanded={expandedServicesOrderId === order.id}
+                              aria-controls={`order-services-board-${order.id}`}
+                              onMouseDown={(event) => event.stopPropagation()}
+                              onDragStart={(event) => event.preventDefault()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setExpandedServicesOrderId((current) => current === order.id ? null : order.id);
+                              }}
+                            >
+                              <span>{order.order_items?.length ? `${order.order_items.length} service${order.order_items.length === 1 ? '' : 's'}` : "View service"}</span>
+                              <ChevronDown size={14} aria-hidden="true" />
+                            </button>
                             <span className="kanban-card-price">
                               {"\u20B1"}
                               {(Number(order.total_price) || 0).toLocaleString(
@@ -1019,6 +1084,9 @@ export default function Orders() {
                               )}
                             </span>
                           </div>
+                          {expandedServicesOrderId === order.id && (
+                            <OrderServicesDetail order={order} id={`order-services-board-${order.id}`} />
+                          )}
                           {!["ready", "released", "cancelled"].includes(order.status) && (
                             <div className="kanban-timer-row">
                               <span className="timer-pill live"><Clock size={10} /> Ready by {formatOrderEta(order)}</span>
@@ -1094,7 +1162,8 @@ export default function Orders() {
                   </tr>
                 ) : (
                   filtered.map((order) => (
-                    <tr key={order.id} className="orders-table-row">
+                    <Fragment key={order.id}>
+                    <tr className={`orders-table-row ${expandedServicesOrderId === order.id ? "services-expanded" : ""}`}>
                       <td
                         style={{
                           fontWeight: 600,
@@ -1109,8 +1178,24 @@ export default function Orders() {
                           {order.branch || "Unassigned"}
                         </td>
                       )}
-                      <td className="orders-column-weight" title={(order.order_items || []).map((item) => item.service_name_snapshot).join(', ')}>
-                        {order.order_items?.length ? `${order.order_items[0].service_name_snapshot}${order.order_items.length > 1 ? ` +${order.order_items.length - 1}` : ''}` : `${order.weight_kg} kg`}
+                      <td className="orders-column-weight">
+                        <button
+                          type="button"
+                          className="order-services-trigger"
+                          aria-expanded={expandedServicesOrderId === order.id}
+                          aria-controls={`order-services-table-${order.id}`}
+                          aria-label={`${expandedServicesOrderId === order.id ? "Hide" : "View"} all services in order ${order.order_number}`}
+                          title="View every service in this order"
+                          onClick={() => setExpandedServicesOrderId((current) => current === order.id ? null : order.id)}
+                        >
+                          <span className="order-services-primary">
+                            {serviceItemsForDisplay(order)[0].service_name_snapshot}
+                          </span>
+                          {serviceItemsForDisplay(order).length > 1 && (
+                            <span className="order-services-count">+{serviceItemsForDisplay(order).length - 1}</span>
+                          )}
+                          <ChevronDown size={15} aria-hidden="true" />
+                        </button>
                       </td>
                       <td>
                         <div className="status-track">
@@ -1233,6 +1318,14 @@ export default function Orders() {
                         </div>
                       </td>
                     </tr>
+                    {expandedServicesOrderId === order.id && (
+                      <tr className="order-services-expanded-row">
+                        <td colSpan={isAdmin ? 10 : 9}>
+                          <OrderServicesDetail order={order} id={`order-services-table-${order.id}`} />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))
                 )}
               </tbody>
