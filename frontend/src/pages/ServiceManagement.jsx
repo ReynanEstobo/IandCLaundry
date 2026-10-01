@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { PageError, PageLoader } from '../components/AsyncState'
 import LoadingButton from '../components/LoadingButton'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { runQuery } from '../services/api/client'
 
 const blankService = { name: '', description: '', bundle_kg: 8, bundle_price: '', excess_kg_price: '', processing_type: 'full_service', is_active: true }
@@ -14,6 +15,7 @@ export default function ServiceManagement() {
   const [recipeDraft, setRecipeDraft] = useState({}), [addonDraft, setAddonDraft] = useState({})
   const [form, setForm] = useState(blankService), [editing, setEditing] = useState(null), [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [savingConfig, setSavingConfig] = useState(false), [error, setError] = useState('')
+  const [serviceToArchive, setServiceToArchive] = useState(null), [archiving, setArchiving] = useState(false)
 
   const load = useCallback(async (background = false) => {
     if (!background) setLoading(true); setError('')
@@ -60,10 +62,12 @@ export default function ServiceManagement() {
     toast.success(editing ? 'Service updated.' : 'Service created.'); setShowModal(false); await load(true)
   }
   async function archiveService(service) {
-    if (!confirm(`Archive ${service.name}? Existing orders will retain their saved details.`)) return
+    if (!service || archiving) return
+    setArchiving(true)
     const result = await runQuery('service_types', { operation: 'delete', filters: [{ type: 'eq', column: 'id', value: service.id }] })
+    setArchiving(false)
     if (result.error) return toast.error(result.error.message)
-    toast.success('Service archived.'); await load(true)
+    setServiceToArchive(null); toast.success('Service archived.'); await load(true)
   }
   async function sync(table, existingRows, draft, column) {
     for (const item of branchItems) {
@@ -99,7 +103,7 @@ export default function ServiceManagement() {
         <td><strong>{service.name}</strong>{service.description && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{service.description}</div>}</td>
         <td>₱{Number(service.bundle_price || 0).toLocaleString()} / {Number(service.bundle_kg || 0)} kg</td><td>₱{Number(service.excess_kg_price || 0).toLocaleString()} / kg</td>
         <td>{service.processing_type === 'air_dry_only' ? 'Air-drying only · no washing' : 'Full laundry service'}</td><td>{service.is_active ? 'Active' : 'Inactive'}</td>
-        <td><button className="btn btn-secondary btn-sm" onClick={() => openService(service)}><Edit2 size={14} /> Edit</button> <button className="btn btn-danger btn-sm" onClick={() => archiveService(service)}><Trash2 size={14} /></button></td>
+        <td><button className="btn btn-secondary btn-sm" onClick={() => openService(service)}><Edit2 size={14} /> Edit</button> <button className="btn btn-danger btn-sm" aria-label={`Archive ${service.name}`} onClick={() => setServiceToArchive(service)}><Trash2 size={14} /></button></td>
       </tr>)}</tbody></table></div>
     </div>
     <div className="card settings-card">
@@ -122,5 +126,14 @@ export default function ServiceManagement() {
       <div className="form-row"><div className="form-group"><label>Excess price per kg *</label><input className="form-control" required type="number" min="0" step="0.01" value={form.excess_kg_price} onChange={event => setForm(current => ({ ...current, excess_kg_price: event.target.value }))} /></div><div className="form-group"><label>Workflow *</label><select className="form-control" value={form.processing_type} onChange={event => setForm(current => ({ ...current, processing_type: event.target.value }))}><option value="full_service">Full laundry service</option><option value="air_dry_only">Air-drying only (no washing)</option></select></div></div>
       <label style={{ display: 'flex', gap: 8 }}><input type="checkbox" checked={form.is_active} onChange={event => setForm(current => ({ ...current, is_active: event.target.checked }))} /> Available for new orders</label>
     </div><div className="modal-footer"><button className="btn btn-secondary" type="button" onClick={() => setShowModal(false)}>Cancel</button><LoadingButton className="btn btn-primary" type="submit" loading={saving} loadingLabel="Saving…"><Save size={16} /> Save service</LoadingButton></div></form></div></div>}
+    <ConfirmDialog
+      open={Boolean(serviceToArchive)}
+      title="Archive service?"
+      message={serviceToArchive ? `${serviceToArchive.name} will no longer be available for new orders. Existing orders will retain their saved service details.` : ''}
+      confirmLabel="Archive service"
+      loading={archiving}
+      onClose={() => !archiving && setServiceToArchive(null)}
+      onConfirm={() => archiveService(serviceToArchive)}
+    />
   </div>
 }

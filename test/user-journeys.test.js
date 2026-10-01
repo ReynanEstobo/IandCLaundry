@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import worker, { RateLimiter } from '../cloudflare/worker.js'
 import { database } from '../backend/config/supabase.js'
-import { createOrder, restockInventory, transitionOrder } from '../backend/controllers/operationController.js'
+import { collectOrderPayment, createOrder, restockInventory, transitionOrder } from '../backend/controllers/operationController.js'
 import { provisionStaff } from '../backend/controllers/staffProvisionController.js'
 
 function testEnv({ allowed = true } = {}) {
@@ -202,6 +202,26 @@ test('staff journey: invalid orders never reach the database', async t => {
       staffId: 'staff-1', role: 'staff', branchId: 'main-branch', branch: 'Main Branch',
     }),
     /valid order weight/,
+  )
+  assert.equal(rpcCalled, false)
+})
+
+test('staff journey: only cash is accepted for order and balance payments', async t => {
+  let rpcCalled = false
+  withDatabaseMocks(t, {
+    rpc: async () => { rpcCalled = true; return { data: null, error: null } },
+  })
+  const identity = { staffId: 'staff-1', role: 'staff', branchId: 'main-branch', branch: 'Main Branch' }
+  await assert.rejects(
+    createOrder({
+      customer: { name: 'Customer', phone: '09123456789', email: 'customer@example.com' },
+      order: { amount_paid: 100, payment_method: 'gcash', items: [{ service_type_id: 'regular', weight_kg: 1 }] },
+    }, identity),
+    /Cash is the only accepted payment method/,
+  )
+  await assert.rejects(
+    collectOrderPayment({ orderId: 'order-1', amount: 100, paymentMethod: 'card' }, identity),
+    /Cash is the only accepted payment method/,
   )
   assert.equal(rpcCalled, false)
 })

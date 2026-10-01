@@ -11,14 +11,10 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
 import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
 import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
-
-const BRANCHES = [
-  "Main - Brgy 7",
-  "2nd Branch - Brgy Calzada",
-  "3rd Branch - Nasugbu",
-];
+import useActiveBranches from "../hooks/useActiveBranches";
 
 export default function Customers() {
+  const branchNames = useActiveBranches();
   const { role } = useAuth();
   const isAdmin = role === "admin";
   const [customers, setCustomers] = useState([]);
@@ -36,7 +32,7 @@ export default function Customers() {
     name: "",
     phone: "",
     email: "",
-    branch: "Main - Brgy 7",
+    branch: branchNames[0] || "",
   });
   // 🔥 PAGINATION STATES
   const [page, setPage] = useState(0);
@@ -88,7 +84,7 @@ export default function Customers() {
       name: "",
       phone: "",
       email: "",
-      branch: "Main - Brgy 7",
+      branch: branchNames[0] || "",
     });
     setShowModal(true);
   }
@@ -426,7 +422,7 @@ export default function Customers() {
                       required
                     >
                       <option value="">Select branch</option>
-                      {BRANCHES.map((branch) => (
+                      {branchNames.map((branch) => (
                         <option key={branch} value={branch}>
                           {branch}
                         </option>

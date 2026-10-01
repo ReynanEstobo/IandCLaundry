@@ -180,7 +180,7 @@ export default function Layout() {
             <div
               style={{
                 fontSize: 13,
-                color: "#6b7280",
+                color: "var(--text-muted)",
                 fontWeight: 400,
                 display: "flex",
                 alignItems: "center",

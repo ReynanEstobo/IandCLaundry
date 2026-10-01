@@ -28,6 +28,7 @@ import LoadingButton from "../components/LoadingButton";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { isValidPhilippineMobile } from "../utils/validation";
 import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
+import useActiveBranches from "../hooks/useActiveBranches";
 
 const PROCESS_FLOW = [
   "received",
@@ -50,12 +51,6 @@ const STATUS_ICONS = {
   released: "\uD83D\uDCE6",
   cancelled: "\u274C",
 };
-
-const BRANCHES = [
-  "Main - Brgy 7",
-  "2nd Branch - Brgy Calzada",
-  "3rd Branch - Nasugbu",
-];
 
 function serviceItemsForDisplay(order) {
   if (order?.order_items?.length) return order.order_items;
@@ -197,6 +192,7 @@ async function sendOrderReceivedEmail(
 }
 
 export default function Orders() {
+  const branchNames = useActiveBranches();
   const { role, branch } = useAuth();
   const isAdmin = role === "admin";
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -262,7 +258,7 @@ export default function Orders() {
     payment_method: "cash",
     payment_status: "unpaid",
     amount_paid: "",
-    branch: "Main - Brgy 7",
+    branch: branchNames[0] || "",
     addons: {},
   });
   // Add-ons are always taken from the selected order branch. The database
@@ -474,7 +470,7 @@ export default function Orders() {
       payment_method: "cash",
       payment_status: "unpaid",
       amount_paid: "",
-      branch: "Main - Brgy 7",
+      branch: branchNames[0] || "",
       addons: {},
     });
     setPhoneMatch(null);
@@ -493,7 +489,7 @@ export default function Orders() {
       customer_name: order.customers?.name || "",
       customer_email: order.customers?.email || "",
       items: order.order_items?.length ? order.order_items.map((item) => ({ service_type_id: item.service_type_id || "", weight_kg: item.weight_kg ?? "", quantity: item.quantity ?? "1" })) : [{ service_type_id: order.service_type_id || "", weight_kg: order.weight_kg ?? "", quantity: "1" }],
-      payment_method: order.payment_method || "cash",
+      payment_method: "cash",
       payment_status: order.payment_status,
       branch: order.branch || "",
       amount_paid:
@@ -633,7 +629,7 @@ export default function Orders() {
       addons: form.addons, // ✅ now supported
       client_request_id: orderRequestId.current,
       ...(!editing && {
-        payment_method: form.payment_method,
+        payment_method: "cash",
         payment_status,
         amount_paid: amountPaid,
       }),
@@ -758,7 +754,7 @@ export default function Orders() {
     const remaining = Math.max(0, Number(order.total_price || 0) - Number(order.amount_paid || 0));
     if (remaining <= 0) return toast.error("This order is already fully paid.");
     setSelectedOrder(order);
-    setAdditionalPayment({ amount: "", paymentMethod: order.payment_method || "cash" });
+    setAdditionalPayment({ amount: "", paymentMethod: "cash" });
     setShowAdditionalPaymentModal(true);
   }
 
@@ -1631,7 +1627,7 @@ export default function Orders() {
                           required
                         >
                           <option value="">Select branch</option>
-                          {BRANCHES.map((branch) => (
+                          {branchNames.map((branch) => (
                             <option key={branch} value={branch}>
                               {branch}
                             </option>
@@ -1890,8 +1886,7 @@ export default function Orders() {
                       <select
                         className="form-control"
                         value={form.payment_method}
-                        onChange={(e) => setForm((f) => ({ ...f, payment_method: e.target.value }))}
-                        disabled={Boolean(editing)}
+                        disabled
                       >
                         <option value="cash">Cash</option>
                       </select>
@@ -2002,12 +1997,8 @@ export default function Orders() {
               <div className="form-row">
                 <div className="form-group">
                   <label>Method</label>
-                  <select className="form-control" value={additionalPayment.paymentMethod} disabled={recordingPayment} onChange={(event) => setAdditionalPayment((current) => ({ ...current, paymentMethod: event.target.value }))}>
+                  <select className="form-control" value={additionalPayment.paymentMethod} disabled>
                     <option value="cash">Cash</option>
-                    <option value="gcash">GCash</option>
-                    <option value="bank_transfer">Bank transfer</option>
-                    <option value="card">Card</option>
-                    <option value="other">Other</option>
                   </select>
                 </div>
                 <div className="form-group">

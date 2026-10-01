@@ -34,6 +34,7 @@ test('multi-service migration applies and duplicate order requests deduct stock 
       actual_completion timestamptz, picked_up_at timestamptz, cancelled_by_staff_id uuid,
       stage_started_at timestamptz,
       created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now());
+    CREATE TABLE payments (id uuid PRIMARY KEY DEFAULT uuid_generate_v4(), notes text);
     CREATE TABLE inventory_items (id uuid PRIMARY KEY DEFAULT uuid_generate_v4(), name text, unit text,
       current_stock numeric, branch_id uuid, deleted_at timestamptz);
     CREATE TABLE inventory_usage_log (id uuid PRIMARY KEY DEFAULT uuid_generate_v4(), item_id uuid,
@@ -55,6 +56,7 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   const migration = await readFile(new URL('../supabase_migrations/20260926_multi_service_per_load.sql', import.meta.url), 'utf8')
   await db.exec(migration)
   const removeNotesMigration = await readFile(new URL('../supabase_migrations/20261001_remove_note_fields.sql', import.meta.url), 'utf8')
+  const cashOnlyMigration = await readFile(new URL('../supabase_migrations/20261001_z_cash_only_payments.sql', import.meta.url), 'utf8')
   assert.equal((await db.query("SELECT has_function_privilege('authenticated', 'public.cancel_branch_order(uuid,uuid,text)', 'EXECUTE') AS allowed")).rows[0].allowed, false)
   assert.equal((await db.query("SELECT has_function_privilege('service_role', 'public.cancel_branch_order(uuid,uuid,text)', 'EXECUTE') AS allowed")).rows[0].allowed, true)
   await db.exec(`
@@ -85,7 +87,8 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   await db.query("INSERT INTO service_types(id,name,bundle_kg,bundle_price,excess_kg_price,processing_type) VALUES ($1,'Complimentary',1,0,0,'full_service')", [freeServiceId])
   await db.exec(migration) // Safe to rerun without replacing an intentional zero price.
   await db.exec(removeNotesMigration)
-  for (const table of ['customers', 'orders', 'order_items']) {
+  await db.exec(cashOnlyMigration)
+  for (const table of ['customers', 'orders', 'order_items', 'payments']) {
     const result = await db.query(`SELECT COUNT(*)::int AS count FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='notes'`, [table])
     assert.equal(result.rows[0].count, 0)
   }
@@ -103,6 +106,10 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   ] }
   const call = (requestedOrder = order, requestedBranchId = branchId, requestedStaffId = staffId) => db.query('SELECT (create_branch_order($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,1,NULL)).id AS id',
     [requestedBranchId, requestedStaffId, JSON.stringify(customer), JSON.stringify(requestedOrder), JSON.stringify({ [addonId]: 5 })])
+  await assert.rejects(
+    call({ ...order, client_request_id: randomUUID(), payment_method: 'gcash' }),
+    /Cash is the only accepted payment method/,
+  )
   const first = await call(), second = await call()
   assert.equal(first.rows[0].id, second.rows[0].id)
   assert.equal((await db.query('SELECT count(*)::int AS count FROM orders')).rows[0].count, 1)

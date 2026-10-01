@@ -38,9 +38,9 @@ export default function DashboardCharts({ data, range, onRangeChange, loading = 
               <div className="card-header"><h3>{periodName} Orders</h3></div>
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={chartData} margin={{ top: 12, right: 4, left: 0, bottom: 0 }}>
-                  <XAxis dataKey="label" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                  <XAxis dataKey="label" stroke="var(--chart-axis, #64748b)" fontSize={12} tickLine={false} axisLine={false} />
                   <YAxis
-                    stroke="#64748b"
+                    stroke="var(--chart-axis, #64748b)"
                     fontSize={12}
                     tickLine={false}
                     axisLine={false}
@@ -49,7 +49,9 @@ export default function DashboardCharts({ data, range, onRangeChange, loading = 
                   />
                   <Tooltip
                     labelFormatter={(label, payload) => payload?.[0]?.payload?.fullDate || label}
-                    contentStyle={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, color: '#111827', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', fontSize: 13 }}
+                    contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-primary)', boxShadow: 'var(--shadow-lg)', fontSize: 13 }}
+                    labelStyle={{ color: 'var(--text-primary)' }}
+                    itemStyle={{ color: 'var(--text-secondary)' }}
                   />
                   <Bar dataKey="orders" fill="#3b82f6" radius={[4, 4, 0, 0]} />
                 </BarChart>
@@ -66,9 +68,9 @@ export default function DashboardCharts({ data, range, onRangeChange, loading = 
                       <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <XAxis dataKey="label" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+                  <XAxis dataKey="label" stroke="var(--chart-axis, #9ca3af)" fontSize={12} tickLine={false} axisLine={false} />
                   <YAxis
-                    stroke="#9ca3af"
+                    stroke="var(--chart-axis, #9ca3af)"
                     fontSize={12}
                     tickLine={false}
                     axisLine={false}
@@ -76,7 +78,9 @@ export default function DashboardCharts({ data, range, onRangeChange, loading = 
                   />
                   <Tooltip
                     labelFormatter={(label, payload) => payload?.[0]?.payload?.fullDate || label}
-                    contentStyle={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, color: '#111827', boxShadow: '0 4px 16px rgba(0,0,0,0.08)', fontSize: 13 }}
+                    contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text-primary)', boxShadow: 'var(--shadow-lg)', fontSize: 13 }}
+                    labelStyle={{ color: 'var(--text-primary)' }}
+                    itemStyle={{ color: 'var(--text-secondary)' }}
                     formatter={value => [`₱${Number(value).toLocaleString()}`, 'Revenue']}
                   />
                   <Area type="monotone" dataKey="revenue" stroke="#10b981" fill="url(#dashboardRevenueGradient)" strokeWidth={2} />

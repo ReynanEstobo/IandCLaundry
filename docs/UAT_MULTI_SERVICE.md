@@ -39,7 +39,7 @@ Perform items 1–30 while signed in as a normal staff member assigned to a test
 11. Check if a payment equal to or greater than 50% is accepted. The payment status should be `Partial` or `Paid`, depending on the amount.  
     Result: __________
 
-12. Check if the initial payment is recorded in the payment history. It should appear once with the correct amount and payment method.  
+12. Check if the initial cash payment is recorded in the payment history. It should appear once with the correct amount and `Cash` payment method.  
     Result: __________
 
 13. Check if automatic inventory items are deducted for every service. The deduction should equal the configured quantity per load multiplied by the service's number of loads.  

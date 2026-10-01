@@ -117,7 +117,7 @@ export default function StaffDashboard() {
 
   const activeCount = orders.length
   const readyCount = orders.filter(o => o.status === 'ready').length
-  const inProgressCount = activeCount - readyCount
+  const inProgressCount = orders.filter(o => o.status === 'on_process').length
 
   // Low stock
   const lowStockItems = inventory.filter(i => Number(i.current_stock) <= Number(i.minimum_stock))

@@ -67,7 +67,7 @@ CREATE TABLE orders (
   total_price NUMERIC(10,2) NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','washing','drying','folding','ready','released','cancelled')),
   payment_status TEXT NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid','partial','paid')),
-  payment_method TEXT CHECK (payment_method IN ('cash','gcash','bank_transfer','card')),
+  payment_method TEXT NOT NULL DEFAULT 'cash' CHECK (payment_method = 'cash'),
   estimated_completion TIMESTAMPTZ,
   actual_completion TIMESTAMPTZ,
   picked_up_at TIMESTAMPTZ,

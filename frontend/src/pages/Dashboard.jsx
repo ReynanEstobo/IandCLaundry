@@ -25,6 +25,7 @@ import { PageError, PageLoader } from "../components/AsyncState";
 import DashboardCharts from "../components/DashboardCharts";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { paymentTimestamp, recordedPaymentAmount, rollingDemandForecast } from "../utils/businessForecast";
+import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorderQuantity } from "../utils/inventoryForecast";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -164,6 +165,7 @@ export default function Dashboard() {
       recentRes,
       usageRes,
       paymentsRes,
+      expensesRes,
     ] = await Promise.all([
       supabase.from("orders").select("*"),
       supabase.from("customers").select("id", { count: "exact", head: true }),
@@ -183,13 +185,14 @@ export default function Dashboard() {
         .order("logged_at", { ascending: false })
         .limit(500),
       supabase.from("payments").select("amount, paid_at, payment_date"),
+      supabase.from("expenses").select("amount, expense_date"),
     ]);
     const { data: settingsData } = await supabase
       .from("settings")
       .select("*")
       .single();
 
-    const requestError = ordersRes.error || customersRes.error || inventoryRes.error || recentRes.error || usageRes.error || paymentsRes.error;
+    const requestError = ordersRes.error || customersRes.error || inventoryRes.error || recentRes.error || usageRes.error || paymentsRes.error || expensesRes.error;
     if (requestError) throw requestError;
 
     setSettings(settingsData || {});
@@ -198,6 +201,7 @@ export default function Dashboard() {
     const inventory = inventoryRes.data || [];
     const usageLogs = usageRes.data || [];
     const payments = paymentsRes.data || [];
+    const expenses = expensesRes.data || [];
     const reportableOrders = orders.filter((o) => o.status !== "cancelled");
     const todayOrders = reportableOrders.filter((o) => o.created_at >= today);
     const todayRevenue = payments
@@ -249,14 +253,26 @@ export default function Dashboard() {
       try {
         setAiLoading(true);
         const reportableOrders = orders.filter((order) => order.status !== "cancelled");
+        const trendData = buildChartData(reportableOrders, payments, range);
+        const periodRevenue = trendData.reduce((sum, point) => sum + Number(point.revenue || 0), 0);
+        const periodOrders = trendData.reduce((sum, point) => sum + Number(point.orders || 0), 0);
+        const now = new Date();
+        const periodStart = new Date(now);
+        if (range === "weekly") periodStart.setDate(now.getDate() - 6);
+        else if (range === "monthly") periodStart.setDate(now.getDate() - 29);
+        else periodStart.setFullYear(now.getFullYear() - 4, 0, 1);
+        periodStart.setHours(0, 0, 0, 0);
+        const periodExpenses = expenses
+          .filter((expense) => new Date(`${expense.expense_date}T00:00:00`) >= periodStart)
+          .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
         const dssResult = await generateDecisionSupport({
           metrics: {
-            totalRevenue: todayRevenue,
-            totalExpenses: 0,
-            profit: todayRevenue,
-            totalOrders: reportableOrders.length,
-            averageOrderValue: reportableOrders.length
-              ? todayRevenue / reportableOrders.length
+            totalRevenue: periodRevenue,
+            totalExpenses: periodExpenses,
+            profit: periodRevenue - periodExpenses,
+            totalOrders: periodOrders,
+            averageOrderValue: periodOrders
+              ? periodRevenue / periodOrders
               : 0,
             operationalSignals: [
               `${activeOrders} active orders and ${readyForPickup} orders ready for pickup.`,
@@ -265,7 +281,7 @@ export default function Dashboard() {
               `Forecast monthly revenue: ₱${fc.predictedMonthlyRevenue.toLocaleString()}.`,
             ],
           },
-          trendData: buildChartData(reportableOrders, payments, range),
+          trendData,
           forecastData: [{ date: "next-month", predictedRevenue: fc.predictedMonthlyRevenue, predictedOrders: Math.round(fc.avgDailyOrders * 30) }],
           branch: "All branches",
           range,
@@ -298,44 +314,23 @@ export default function Dashboard() {
 
     // --- Restock predictions ---
     const restockAlerts = [];
-    inventory.forEach((item) => {
+    inventory
+      .filter((item) => Number(item.current_stock) <= Number(item.minimum_stock))
+      .forEach((item) => {
       const itemLogs = usageLogs.filter((l) => l.item_id === item.id);
-      if (itemLogs.length >= 2) {
-        const sorted = [...itemLogs].sort(
-          (a, b) => new Date(a.logged_at) - new Date(b.logged_at),
-        );
-        const daysDiff = Math.max(
-          differenceInDays(
-            new Date(sorted[sorted.length - 1].logged_at),
-            new Date(sorted[0].logged_at),
-          ),
-          1,
-        );
-        const totalUsed = itemLogs.reduce(
-          (s, l) => s + Number(l.quantity_used),
-          0,
-        );
-        const dailyUsage = totalUsed / daysDiff;
-        if (dailyUsage > 0) {
-          const daysLeft = Math.floor(Number(item.current_stock) / dailyUsage);
-          if (daysLeft <= 14) {
-            const suggestedReorder = Math.ceil(dailyUsage * 30);
-            restockAlerts.push({
-              name: item.name,
-              daysLeft,
-              unit: item.unit,
-              suggestedReorder,
-              currentStock: Number(item.current_stock),
-            });
-          }
-        }
-      }
+      restockAlerts.push({
+        name: item.name,
+        daysLeft: predictInventoryDaysLeft(item, itemLogs),
+        unit: item.unit,
+        suggestedReorder: suggestInventoryReorderQuantity(item, itemLogs),
+        currentStock: Number(item.current_stock),
+      });
     });
-    restockAlerts.sort((a, b) => a.daysLeft - b.daysLeft);
+    restockAlerts.sort((a, b) => (a.daysLeft ?? Number.POSITIVE_INFINITY) - (b.daysLeft ?? Number.POSITIVE_INFINITY));
 
     return {
       ...baseline,
-      restockAlerts: restockAlerts.slice(0, 3),
+      restockAlerts,
       avgDailyOrders: Math.round(baseline.averageDailyOrders),
     };
   }
@@ -730,7 +725,7 @@ export default function Dashboard() {
                     <div>
                       <strong>{activeRestockAlert.name}</strong>
                       <span>
-                        Estimated to run out in {activeRestockAlert.daysLeft} day{activeRestockAlert.daysLeft !== 1 ? "s" : ""}
+                        {inventoryRunOutLabel(activeRestockAlert.daysLeft)}
                       </span>
                       <span className="staff-dss-forecast">
                         Suggested reorder: ~{activeRestockAlert.suggestedReorder} {activeRestockAlert.unit}

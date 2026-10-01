@@ -177,7 +177,7 @@ The parent order and affected service items return to the earlier stage. The cor
 
 1. Find an order with an unpaid balance.
 2. Select **Record additional payment**.
-3. Choose the payment method and enter the amount.
+3. Enter the cash amount received. Cash is the only accepted payment method.
 4. Confirm the payment.
 
 The new payment becomes a separate auditable entry. It does not replace the initial payment, and it cannot exceed the remaining balance.

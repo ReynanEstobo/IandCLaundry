@@ -143,10 +143,6 @@ export default function Settings() {
 
           if (data) {
             setSettings(data);
-
-            setShopName(data.shopname || "I&C Laundry");
-            setOpenTime(data.opentime || "08:00");
-            setCloseTime(data.closetime || "20:00");
             setDarkMode(data.darkmode || false);
             setNotifications(data.notifications !== false);
 

@@ -22,6 +22,10 @@ export async function createOrder(body, identity) {
   const weight = Number(order.weight_kg)
   const previewTotal = Number(order.total_price)
   const amountPaid = Number(order.amount_paid || 0)
+  const paymentMethod = String(order.payment_method || 'cash').trim().toLowerCase()
+  if (paymentMethod !== 'cash') {
+    throw Object.assign(new Error('Cash is the only accepted payment method.'), { status: 400 })
+  }
   if (!serviceItems.length && (!Number.isFinite(weight) || weight <= 0)) {
     throw Object.assign(new Error('Add at least one service item or a valid order weight.'), { status: 400 })
   }
@@ -57,7 +61,7 @@ export async function createOrder(body, identity) {
     items: serviceItems,
     service_type_id: order.service_type_id || serviceItems[0]?.service_type_id || null,
     weight_kg: Number.isFinite(weight) ? weight : null,
-    payment_method: order.payment_method || 'cash',
+    payment_method: 'cash',
     payment_status: Number.isFinite(previewTotal) && amountPaid >= previewTotal ? 'paid' : 'partial',
     amount_paid: amountPaid,
     client_request_id: order.client_request_id || body?.clientRequestId || globalThis.crypto.randomUUID(),
@@ -216,8 +220,8 @@ export async function collectOrderPayment(body, identity) {
   if (!Number.isFinite(amount) || amount <= 0) {
     throw Object.assign(new Error('Enter a payment amount greater than zero.'), { status: 400 })
   }
-  if (!['cash', 'gcash', 'bank_transfer', 'card', 'other'].includes(paymentMethod)) {
-    throw Object.assign(new Error('Select a valid payment method.'), { status: 400 })
+  if (paymentMethod !== 'cash') {
+    throw Object.assign(new Error('Cash is the only accepted payment method.'), { status: 400 })
   }
   requireBranch(identity)
 

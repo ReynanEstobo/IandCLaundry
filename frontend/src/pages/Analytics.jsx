@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import {
   Area,
   AreaChart,
@@ -36,6 +37,7 @@ import { analyticsPeriod, chartTooltipDate, dailyChartLabel, paymentChartData } 
 import { recordedPaymentAmount } from '../utils/businessForecast'
 import { analyticsDailyHistory, branchPerformance } from '../utils/analyticsMetrics'
 import { buildAnalyticsReport } from '../utils/analyticsReport'
+import useActiveBranches from '../hooks/useActiveBranches'
 
 // ─── Custom tooltip ────────────────────────────────────────────────────────────
 const CustomTooltip = ({ active, payload, label }) => {
@@ -44,13 +46,13 @@ const CustomTooltip = ({ active, payload, label }) => {
   return (
     <div
       style={{
-        background: "#fff",
-        border: "1px solid #e5e7eb",
+        background: "var(--bg-card)",
+        border: "1px solid var(--border)",
         borderRadius: 10,
         padding: "10px 14px",
         boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
         fontSize: 13,
-        color: "#111827",
+        color: "var(--text-primary)",
       }}
     >
       <div style={{ fontWeight: 600, marginBottom: 6 }}>{chartTooltipDate(label, payload)}</div>
@@ -75,7 +77,7 @@ const CustomTooltip = ({ active, payload, label }) => {
             }}
           />
 
-          <span style={{ color: "#6b7280", textTransform: "capitalize" }}>
+          <span style={{ color: "var(--text-secondary)", textTransform: "capitalize" }}>
             {p.name}:
           </span>
 
@@ -87,8 +89,8 @@ const CustomTooltip = ({ active, payload, label }) => {
             <span
               style={{
                 fontSize: 10,
-                background: "#f0fdf4",
-                color: "#10b981",
+                background: "var(--success-light)",
+                color: "var(--success)",
                 borderRadius: 4,
                 padding: "1px 5px",
                 fontWeight: 600,
@@ -122,14 +124,14 @@ function SubFilter({ value, onChange, options }) {
 
 function OperationalList({ icon, title, accent, empty, items }) {
   return (
-    <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden", background: "#fff" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid #f1f5f9", color: accent }}>
+    <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", background: "var(--bg-card)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--border-light)", color: accent }}>
         {icon}
         <span style={{ color: "var(--text-primary)", fontSize: 13, fontWeight: 750 }}>{title}</span>
       </div>
       <div style={{ padding: "6px 14px 10px" }}>
         {items.length ? items.map((item, index) => (
-          <div key={item} style={{ display: "flex", gap: 9, alignItems: "flex-start", padding: "9px 0", borderBottom: index + 1 === items.length ? "none" : "1px solid #f1f5f9", fontSize: 13, color: "var(--text-secondary)" }}>
+          <div key={item} style={{ display: "flex", gap: 9, alignItems: "flex-start", padding: "9px 0", borderBottom: index + 1 === items.length ? "none" : "1px solid var(--border-light)", fontSize: 13, color: "var(--text-secondary)" }}>
             <span style={{ flex: "0 0 auto", width: 20, height: 20, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700, color: accent, background: `${accent}14` }}>{index + 1}</span>
             <span style={{ lineHeight: 1.45 }}>{item}</span>
           </div>
@@ -140,6 +142,7 @@ function OperationalList({ icon, title, accent, empty, items }) {
 }
 
 export default function Analytics() {
+  const branchNames = useActiveBranches();
   const [range, setRange] = useState("weekly");
 
   const [selectedBranch, setSelectedBranch] = useState("all");
@@ -802,7 +805,7 @@ Rules:
     // `noopener` in the feature string can make window.open return null in
     // Chromium, which prevented the report from ever being written.
     const popup = window.open("", "_blank");
-    if (!popup) return window.alert("Allow pop-ups to print or save this report as PDF.");
+    if (!popup) return toast.error("Allow pop-ups to print or save this report as PDF.");
     popup.opener = null;
     const insightMarkup = aiInsights.length
       ? aiInsights.map((item) => `<li><strong>${html(item.title)}:</strong> ${html(item.description)}</li>`).join("")
@@ -860,13 +863,13 @@ Rules:
       await downloadAnalyticsWorkbook(createManagementReportInput());
     } catch (error) {
       console.error('Unable to export the management spreadsheet:', error);
-      window.alert('The spreadsheet could not be created. Please try again.');
+      toast.error('The spreadsheet could not be created. Please try again.');
     }
   }
 
   function printReport() {
     const popup = window.open("", "_blank");
-    if (!popup) return window.alert("Allow pop-ups to preview, print, or save this management report as PDF.");
+    if (!popup) return toast.error("Allow pop-ups to preview, print, or save this management report as PDF.");
     popup.opener = null;
     const report = createManagementReport();
     popup.document.write(report.printHtml);
@@ -942,11 +945,9 @@ Rules:
           className="analytics-branch-filter"
         >
           <option value="all">All Branches</option>
-          <option value="Main - Brgy 7">Main - Brgy 7</option>
-          <option value="2nd Branch - Brgy Calzada">
-            2nd Branch - Brgy Calzada
-          </option>
-          <option value="3rd Branch - Nasugbu">3rd Branch - Nasugbu</option>
+          {branchNames.map(branchName => (
+            <option key={branchName} value={branchName}>{branchName}</option>
+          ))}
         </select>
 
         <SubFilter
@@ -1027,7 +1028,7 @@ Rules:
             </div>
             <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Service demand, customer retention, and branch productivity for the selected scope.</p>
           </div>
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", background: "#eff6ff", borderRadius: 999, padding: "6px 10px" }}>Live operational summary</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#38bdf8", background: "color-mix(in srgb, #0ea5e9 14%, var(--bg-card))", borderRadius: 999, padding: "6px 10px" }}>Live operational summary</span>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 18 }}>
@@ -1037,8 +1038,8 @@ Rules:
             { label: "Average Turnaround", value: operationalSummary.averageTurnaroundHours == null ? "—" : `${operationalSummary.averageTurnaroundHours.toFixed(1)}h`, icon: Timer, color: "#8b5cf6", bg: "#f3e8ff" },
           ].map((metric) => {
             const Icon = metric.icon;
-            return <div key={metric.label} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, background: "#fff" }}>
-              <div style={{ width: 32, height: 32, borderRadius: 9, display: "grid", placeItems: "center", color: metric.color, background: metric.bg, marginBottom: 12 }}><Icon size={17} /></div>
+            return <div key={metric.label} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 16, background: "var(--bg-secondary)" }}>
+              <div style={{ width: 32, height: 32, borderRadius: 9, display: "grid", placeItems: "center", color: metric.color, background: `color-mix(in srgb, ${metric.color} 16%, var(--bg-card))`, marginBottom: 12 }}><Icon size={17} /></div>
               <div style={{ fontSize: 24, lineHeight: 1, fontWeight: 750, color: "var(--text-primary)", marginBottom: 7 }}>{metric.value}</div>
               <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{metric.label}</div>
             </div>;
@@ -1083,7 +1084,7 @@ Rules:
             <p
               style={{
                 fontSize: 12,
-                color: "#6b7280",
+                color: "var(--text-muted)",
               }}
             >
               Descriptive Analytics
@@ -1094,7 +1095,7 @@ Rules:
             <AreaChart data={descriptiveData}>
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="#f3f4f6"
+                stroke="var(--chart-grid, #f3f4f6)"
                 vertical={false}
               />
 
@@ -1133,7 +1134,7 @@ Rules:
             <p
               style={{
                 fontSize: 12,
-                color: "#6b7280",
+                color: "var(--text-muted)",
                 maxWidth: 260,
                 textAlign: "right",
                 lineHeight: 1.35,
@@ -1153,11 +1154,11 @@ Rules:
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 12,
-                color: "#6b7280",
+                color: "var(--text-muted)",
               }}
             >
               <LoadingVisual label="Generating AI revenue forecast…" compact />
-              <strong style={{ color: "#5b21b6" }}>
+              <strong style={{ color: "#a78bfa" }}>
                 Generating AI revenue forecast
               </strong>
               <span style={{ fontSize: 13 }}>
@@ -1169,7 +1170,7 @@ Rules:
             <BarChart data={forecastData.map(point => ({ ...point, date: point.forecastDate && range !== 'yearly' ? dailyChartLabel(point.forecastDate) : point.date }))}>
               <CartesianGrid
                 strokeDasharray="3 3"
-                stroke="#f3f4f6"
+                stroke="var(--chart-grid, #f3f4f6)"
                 vertical={false}
               />
 
@@ -1192,8 +1193,8 @@ Rules:
           className="card"
           style={{
             gridColumn: "1 / -1",
-            border: "1px solid #ddd6fe",
-            background: "linear-gradient(135deg,#faf5ff,#ffffff)",
+            border: "1px solid color-mix(in srgb, #8b5cf6 40%, var(--border))",
+            background: "linear-gradient(135deg, color-mix(in srgb, #8b5cf6 9%, var(--bg-card)), var(--bg-card))",
           }}
         >
           <div className="card-header">
@@ -1210,8 +1211,8 @@ Rules:
 
             <span
               style={{
-                background: "#ede9fe",
-                color: "#7c3aed",
+                background: "color-mix(in srgb, #8b5cf6 17%, var(--bg-card))",
+                color: "#a78bfa",
                 padding: "5px 10px",
                 borderRadius: 8,
                 fontSize: 11,
@@ -1235,7 +1236,7 @@ Rules:
                   display: "flex",
                   alignItems: "center",
                   gap: 10,
-                  color: "#6d28d9",
+                  color: "#a78bfa",
                   fontSize: 13,
                   fontWeight: 600,
                 }}
@@ -1256,8 +1257,8 @@ Rules:
                       gap: 14,
                       padding: "16px",
                       borderRadius: 14,
-                      background: "#faf5ff",
-                      border: "1px solid rgba(0,0,0,0.05)",
+                      background: "var(--bg-secondary)",
+                      border: "1px solid var(--border)",
                       animation: "pulse 1.5s infinite",
                     }}
                   >
@@ -1267,7 +1268,7 @@ Rules:
                         width: 42,
                         height: 42,
                         borderRadius: 12,
-                        background: "#e5e7eb",
+                        background: "var(--border)",
                         flexShrink: 0,
                       }}
                     />
@@ -1278,7 +1279,7 @@ Rules:
                         style={{
                           height: 14,
                           width: "35%",
-                          background: "#e5e7eb",
+                          background: "var(--border)",
                           borderRadius: 6,
                           marginBottom: 10,
                         }}
@@ -1288,7 +1289,7 @@ Rules:
                         style={{
                           height: 12,
                           width: "100%",
-                          background: "#e5e7eb",
+                          background: "var(--border)",
                           borderRadius: 6,
                           marginBottom: 8,
                         }}
@@ -1298,7 +1299,7 @@ Rules:
                         style={{
                           height: 12,
                           width: "80%",
-                          background: "#e5e7eb",
+                          background: "var(--border)",
                           borderRadius: 6,
                         }}
                       />
@@ -1336,8 +1337,8 @@ Rules:
                         gap: 14,
                         padding: "16px",
                         borderRadius: 14,
-                        background: bg,
-                        border: "1px solid rgba(0,0,0,0.05)",
+                        background: `color-mix(in srgb, ${color} 10%, var(--bg-card))`,
+                        border: "1px solid var(--border)",
                       }}
                     >
                       <div
@@ -1345,7 +1346,7 @@ Rules:
                           width: 42,
                           height: 42,
                           borderRadius: 12,
-                          background: "#fff",
+                          background: "var(--bg-card)",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",

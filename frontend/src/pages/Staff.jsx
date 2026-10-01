@@ -13,6 +13,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
 import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
 import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
+import useActiveBranches from "../hooks/useActiveBranches";
 
 // ─────────────────────────────────────
 // ROLES
@@ -32,24 +33,8 @@ const ROLES = [
 // ─────────────────────────────────────
 // BRANCHES
 // ─────────────────────────────────────
-const BRANCHES = [
-  {
-    value: "Main - Brgy 7",
-    label: "Main - Brgy 7",
-  },
-
-  {
-    value: "2nd Branch - Brgy Calzada",
-    label: "2nd Branch - Brgy Calzada",
-  },
-
-  {
-    value: "3rd Branch - Nasugbu",
-    label: "3rd Branch - Nasugbu",
-  },
-];
-
 export default function Staff() {
+  const branchNames = useActiveBranches();
   // ─────────────────────────────────────
   // STATES
   // ─────────────────────────────────────
@@ -78,7 +63,7 @@ export default function Staff() {
     phone: "",
     email: "",
     role: "staff",
-    branch: "Main - Brgy 7",
+    branch: branchNames[0] || "",
     position: "",
     password: "",
   });
@@ -123,7 +108,7 @@ export default function Staff() {
       phone: "",
       email: "",
       role: "staff",
-      branch: "Main - Brgy 7",
+      branch: branchNames[0] || "",
       position: "",
       password: "",
     });
@@ -144,7 +129,7 @@ export default function Staff() {
       phone: staff.phone || "",
       email: staff.contact_email || "",
       role: staff.role || "staff",
-      branch: staff.branch || "Main - Brgy 7",
+      branch: staff.branch || branchNames[0] || "",
       position: staff.position || "",
       password: "",
     });
@@ -629,9 +614,9 @@ export default function Staff() {
                         }))
                       }
                     >
-                      {BRANCHES.map((b) => (
-                        <option key={b.value} value={b.value}>
-                          {b.label}
+                      {branchNames.map((branchName) => (
+                        <option key={branchName} value={branchName}>
+                          {branchName}
                         </option>
                       ))}
                     </select>

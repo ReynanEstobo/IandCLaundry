@@ -21,13 +21,10 @@ import { PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
 import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
+import useActiveBranches from "../hooks/useActiveBranches";
 
-const BRANCHES = [
-  "Main - Brgy 7",
-  "2nd Branch - Brgy Calzada",
-  "3rd Branch - Nasugbu",
-];
 export default function Inventory() {
+  const branchNames = useActiveBranches();
   const { role, branch } = useAuth();
   const [items, setItems] = useState([]);
   const [usageLogs, setUsageLogs] = useState([]);
@@ -52,7 +49,7 @@ export default function Inventory() {
 
   const [form, setForm] = useState({
     name: "",
-    branch: "Main - Brgy 7",
+    branch: branchNames[0] || "",
     unit: "pcs",
     current_stock: "",
     minimum_stock: "",
@@ -110,7 +107,7 @@ export default function Inventory() {
     setEditing(null);
     setForm({
       name: "",
-      branch: role === "staff" ? branch : "Main - Brgy 7",
+      branch: role === "staff" ? branch : (branchNames[0] || ""),
       unit: "pcs",
       current_stock: "",
       minimum_stock: "",
@@ -123,7 +120,7 @@ export default function Inventory() {
     setEditing(item);
     setForm({
       name: item.name,
-      branch: item.branch || "Main - Brgy 7",
+      branch: item.branch || branchNames[0] || "",
       unit: item.unit,
       current_stock: item.current_stock,
       minimum_stock: item.minimum_stock,
@@ -286,7 +283,7 @@ export default function Inventory() {
             >
               <option value="all">All Branches</option>
 
-              {BRANCHES.map((b) => (
+              {branchNames.map((b) => (
                 <option key={b} value={b}>
                   {b}
                 </option>
@@ -536,7 +533,7 @@ export default function Inventory() {
                           }))
                         }
                       >
-                        {BRANCHES.map((b) => (
+                        {branchNames.map((b) => (
                           <option key={b} value={b}>
                             {b}
                           </option>

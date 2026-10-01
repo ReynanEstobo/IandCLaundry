@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
 import { AppErrorBoundary, PageLoader } from './components/AsyncState'
+import { supabase } from './lib/supabase'
 
 // Page modules (and their data effects) are loaded only after their route opens.
 const LandingPage = lazy(() => import('./pages/LandingPage'))
@@ -148,23 +149,59 @@ function TableMouseDragScroll() {
   return null
 }
 
+function GlobalDisplayPreferences() {
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true)
+
+  useEffect(() => {
+    let mounted = true
+
+    const applySettings = (settings) => {
+      if (!settings || !mounted) return
+      document.documentElement.setAttribute('data-theme', settings.darkmode ? 'dark' : 'light')
+      setNotificationsEnabled(settings.notifications !== false)
+    }
+
+    const loadSettings = async () => {
+      const { data, error } = await supabase.from('settings').select('darkmode, notifications').single()
+      if (!error) applySettings(data)
+    }
+
+    loadSettings()
+    const channel = supabase
+      .channel('global-display-preferences')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, loadSettings)
+      .subscribe()
+
+    return () => {
+      mounted = false
+      supabase.removeChannel(channel)
+    }
+  }, [])
+
+  if (!notificationsEnabled) return null
+
+  return (
+    <Toaster
+      position="top-right"
+      toastOptions={{
+        style: {
+          background: 'var(--surface, #ffffff)',
+          color: 'var(--text-primary, #111827)',
+          border: '1px solid var(--border-color, #e5e7eb)',
+          borderRadius: '10px',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+          fontSize: '14px',
+        },
+      }}
+    />
+  )
+}
+
 export default function App() {
   return (
     <AppErrorBoundary>
     <AuthProvider>
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: {
-            background: '#ffffff',
-            color: '#111827',
-            border: '1px solid #e5e7eb',
-            borderRadius: '10px',
-            boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
-            fontSize: '14px',
-          },
-        }}
-      />
+      <GlobalDisplayPreferences />
       <TableMouseDragScroll />
       <AppRoutes />
     </AuthProvider>

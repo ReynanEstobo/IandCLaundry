@@ -95,6 +95,9 @@ BEGIN
   END IF;
   v_amount_paid := COALESCE(NULLIF(p_order->>'amount_paid', '')::NUMERIC, 0);
   IF v_amount_paid < 0 THEN RAISE EXCEPTION 'A valid payment amount is required'; END IF;
+  IF lower(COALESCE(NULLIF(trim(p_order->>'payment_method'), ''), 'cash')) <> 'cash' THEN
+    RAISE EXCEPTION 'Cash is the only accepted payment method';
+  END IF;
 
   SELECT id, email INTO v_customer_id, v_customer_email FROM public.customers
   WHERE regexp_replace(phone, '[^0-9]', '', 'g') = regexp_replace(trim(p_customer->>'phone'), '[^0-9]', '', 'g')
@@ -240,7 +243,7 @@ BEGIN
     estimated_processing_minutes, eta_source, estimated_ready_at, loyalty_original_total,
     loyalty_discount_amount, client_request_id)
   VALUES (v_customer_id, v_first_service, v_total_weight, v_final_total, COALESCE(p_addons, '{}'::JSONB),
-    COALESCE(NULLIF(p_order->>'payment_method', ''), 'cash'),
+    'cash',
     CASE WHEN v_amount_paid >= v_final_total THEN 'paid' ELSE 'partial' END, v_amount_paid,
     v_branch_name, p_branch_id, p_staff_id, p_staff_id, 'received', GREATEST(v_eta_minutes, 1),
     v_eta_source, now() + make_interval(mins => GREATEST(v_eta_minutes, 1)), v_raw_total,
@@ -327,14 +330,12 @@ END $$;
 REVOKE EXECUTE ON FUNCTION public.register_branch_customer(UUID, UUID, TEXT, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.register_branch_customer(UUID, UUID, TEXT, TEXT, TEXT) TO service_role;
 
--- Remove previously captured optional note values from audit JSON snapshots.
-UPDATE public.audit_logs
-SET before_data = CASE WHEN before_data IS NULL THEN NULL ELSE before_data - 'notes' END,
-    after_data = CASE WHEN after_data IS NULL THEN NULL ELSE after_data - 'notes' END
-WHERE COALESCE(before_data, '{}'::JSONB) ? 'notes'
-   OR COALESCE(after_data, '{}'::JSONB) ? 'notes';
+-- Historical audit JSON is intentionally left unchanged. Audit entries are
+-- append-only evidence of what existed when an action occurred; they are not
+-- active form fields or schema columns.
 
 ALTER TABLE IF EXISTS public.order_items DROP COLUMN IF EXISTS notes;
+ALTER TABLE IF EXISTS public.payments DROP COLUMN IF EXISTS notes;
 ALTER TABLE IF EXISTS public.orders DROP COLUMN IF EXISTS notes;
 ALTER TABLE IF EXISTS public.customers DROP COLUMN IF EXISTS notes;
 
