@@ -175,7 +175,7 @@ a **FAIL / release blocker** and fix this before production sign-off.
   people.
 - [ ] Test lookup from the new-order form with formats such as `0917...` and
   `+63 917...`; confirm the known customer data is hydrated safely.
-- [ ] Edit name, email, and notes; confirm intended values persist.
+- [ ] Edit name and email; confirm intended values persist.
 - [ ] Delete a customer, confirm the recycle-bin prompt, then restore as admin.
 
 ## 8. Inventory and expenses

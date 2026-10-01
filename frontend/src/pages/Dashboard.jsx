@@ -9,6 +9,7 @@ import {
   PhilippinePeso,
   Lightbulb,
   Package,
+  Radio,
   ShoppingBag,
   ShoppingCart,
   TrendingUp,
@@ -17,20 +18,11 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { generateDecisionSupport } from "../services/geminiService";
 import { PageError, PageLoader } from "../components/AsyncState";
+import DashboardCharts from "../components/DashboardCharts";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { paymentTimestamp, recordedPaymentAmount, rollingDemandForecast } from "../utils/businessForecast";
 
@@ -81,9 +73,19 @@ export default function Dashboard() {
     loadDashboard(true); // ✅ run AI only once
   }, []);
 
-  // Realtime: refresh dashboard when orders or inventory change
-  const loadDashboardCb = useCallback(() => loadDashboard(false), []);
-  useRealtime(["orders", "customers", "inventory_items"], loadDashboardCb);
+  // Stream every data source used by the dashboard. useRealtime debounces
+  // related transaction events and retains a quiet polling fallback.
+  const loadDashboardCb = useCallback(() => loadDashboard(false), [range, page]);
+  useRealtime([
+    "orders",
+    "order_items",
+    "customers",
+    "payments",
+    "inventory_items",
+    "inventory_usage_log",
+    "inventory_restocks",
+    "service_inventory_requirements",
+  ], loadDashboardCb);
 
   function buildChartData(orders, payments, range) {
     const data = [];
@@ -491,8 +493,18 @@ export default function Dashboard() {
     : null;
 
   return (
-    <>
-      <div className="stats-grid">
+    <section className="staff-dashboard admin-dashboard">
+      <div className="staff-dashboard-heading">
+        <div>
+          <p className="staff-dashboard-kicker">Business operations</p>
+          <h2>Management overview</h2>
+          <p>Monitor orders, revenue, customers, and inventory across all branches.</p>
+        </div>
+        <span className="live-update-indicator" role="status" aria-live="polite">
+          <Radio size={14} aria-hidden="true" /> All branches · Live updates
+        </span>
+      </div>
+      <div className="stats-grid staff-dashboard-stats admin-dashboard-stats">
         <div className="stat-card blue">
           <div className="stat-icon">
             <ShoppingBag size={22} />
@@ -656,27 +668,25 @@ export default function Dashboard() {
         <aside className="dashboard-workspace-sidebar">
         {/* AI Forecasting Overview */}
       {forecasts && (
-        <div className="card dashboard-overview-card">
-          <div className="card-header dashboard-overview-header">
-            <h3 className="dashboard-overview-title">
-              <Brain size={18} style={{ color: "#8b5cf6" }} />
-              <span>Decision Support<br />Overview</span>
-            </h3>
-            <span
-              className="badge"
-              style={{ background: "#f3f0ff", color: "#7c3aed", fontSize: 11 }}
-            >
-              <Zap size={12} /> Predictions
+        <div className="staff-dss-overview admin-dss-overview" aria-label="All-branch decision support overview">
+          <div className="staff-dss-header">
+            <div>
+              <span className="staff-dss-eyebrow"><Brain size={15} /> DSS overview</span>
+              <h3>Decision Support</h3>
+              <p>Read-only forecast across all branches.</p>
+            </div>
+            <span className="staff-dss-badge">
+              <Zap size={12} /> AI-assisted
             </span>
           </div>
-          <div className="dashboard-overview-body">
-            <div className="dashboard-forecast-summary">
-              <div className="dashboard-forecast-metric workload">
+          <div className="dashboard-overview-body admin-dss-body">
+            <div className="staff-dss-metrics">
+              <div className="staff-dss-metric workload">
                 <span>Expected workload today</span>
                 <strong>{forecasts.workloadLevel}</strong>
                 <small>{forecasts.workloadSummary}</small>
               </div>
-              <div className="dashboard-forecast-metric peak">
+              <div className="staff-dss-metric peak">
                 <span>Likely peak day</span>
                 <strong>{forecasts.peakDay}</strong>
                 <small>Plan staffing ahead</small>
@@ -684,22 +694,18 @@ export default function Dashboard() {
             </div>
 
             {/* Predicted Revenue */}
-            <div className="forecast-row forecast-revenue overview-revenue">
+            <div className="staff-dss-revenue admin-dss-revenue">
               <div
-                className="forecast-icon-wrap"
-                style={{
-                  background: "rgba(16,185,129,0.12)",
-                  color: "#10b981",
-                }}
+                className="staff-dss-icon"
               >
                 <TrendingUp size={20} />
               </div>
-              <div className="forecast-content">
-                <span className="forecast-label">Predicted revenue</span>
-                <strong className="forecast-value" style={{ color: "#10b981" }}>
+              <div>
+                <span>Predicted revenue</span>
+                <strong>
                   ₱{forecasts.predictedMonthlyRevenue.toLocaleString()}
                 </strong>
-                <span className="forecast-sublabel">Based on received payments in the last 30 days</span>
+                <small>Based on received payments in the last 30 days</small>
                 {forecasts.revenueTrend !== 0 && (
                   <span
                     className={`forecast-trend ${forecasts.revenueTrend > 0 ? "up" : "down"}`}
@@ -714,35 +720,31 @@ export default function Dashboard() {
             {/* Restock Alerts */}
             {activeRestockAlert && (
               <>
-                <div className="forecast-row forecast-restock overview-restock">
-                  <div
-                    className="forecast-icon-wrap"
-                    style={{
-                      background: "#fee2e2",
-                      color: "#991b1b",
-                    }}
-                  >
-                    <AlertTriangle size={20} />
+                <div className="staff-dss-alert-group admin-dss-alert-group">
+                  <div className="staff-dss-alert-summary">
+                    <AlertTriangle size={17} />
+                    <strong>{restockAlertCount} low-stock item{restockAlertCount === 1 ? "" : "s"} need attention</strong>
                   </div>
-                  <div className="forecast-content">
-                    <span className="forecast-label">Restock alert</span>
-                    <span className="forecast-restock-text">
-                      <strong>{activeRestockAlert.name}</strong> will run out in{" "}
-                      <strong>
-                        {activeRestockAlert.daysLeft} day{activeRestockAlert.daysLeft !== 1 ? "s" : ""}
-                      </strong>
-                    </span>
-                    <span className="forecast-sublabel">
-                      Reorder ~{activeRestockAlert.suggestedReorder} {activeRestockAlert.unit}
-                    </span>
+                  <div className="staff-dss-alert admin-dss-alert">
+                    <span className="staff-dss-alert-dot" aria-hidden="true" />
+                    <div>
+                      <strong>{activeRestockAlert.name}</strong>
+                      <span>
+                        Estimated to run out in {activeRestockAlert.daysLeft} day{activeRestockAlert.daysLeft !== 1 ? "s" : ""}
+                      </span>
+                      <span className="staff-dss-forecast">
+                        Suggested reorder: ~{activeRestockAlert.suggestedReorder} {activeRestockAlert.unit}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-sm admin-dss-restock-button"
+                      onClick={() => navigate("/dashboard/inventory")}
+                      aria-label={`Restock ${activeRestockAlert.name}`}
+                    >
+                      Restock <ArrowRight size={13} />
+                    </button>
                   </div>
-                  <button
-                    className="btn btn-sm"
-                    onClick={() => navigate("/dashboard/inventory")}
-                    style={{ flexShrink: 0, fontSize: 12 }}
-                  >
-                    Restock <ArrowRight size={13} />
-                  </button>
                 </div>
                 {restockAlertCount > 1 && (
                   <div className="overview-pagination" aria-label="Restock alert pagination">
@@ -873,120 +875,7 @@ export default function Dashboard() {
           )}
         </section>
       )}
-      <div style={{ marginBottom: 10 }}>
-        {["weekly", "monthly", "yearly"].map((r) => (
-          <button
-            key={r}
-            className={`btn btn-sm ${range === r ? "btn-primary" : ""}`}
-            onClick={() => setRange(r)}
-          >
-            {r}
-          </button>
-        ))}
-      </div>
-
-      <div className="charts-grid">
-        {chartLoading ? (
-          ["orders", "revenue"].map((chart) => (
-            <div className="card dashboard-chart-loading" key={chart}>
-              <div className="dashboard-chart-loading-header"><span className="dashboard-chart-loading-title" /><span className="dashboard-chart-loading-chip" /></div>
-              <div className="dashboard-chart-loading-body">
-                <span className="dashboard-chart-axis y" />
-                <div className="dashboard-chart-bars">{[38, 62, 48, 78, 55, 86, 68].map((height, index) => <span key={index} style={{ height: `${height}%` }} />)}</div>
-                <span className="dashboard-chart-axis x" />
-              </div>
-              <p>Updating {range} chart…</p>
-            </div>
-          ))
-        ) : (
-          <>
-        <div className="card">
-          <div className="card-header">
-            <h3>{range.charAt(0).toUpperCase() + range.slice(1)} Orders</h3>
-          </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={weeklyData}>
-              <XAxis
-                dataKey="label"
-                stroke="#64748b"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                stroke="#64748b"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip
-                labelFormatter={(label, payload) => payload?.[0]?.payload?.fullDate || label}
-                contentStyle={{
-                  background: "#fff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 10,
-                  color: "#111827",
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
-                  fontSize: 13,
-                }}
-              />
-              <Bar dataKey="orders" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h3>
-              {range.charAt(0).toUpperCase() + range.slice(1)} Revenue Trend
-            </h3>
-          </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={weeklyData}>
-              <defs>
-                <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis
-                dataKey="label"
-                stroke="#9ca3af"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis
-                stroke="#9ca3af"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-              />
-              <Tooltip
-                labelFormatter={(label, payload) => payload?.[0]?.payload?.fullDate || label}
-                contentStyle={{
-                  background: "#fff",
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 10,
-                  color: "#111827",
-                  boxShadow: "0 4px 16px rgba(0,0,0,0.08)",
-                  fontSize: 13,
-                }}
-                formatter={(value) => [`₱${value.toLocaleString()}`, "Revenue"]}
-              />
-              <Area
-                type="monotone"
-                dataKey="revenue"
-                stroke="#10b981"
-                fill="url(#revenueGrad)"
-                strokeWidth={2}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-          </>
-        )}
-      </div>
+      <DashboardCharts data={weeklyData} range={range} onRangeChange={setRange} loading={chartLoading} />
 
       <div className="card">
         <div className="card-header">
@@ -1181,6 +1070,6 @@ export default function Dashboard() {
       </div>
         </div>
       </section>
-    </>
+    </section>
   );
 }

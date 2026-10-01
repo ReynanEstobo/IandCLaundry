@@ -3,14 +3,22 @@ import React from "react";
 
 export function LoadingVisual({ label = "Loading data…", compact = false }) {
   return (
-    <div className={`dashboard-chart-loading shared-loading-visual ${compact ? "shared-loading-compact" : ""}`} role="status" aria-live="polite">
-      <div className="dashboard-chart-loading-header"><span className="dashboard-chart-loading-title" /><span className="dashboard-chart-loading-chip" /></div>
-      <div className="dashboard-chart-loading-body">
-        <span className="dashboard-chart-axis y" />
-        <div className="dashboard-chart-bars">{[38, 62, 48, 78, 55, 86, 68].map((height, index) => <span key={index} style={{ height: `${height}%` }} />)}</div>
-        <span className="dashboard-chart-axis x" />
+    <div className={`shared-loading-visual ${compact ? "shared-loading-compact" : ""}`} role="status" aria-live="polite">
+      <div className="shared-loading-stage" aria-hidden="true">
+        <span className="shared-loading-ring shared-loading-ring-outer" />
+        <span className="shared-loading-ring shared-loading-ring-inner" />
+        <div className="shared-loading-figure">
+          <img src="/assets/image%2046.png" alt="" />
+        </div>
+        <span className="shared-loading-bubble bubble-one" />
+        <span className="shared-loading-bubble bubble-two" />
+        <span className="shared-loading-bubble bubble-three" />
       </div>
-      <p>{label}</p>
+      <div className="shared-loading-copy">
+        <strong>{label}</strong>
+        <span>Syncing the latest I&amp;C records</span>
+        <span className="shared-loading-dots" aria-hidden="true"><i /><i /><i /></span>
+      </div>
     </div>
   );
 }
@@ -19,7 +27,6 @@ export function PageLoader({ label = "Loading data…" }) {
   return (
     <div className="async-state" role="status" aria-live="polite">
       <LoadingVisual label={label} compact />
-      <span>Please wait a moment.</span>
     </div>
   );
 }

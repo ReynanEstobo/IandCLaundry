@@ -21,8 +21,8 @@ import { useAuth } from "../context/AuthContext";
 
 const navigation = [
   { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-  { name: "Garment", path: "/dashboard/orders", icon: ShoppingBag },
-  { name: "Client", path: "/dashboard/customers", icon: Users },
+  { name: "Orders", path: "/dashboard/orders", icon: ShoppingBag },
+  { name: "Customers", path: "/dashboard/customers", icon: Users },
   { name: "Inventory", path: "/dashboard/inventory", icon: Package },
   { name: "Account Security", mobileName: "Account", path: "/dashboard/change-password", icon: KeyRound, staffOnly: true },
   {
@@ -50,8 +50,8 @@ const navigation = [
 
 const pageNames = {
   "/dashboard": "Dashboard",
-  "/dashboard/orders": "Garment",
-  "/dashboard/customers": "Client",
+  "/dashboard/orders": "Orders",
+  "/dashboard/customers": "Customers",
   "/dashboard/inventory": "Inventory",
   "/dashboard/analytics": "Analytics",
   "/dashboard/services": "Services",
@@ -138,6 +138,11 @@ export default function Layout() {
         </nav>
 
         <div className="sidebar-footer">
+          <div className="sidebar-account-summary">
+            <strong>{staffName || (role === "admin" ? "Administrator" : "Staff")}</strong>
+            <span>{contactEmail || user?.email || "No contact email"}</span>
+            {branch && <span>{branch}</span>}
+          </div>
           <button
             className="nav-link"
             onClick={signOut}

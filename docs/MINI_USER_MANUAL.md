@@ -70,7 +70,7 @@ Forecasts and recommendations are decision-support estimates. Staff should still
 1. Open **Client**.
 2. Search by name, phone number, or email before adding a new record.
 3. Select **Add Customer** if no matching customer exists.
-4. Enter the customer’s name, valid Philippine mobile number, email, and optional notes.
+4. Enter the customer’s name, valid Philippine mobile number, and email.
 5. Select **Add Customer**.
 
 The order form can also find an existing customer using their phone number. Reuse that record to avoid duplicates.
@@ -82,11 +82,11 @@ The order form can also find an existing customer using their phone number. Reus
 3. Select the existing customer or complete the required customer information.
 4. In **Services**, select the first service and enter its weight.
 5. Add another service when the same order contains different laundry services.
-6. Enter the correct weight and notes for each service separately.
+6. Enter the correct weight for each service separately.
 7. Select any available add-ons and their quantities.
 8. Review the **Price Breakdown**.
 9. Enter the initial payment. At least **50% of the final total** is required.
-10. Add optional order notes and select **Create Order** once.
+10. Review the order and select **Create Order** once.
 
 The system creates one order number containing all selected services. It also:
 
@@ -123,7 +123,7 @@ The calculated **load count** is used for automatic inventory consumption:
 The Services column initially shows the first service and a `+number` indicator when more services exist.
 
 1. Select the service name or `+number` indicator.
-2. Review every service’s name, weight, loads, subtotal, notes, add-ons, and current service status.
+2. Review every service’s name, weight, loads, subtotal, add-ons, and current service status.
 3. Select the same control again to collapse the details.
 
 This works in both table and board views.

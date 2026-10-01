@@ -25,7 +25,7 @@ const AuditLog = lazy(() => import('./pages/RecycleBin'))
 
 function ProtectedRoute({ children }) {
   const { user, mustChangePassword, loading } = useAuth()
-  if (loading) return <div className="loading-spinner"><div className="spinner" /></div>
+  if (loading) return <PageLoader label="Checking your account…" />
   if (!user) return <Navigate to="/login" replace />
   if (mustChangePassword) return <Navigate to="/activate-password" replace />
   return children
@@ -33,7 +33,7 @@ function ProtectedRoute({ children }) {
 
 function AdminRoute({ children }) {
   const { role, loading } = useAuth()
-  if (loading) return <div className="loading-spinner"><div className="spinner" /></div>
+  if (loading) return <PageLoader label="Checking administrator access…" />
   if (role !== 'admin') return <Navigate to="/dashboard" />
   return children
 }
@@ -53,11 +53,7 @@ function AppRoutes() {
   const { user, mustChangePassword, loading } = useAuth()
 
   if (loading) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div className="spinner" />
-      </div>
-    )
+    return <PageLoader label="Opening I&C Laundry…" />
   }
 
   return (

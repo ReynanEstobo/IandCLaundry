@@ -23,7 +23,7 @@ import { useRealtime } from "../lib/useRealtime";
 import { sendEmail, sendSms } from "../services/api/notificationApi";
 import { cancelBranchOrder, collectBranchOrderPayment, createBranchOrder, getVisibleCustomers, lookupCustomerByPhone, settleAndReleaseBranchOrder, transitionAllOrderServiceItems, transitionBranchOrder } from "../services/api/operationsApi";
 import { useAuth } from "../context/AuthContext";
-import { PageError, PageLoader } from "../components/AsyncState";
+import { LoadingVisual, PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from "../components/LoadingButton";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { isValidPhilippineMobile } from "../utils/validation";
@@ -98,7 +98,6 @@ function OrderServicesDetail({ order, id }) {
               <span><small>Loads</small><b>{Number(item.loads || 1).toLocaleString()}</b></span>
               <span><small>Subtotal</small><b>₱{Number(item.subtotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></span>
             </div>
-            {item.notes && <p className="order-service-detail-notes">{item.notes}</p>}
           </article>
         ))}
       </div>
@@ -259,8 +258,7 @@ export default function Orders() {
     customer_phone: "",
     customer_name: "",
     customer_email: "",
-    items: [{ service_type_id: "", weight_kg: "", quantity: "1", notes: "" }],
-    notes: "",
+    items: [{ service_type_id: "", weight_kg: "", quantity: "1" }],
     payment_method: "cash",
     payment_status: "unpaid",
     amount_paid: "",
@@ -277,7 +275,9 @@ export default function Orders() {
   );
 
   const [phoneMatch, setPhoneMatch] = useState(null); // null = not searched, object = found, false = not found
+  const [phoneLookupStatus, setPhoneLookupStatus] = useState("idle");
   const [loyaltyPreview, setLoyaltyPreview] = useState(null);
+  const phoneLookupRequest = useRef(0);
 
   function calcPrice(items, addons) {
     const serviceTotal = orderItemsTotal(items, serviceTypes);
@@ -445,7 +445,7 @@ export default function Orders() {
   }
 
   function addServiceItem() {
-    setForm((current) => ({ ...current, items: [...current.items, { service_type_id: "", weight_kg: "", quantity: "1", notes: "" }] }));
+    setForm((current) => ({ ...current, items: [...current.items, { service_type_id: "", weight_kg: "", quantity: "1" }] }));
   }
 
   function removeServiceItem(index) {
@@ -463,14 +463,14 @@ export default function Orders() {
   }
 
   function openNew() {
+    phoneLookupRequest.current += 1;
     setEditing(null);
     setForm({
       customer_id: "",
       customer_phone: "",
       customer_name: "",
       customer_email: "",
-      items: [{ service_type_id: "", weight_kg: "", quantity: "1", notes: "" }],
-      notes: "",
+      items: [{ service_type_id: "", weight_kg: "", quantity: "1" }],
       payment_method: "cash",
       payment_status: "unpaid",
       amount_paid: "",
@@ -478,20 +478,21 @@ export default function Orders() {
       addons: {},
     });
     setPhoneMatch(null);
+    setPhoneLookupStatus("idle");
     setLoyaltyPreview(null);
     orderRequestId.current = globalThis.crypto.randomUUID();
     setShowModal(true);
   }
 
   function openEdit(order) {
+    phoneLookupRequest.current += 1;
     setEditing(order);
     setForm({
       customer_id: order.customer_id || "",
       customer_phone: order.customers?.phone || "",
       customer_name: order.customers?.name || "",
       customer_email: order.customers?.email || "",
-      items: order.order_items?.length ? order.order_items.map((item) => ({ service_type_id: item.service_type_id || "", weight_kg: item.weight_kg ?? "", quantity: item.quantity ?? "1", notes: item.notes || "" })) : [{ service_type_id: order.service_type_id || "", weight_kg: order.weight_kg ?? "", quantity: "1", notes: "" }],
-      notes: order.notes || "",
+      items: order.order_items?.length ? order.order_items.map((item) => ({ service_type_id: item.service_type_id || "", weight_kg: item.weight_kg ?? "", quantity: item.quantity ?? "1" })) : [{ service_type_id: order.service_type_id || "", weight_kg: order.weight_kg ?? "", quantity: "1" }],
       payment_method: order.payment_method || "cash",
       payment_status: order.payment_status,
       branch: order.branch || "",
@@ -505,29 +506,40 @@ export default function Orders() {
       addons: order.addons || {},
     });
     setPhoneMatch(order.customers ? order.customers : null);
+    setPhoneLookupStatus(order.customers ? "found" : "idle");
     setLoyaltyPreview(null);
     setShowModal(true);
   }
 
   async function lookupPhone(phone) {
     if (!phone || phone.length < 4) {
+      phoneLookupRequest.current += 1;
       setPhoneMatch(null);
+      setPhoneLookupStatus("idle");
       setLoyaltyPreview(null);
       return;
     }
+    const requestId = ++phoneLookupRequest.current;
+    setPhoneMatch(null);
+    setPhoneLookupStatus("checking");
+    setLoyaltyPreview(null);
     // Check the central customer directory. Only branch-visible customer details
     // are returned to staff, but a matching phone is still never duplicated.
     let result;
     try {
       result = await lookupCustomerByPhone(phone);
     } catch (error) {
-      toast.error(error.message || "Unable to check the client record");
+      if (requestId !== phoneLookupRequest.current) return;
+      setPhoneLookupStatus("error");
+      toast.error(error.message || "Unable to check the customer record");
       return;
     }
+    if (requestId !== phoneLookupRequest.current) return;
     const data = result.customer || customers.find((customer) => customer.phone === phone) || null;
     setLoyaltyPreview(result.loyalty?.nextReward || null);
     if (data) {
       setPhoneMatch(data);
+      setPhoneLookupStatus("found");
       setForm((f) => ({
         ...f,
         customer_id: data.id,
@@ -536,6 +548,7 @@ export default function Orders() {
       }));
     } else {
       setPhoneMatch(result.exists ? { exists: true, crossBranch: true } : false);
+      setPhoneLookupStatus(result.exists ? "found" : "new");
       setForm((f) => ({
         ...f,
         customer_id: "",
@@ -548,6 +561,12 @@ export default function Orders() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (savingOrder) return;
+    if (phoneLookupStatus === "checking") {
+      return toast.error("Please wait while the customer record is checked.");
+    }
+    if (phoneLookupStatus === "error") {
+      return toast.error("Customer checking failed. Re-enter the phone number and try again.");
+    }
     if (editing?.order_items?.length) {
       return toast.error("Service items are locked after placement. Cancel and recreate the order if its services must change.");
     }
@@ -556,9 +575,9 @@ export default function Orders() {
     if (!isValidPhilippineMobile(form.customer_phone))
       return toast.error("Phone number must start with 09 and contain exactly 11 digits");
     if (!form.customer_name.trim())
-      return toast.error("Client name is required");
+      return toast.error("Customer name is required");
     if (!form.customer_email.trim())
-      return toast.error("Client email is required");
+      return toast.error("Customer email is required");
     if (!form.items?.length || form.items.some((item) => !validServiceItem(item, serviceTypes.find((service) => String(service.id) === String(item.service_type_id)))))
       return toast.error("Choose a service and enter its required weight or quantity.");
     if (isAdmin && !form.branch)
@@ -613,7 +632,6 @@ export default function Orders() {
       total_price,
       addons: form.addons, // ✅ now supported
       client_request_id: orderRequestId.current,
-      notes: form.notes,
       ...(!editing && {
         payment_method: form.payment_method,
         payment_status,
@@ -1295,24 +1313,26 @@ export default function Orders() {
                             <button
                               className="btn-icon"
                               title="Record additional payment"
+                              aria-label={`Record payment for ${order.order_number}`}
                               onClick={() => openAdditionalPayment(order)}
                             >
-                              <Plus size={16} />
+                              <Plus size={16} /><span className="mobile-action-label">Payment</span>
                             </button>
                           )}
                           {order.status === "ready" && (
-                            <button className="btn-icon" title="Release order after pickup/payment" onClick={() => updateStatus(order, "released")}>
-                              <CheckCircle2 size={16} />
+                            <button className="btn-icon" title="Release order after pickup/payment" aria-label={`Release ${order.order_number}`} onClick={() => updateStatus(order, "released")}>
+                              <CheckCircle2 size={16} /><span className="mobile-action-label">Release</span>
                             </button>
                           )}
                           {!['released', 'cancelled'].includes(order.status) && (
                             <button
                               className="btn-icon"
                               title="Cancel order"
+                              aria-label={`Cancel ${order.order_number}`}
                               onClick={() => openCancellation(order)}
                               style={{ color: "var(--danger)" }}
                             >
-                              <X size={16} />
+                              <X size={16} /><span className="mobile-action-label">Cancel</span>
                             </button>
                           )}
                         </div>
@@ -1452,8 +1472,7 @@ export default function Orders() {
             )}
             {tableLoading && (
               <div className="orders-table-loading" role="status" aria-live="polite">
-                <Loader2 size={22} className="button-spinner" />
-                <span>Loading orders…</span>
+                <LoadingVisual label="Loading orders…" compact />
               </div>
             )}
           </div>
@@ -1502,10 +1521,10 @@ export default function Orders() {
                 <p>
                   {editing
                     ? `Order #${editing.order_number}`
-                    : "Fill in the details below"}
+                    : "Follow the guided steps to create the order"}
                 </p>
               </div>
-              <button className="btn-icon" onClick={() => setShowModal(false)}>
+              <button className="btn-icon" type="button" aria-label="Close order form" onClick={() => setShowModal(false)}>
                 <X size={20} />
               </button>
             </div>
@@ -1513,7 +1532,10 @@ export default function Orders() {
               <div className="order-modal-body">
                 {/* Section: Customer & Service */}
                 <div className="order-section">
-                  <div className="order-section-title">Client & Service</div>
+                  <div className="order-section-title">
+                    <span className="order-step-number">Step 1</span>
+                    <span>Check the customer <small>Enter the mobile number first</small></span>
+                  </div>
                   <div className="form-row">
                     {false && serviceTypes.length > 0 && (
                       <div className="form-group">
@@ -1557,7 +1579,10 @@ export default function Orders() {
                           if (phone.length === 11) {
                             lookupPhone(phone);
                           } else {
+                            phoneLookupRequest.current += 1;
                             setPhoneMatch(null);
+                            setPhoneLookupStatus("idle");
+                            setLoyaltyPreview(null);
 
                             setForm((f) => ({
                               ...f,
@@ -1569,41 +1594,17 @@ export default function Orders() {
                         }}
                         required
                       />
-                      {phoneMatch && phoneMatch.id && (
-                        <div
-                          style={{
-                            marginTop: 4,
-                            fontSize: 12,
-                            color: "#059669",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 4,
-                          }}
-                        >
-                          <CheckCircle2 size={13} /> Existing central client:{" "}
-                          {phoneMatch.name}
-                        </div>
-                      )}
-                      {phoneMatch === false &&
-                        form.customer_phone.length >= 11 && (
-                          <div
-                            style={{
-                              marginTop: 4,
-                              fontSize: 12,
-                              color: "#d97706",
-                            }}
-                          >
-                            New client — will be registered automatically
-                          </div>
-                        )}
-                      {phoneMatch?.crossBranch && (
-                        <div style={{ marginTop: 4, fontSize: 12, color: "#2563eb" }}>
-                          Existing central client found — this order will be linked to this branch without creating a duplicate.
-                        </div>
-                      )}
+                      <div className={`customer-check-status is-${phoneLookupStatus}`} role="status" aria-live="polite">
+                        {phoneLookupStatus === "idle" && <><Search size={15} /><span>Enter an 11-digit Philippine mobile number to check customer records.</span></>}
+                        {phoneLookupStatus === "checking" && <><Loader2 size={16} className="customer-check-spinner" /><span><strong>Checking customer records…</strong><small>Looking for an existing account</small></span></>}
+                        {phoneLookupStatus === "found" && phoneMatch?.id && <><CheckCircle2 size={16} /><span><strong>Existing customer found</strong><small>{phoneMatch.name} — details filled automatically</small></span></>}
+                        {phoneLookupStatus === "found" && phoneMatch?.crossBranch && <><CheckCircle2 size={16} /><span><strong>Existing customer found</strong><small>Enter any missing details. The order will be linked without creating a duplicate.</small></span></>}
+                        {phoneLookupStatus === "new" && <><User size={16} /><span><strong>New customer</strong><small>The customer will be registered when this order is created.</small></span></>}
+                        {phoneLookupStatus === "error" && <><TriangleAlert size={16} /><span><strong>Customer check was unsuccessful</strong><small>Review the number and try entering it again.</small></span></>}
+                      </div>
                     </div>
                     <div className="form-group">
-                      <label>Client Name *</label>
+                      <label>Customer Name *</label>
                       <input
                         className="form-control"
                         placeholder="Juan Dela Cruz"
@@ -1639,11 +1640,11 @@ export default function Orders() {
                       </div>
                     )}
                   </div>
-                  {/* Every client must have an email. Existing emails are shown
-                      read-only; older client records without one can be completed here. */}
+                  {/* Every customer must have an email. Existing emails are shown
+                      read-only; older customer records without one can be completed here. */}
                   {!editing && form.customer_phone.length >= 11 && (
                     <div className="form-group">
-                      <label>Client Email *</label>
+                      <label>Customer Email *</label>
                       <input
                         className="form-control"
                         type="email"
@@ -1678,8 +1679,13 @@ export default function Orders() {
                       </span>
                     </div>
                   )}
-                  <div className="order-section" style={{ marginTop: 16, marginBottom: 0 }}>
-                    <div className="order-section-title">Services</div>
+                </div>
+
+                <div className="order-section">
+                    <div className="order-section-title">
+                      <span className="order-step-number">Step 2</span>
+                      <span>Select services <small>Add the weight for each service</small></span>
+                    </div>
                     {form.items.map((item, index) => {
                       const service = serviceTypes.find((candidate) => String(candidate.id) === String(item.service_type_id));
                       const inputLabel = pricingInputLabel(service);
@@ -1705,14 +1711,14 @@ export default function Orders() {
                       </div>;
                     })}
                     {!editing || editing.status === 'received' ? <button type="button" className="btn btn-secondary btn-sm" onClick={addServiceItem}><Plus size={15} /> Add another service</button> : <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 13 }}>Service details are locked after processing starts so inventory remains accurate.</p>}
-                  </div>
                 </div>
 
                 {/* Section: Add-ons */}
                 <div className="order-section">
                   <div className="order-section-title">
-                    Add-ons{" "}
-                    <span className="order-section-optional">Available for the selected services</span>
+                    <span className="order-step-number">Step 3</span>
+                    <span>Choose add-ons <small>Optional items for the selected services</small></span>
+                    <span className="order-section-optional">Optional</span>
                   </div>
                   <div className="addon-grid">
                     {branchInventoryItems.map((item) => {
@@ -1778,6 +1784,10 @@ export default function Orders() {
 
                 {/* Price Breakdown */}
                 <div className="order-section">
+                  <div className="order-section-title">
+                    <span className="order-step-number">Step 4</span>
+                    <span>Review the total <small>Confirm services, weights, add-ons, and rewards</small></span>
+                  </div>
                   {!editing && loyaltyPreview && (
                     <div className="account-security-notice" style={{ marginBottom: 14 }}>
                       <CheckCircle2 size={16} />
@@ -1856,7 +1866,8 @@ export default function Orders() {
                 {/* Section: Payment */}
                 <div className="order-section">
                   <div className="order-section-title">
-                    Payment{" "}
+                    <span className="order-step-number">Step 5</span>
+                    <span>Record payment <small>Enter the amount received from the customer</small></span>
                     <span className="order-section-optional">
                       Min. 50% required
                     </span>
@@ -1951,19 +1962,6 @@ export default function Orders() {
                   </div>
                 </div>
 
-                {/* Notes */}
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Notes</label>
-                  <textarea
-                    className="form-control"
-                    placeholder="Special instructions..."
-                    rows={2}
-                    value={form.notes}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, notes: e.target.value }))
-                    }
-                  />
-                </div>
               </div>
               <div className="order-modal-footer">
                 <button
@@ -1974,7 +1972,7 @@ export default function Orders() {
                 >
                   Cancel
                 </button>
-                <LoadingButton type="submit" className="btn btn-primary" loading={savingOrder} loadingLabel={editing ? "Updating…" : "Creating…"}>
+                <LoadingButton type="submit" className="btn btn-primary" disabled={phoneLookupStatus === "checking"} loading={savingOrder} loadingLabel={editing ? "Updating…" : "Creating…"}>
                   {editing ? "Update Order" : "Create Order"}
                 </LoadingButton>
               </div>

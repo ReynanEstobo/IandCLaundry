@@ -93,14 +93,12 @@ export async function registerCustomer(body, identity) {
   const name = assertText(body?.name, { label: 'Customer name', min: 2, max: 120 })
   const phone = assertPhilippineMobile(body?.phone)
   const email = assertEmail(body?.email, { label: 'Customer email', required: true })
-  const notes = assertText(body?.notes, { label: 'Notes', max: 1_000, required: false })
   const { data, error } = await database.rpc('register_branch_customer', {
     p_branch_id: branch.id,
     p_staff_id: identity.staffId,
     p_name: name,
     p_phone: phone,
     p_email: email,
-    p_notes: notes,
   })
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
   return { data }

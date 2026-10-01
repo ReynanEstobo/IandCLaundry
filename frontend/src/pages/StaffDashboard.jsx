@@ -5,8 +5,11 @@ import { useAuth } from '../context/AuthContext'
 import { PageError, PageLoader } from '../components/AsyncState'
 import { compareOrdersForList } from '../utils/orderListPriority'
 import { rollingDemandForecast } from '../utils/businessForecast'
+import { staffDashboardChartData } from '../utils/chartDates'
+import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorderQuantity } from '../utils/inventoryForecast'
+import DashboardCharts from '../components/DashboardCharts'
 import {
-  Clock, AlertTriangle, ShoppingBag, CheckCircle2, Timer, User, RefreshCw,
+  Clock, AlertTriangle, ShoppingBag, CheckCircle2, Timer, User, Radio,
   Brain, Zap, TrendingUp
 } from 'lucide-react'
 
@@ -28,7 +31,7 @@ function buildBranchForecast(orderHistory, paymentHistory, lowStockItems) {
   return {
     ...baseline,
     nextMonthRevenue: baseline.predictedMonthlyRevenue,
-    restockItem: lowStockItems[0] || null,
+    restockItems: lowStockItems,
   }
 }
 
@@ -38,8 +41,13 @@ export default function StaffDashboard() {
   const [orderHistory, setOrderHistory] = useState([])
   const [paymentHistory, setPaymentHistory] = useState([])
   const [inventory, setInventory] = useState([])
+  const [usageLogs, setUsageLogs] = useState([])
+  const [serviceRecipes, setServiceRecipes] = useState([])
+  const [serviceOrderItems, setServiceOrderItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [chartRange, setChartRange] = useState('weekly')
+  const [statusFilter, setStatusFilter] = useState('all')
 
   const loadData = useCallback(async (background = false) => {
     if (!background) {
@@ -47,7 +55,7 @@ export default function StaffDashboard() {
       setLoadError('')
     }
     try {
-      const [ordersRes, inventoryRes, historyRes, paymentsRes] = await Promise.all([
+      const [ordersRes, inventoryRes, historyRes, paymentsRes, usageRes, recipesRes, orderItemsRes] = await Promise.all([
         supabase.from('orders').select('*, customers(name, phone), service_types(name), order_items(service_name_snapshot, weight_kg, status)')
           .not('status', 'in', '("released","cancelled")')
           .order('created_at', { ascending: false }),
@@ -55,15 +63,24 @@ export default function StaffDashboard() {
         // Row-level security restricts this data to the signed-in staff member's branch.
         supabase.from('orders').select('created_at, amount_paid, total_price, payment_status, status')
           .not('status', 'eq', 'cancelled'),
-        supabase.from('payments').select('amount, paid_at, payment_date')
+        supabase.from('payments').select('amount, paid_at, payment_date'),
+        supabase.from('inventory_usage_log').select('item_id, quantity_used, logged_at, reversed_at')
+          .order('logged_at', { ascending: false }).limit(500),
+        supabase.from('service_inventory_requirements')
+          .select('inventory_item_id, service_type_id, branch_id, quantity_per_load, is_active').eq('is_active', true),
+        supabase.from('order_items').select('service_type_id, branch_id, loads, status, created_at')
+          .not('status', 'eq', 'cancelled').order('created_at', { ascending: false }).limit(1000)
       ])
-      if (ordersRes.error || inventoryRes.error || historyRes.error || paymentsRes.error) {
-        throw ordersRes.error || inventoryRes.error || historyRes.error || paymentsRes.error
+      if (ordersRes.error || inventoryRes.error || historyRes.error || paymentsRes.error || usageRes.error || recipesRes.error || orderItemsRes.error) {
+        throw ordersRes.error || inventoryRes.error || historyRes.error || paymentsRes.error || usageRes.error || recipesRes.error || orderItemsRes.error
       }
       setOrders([...(ordersRes.data || [])].sort(compareOrdersForList))
       setInventory(inventoryRes.data || [])
       setOrderHistory(historyRes.data || [])
       setPaymentHistory(paymentsRes.data || [])
+      setUsageLogs(usageRes.data || [])
+      setServiceRecipes(recipesRes.data || [])
+      setServiceOrderItems(orderItemsRes.data || [])
     } catch (error) {
       if (!background) setLoadError(error.message || 'Unable to load your branch dashboard.')
       else console.error('Background staff dashboard refresh failed:', error)
@@ -75,7 +92,15 @@ export default function StaffDashboard() {
   useEffect(() => { loadData() }, [loadData])
 
   // Realtime: refresh when orders or inventory change
-  useRealtime(['orders', 'inventory_items'], () => loadData(true))
+  useRealtime([
+    'orders',
+    'order_items',
+    'payments',
+    'inventory_items',
+    'inventory_usage_log',
+    'inventory_restocks',
+    'service_inventory_requirements',
+  ], () => loadData(true))
 
   function getTimeRemaining(estimatedCompletion) {
     if (!estimatedCompletion) return null
@@ -96,7 +121,14 @@ export default function StaffDashboard() {
 
   // Low stock
   const lowStockItems = inventory.filter(i => Number(i.current_stock) <= Number(i.minimum_stock))
-  const branchForecast = buildBranchForecast(orderHistory, paymentHistory, lowStockItems)
+  const forecastedLowStockItems = lowStockItems.map(item => ({
+    ...item,
+    forecastDaysLeft: predictInventoryDaysLeft(item, usageLogs, serviceRecipes, serviceOrderItems),
+    suggestedReorder: suggestInventoryReorderQuantity(item, usageLogs, serviceRecipes, serviceOrderItems),
+  }))
+  const branchForecast = buildBranchForecast(orderHistory, paymentHistory, forecastedLowStockItems)
+  const chartData = staffDashboardChartData(orderHistory, paymentHistory, chartRange)
+  const visibleStatuses = statusFilter === 'all' ? STATUS_FLOW : [statusFilter]
 
   if (loading) return <PageLoader label="Loading branch dashboard…" />
   if (loadError) return <PageError message={loadError} onRetry={loadData} />
@@ -109,9 +141,9 @@ export default function StaffDashboard() {
           <h2>Today’s work queue</h2>
           <p>Monitor the orders and inventory assigned to {branch || 'your branch'}.</p>
         </div>
-        <button className="btn btn-sm btn-secondary staff-dashboard-refresh" onClick={() => loadData()}>
-          <RefreshCw size={14} /> Refresh data
-        </button>
+        <span className="live-update-indicator" role="status" aria-live="polite">
+          <Radio size={14} aria-hidden="true" /> Live updates
+        </span>
       </div>
 
       <div className="staff-dashboard-summary">
@@ -171,13 +203,23 @@ export default function StaffDashboard() {
             </div>
           </div>
 
-          {branchForecast.restockItem ? (
-            <div className="staff-dss-alert">
-              <AlertTriangle size={18} />
-              <div>
-                <strong>{branchForecast.restockItem.name} needs attention</strong>
-                <span>{Number(branchForecast.restockItem.current_stock)} {branchForecast.restockItem.unit} remaining; at or below the minimum level.</span>
+          {branchForecast.restockItems.length ? (
+            <div className="staff-dss-alert-group">
+              <div className="staff-dss-alert-summary">
+                <AlertTriangle size={17} />
+                <strong>{branchForecast.restockItems.length} low-stock item{branchForecast.restockItems.length === 1 ? '' : 's'} need attention</strong>
               </div>
+              {branchForecast.restockItems.map(item => (
+                <div className="staff-dss-alert" key={item.id}>
+                  <span className="staff-dss-alert-dot" aria-hidden="true" />
+                  <div>
+                    <strong>{item.name}</strong>
+                    <span>{Number(item.current_stock)} {item.unit} remaining · Minimum: {Number(item.minimum_stock)} {item.unit}</span>
+                    <span className="staff-dss-forecast">{inventoryRunOutLabel(item.forecastDaysLeft)}</span>
+                    <span className="staff-dss-reorder">Suggested reorder: ~{item.suggestedReorder} {item.unit}</span>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="staff-dss-ok">
@@ -187,22 +229,30 @@ export default function StaffDashboard() {
         </aside>
       </div>
 
-      {/* Kanban Board — same as admin Garment page */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          {STATUS_FLOW.map(s => (
-            <span key={s} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-muted)' }}>
-              <span>{STATUS_ICONS[s]}</span> {STATUS_LABELS[s]}
-            </span>
+      <DashboardCharts data={chartData} range={chartRange} onRangeChange={setChartRange} />
+
+      {/* Kanban Board — same as admin Orders page */}
+
+      <div className="staff-kanban-toolbar">
+        <div className="staff-kanban-legend" role="group" aria-label="Filter orders by status">
+          {['all', ...STATUS_FLOW].map(status => (
+            <button
+              type="button"
+              key={status}
+              className={`staff-kanban-filter ${statusFilter === status ? 'active' : ''}`}
+              onClick={() => setStatusFilter(status)}
+              aria-pressed={statusFilter === status}
+            >
+              <span aria-hidden="true">{status === 'all' ? '☰' : STATUS_ICONS[status]}</span>
+              <span>{status === 'all' ? 'All' : STATUS_LABELS[status]}</span>
+              <small>{status === 'all' ? orders.length : orders.filter(order => order.status === status).length}</small>
+            </button>
           ))}
         </div>
-        <button className="btn btn-sm btn-secondary" onClick={loadData} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <RefreshCw size={14} /> Refresh
-        </button>
       </div>
 
       <div className="kanban-board">
-        {STATUS_FLOW.map(status => {
+        {visibleStatuses.map(status => {
           const columnOrders = orders.filter(o => o.status === status)
           return (
             <div key={status} className="kanban-column" data-stage={status}>
@@ -215,24 +265,24 @@ export default function StaffDashboard() {
               </div>
               <div className="kanban-cards">
                 {columnOrders.length === 0 ? (
-                  <div className="kanban-empty">No orders</div>
+                  <div className="kanban-empty"><span>{STATUS_ICONS[status]}</span><strong>No orders</strong><small>This stage is currently clear.</small></div>
                 ) : columnOrders.map(order => (
-                  <div key={order.id} className="kanban-card" style={{ cursor: 'default' }}>
+                  <div key={order.id} className="kanban-card staff-kanban-card">
                     <div className="kanban-card-header">
                       <span className="kanban-order-num">{order.order_number}</span>
-                      <span className={`badge badge-${order.payment_status}`} style={{ fontSize: 10, padding: '2px 6px' }}>{order.payment_status}</span>
+                      <span className={`kanban-payment-badge badge-${order.payment_status}`}>{order.payment_status}</span>
                     </div>
                     <div className="kanban-card-customer">
                       <User size={13} />
                       <span>{order.customers?.name || 'Walk-in'}</span>
                     </div>
                     <div className="kanban-card-details">
-                      <span>{order.order_items?.length ? order.order_items.map(item => item.service_name_snapshot).join(', ') : order.service_types?.name}</span>
-                      <span>{order.weight_kg} kg</span>
+                      <span className="staff-kanban-service-text">{order.order_items?.length ? order.order_items.map(item => item.service_name_snapshot).join(', ') : order.service_types?.name}</span>
+                      <span className="kanban-card-kg">{order.weight_kg} kg</span>
                     </div>
-                    <div className="kanban-card-footer">
+                    <div className="staff-kanban-meta">
                       <span className="kanban-card-price">₱{Number(order.total_price).toLocaleString()}</span>
-                      <span className="kanban-card-time">
+                      <span className={`staff-kanban-time ${status === 'ready' ? 'ready' : ''}`}>
                         {status !== 'ready' && (
                           <><Clock size={12} /> {getTimeRemaining(order.estimated_ready_at) || 'ETA unavailable'}</>
                         )}

@@ -1,4 +1,4 @@
-import { differenceInDays, format } from "date-fns";
+import { format } from "date-fns";
 import {
   AlertTriangle,
   Edit2,
@@ -15,10 +15,12 @@ import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
+import { predictInventoryDaysLeft } from "../utils/inventoryForecast";
 import { restockBranchInventory } from "../services/api/operationsApi";
 import { PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
+import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
 
 const BRANCHES = [
   "Main - Brgy 7",
@@ -101,51 +103,7 @@ export default function Inventory() {
 
   // ===== STOCK PREDICTION =====
   function predictDaysLeft(item) {
-    const itemLogs = usageLogs.filter((l) => l.item_id === item.id && !l.reversed_at);
-    if (itemLogs.length >= 2) {
-      const sortedLogs = [...itemLogs].sort(
-        (a, b) => new Date(a.logged_at) - new Date(b.logged_at),
-      );
-      const firstLog = new Date(sortedLogs[0].logged_at);
-      const lastLog = new Date(sortedLogs[sortedLogs.length - 1].logged_at);
-      const daysDiff = Math.max(differenceInDays(lastLog, firstLog), 1);
-      const totalUsed = itemLogs.reduce(
-        (sum, l) => sum + Number(l.quantity_used),
-        0,
-      );
-      const dailyUsage = totalUsed / daysDiff;
-
-      if (dailyUsage > 0)
-        return Math.floor(Number(item.current_stock) / dailyUsage);
-    }
-
-    // For new items with limited usage history, estimate from the actual
-    // service recipes and loads placed during the last 30 days.
-    const recipes = serviceRecipes.filter(
-      (recipe) => recipe.inventory_item_id === item.id && recipe.branch_id === item.branch_id,
-    );
-    if (recipes.length && Number(item.current_stock) > 0) {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const recentItems = serviceOrderItems.filter(
-        (orderItem) => orderItem.branch_id === item.branch_id &&
-          new Date(orderItem.created_at) >= thirtyDaysAgo,
-      );
-      const configuredUsage = recentItems.reduce((total, orderItem) => {
-        const recipe = recipes.find((candidate) => candidate.service_type_id === orderItem.service_type_id);
-        return total + (recipe ? Number(recipe.quantity_per_load) * Math.max(Number(orderItem.loads) || 1, 1) : 0);
-      }, 0);
-      if (configuredUsage > 0) {
-        const firstDate = recentItems.reduce((earliest, row) => {
-          const date = new Date(row.created_at);
-          return !earliest || date < earliest ? date : earliest;
-        }, null);
-        const observedDays = Math.max(1, Math.min(30, differenceInDays(new Date(), firstDate) + 1));
-        return Math.floor(Number(item.current_stock) / (configuredUsage / observedDays));
-      }
-    }
-
-    return null;
+    return predictInventoryDaysLeft(item, usageLogs, serviceRecipes, serviceOrderItems);
   }
 
   function openNew() {
@@ -282,22 +240,21 @@ export default function Inventory() {
 
     return matchesSearch && matchesBranch;
   });
+  const { sortedRows, sort, requestSort } = useSortableRows(filtered, "item", {
+    item: (item) => item.name,
+    branch: (item) => item.branch,
+    stock: (item) => Number(item.current_stock),
+    minimum: (item) => Number(item.minimum_stock),
+    status: (item) => Number(item.current_stock) <= Number(item.minimum_stock) ? 0 : 1,
+    forecast: (item) => predictDaysLeft(item) ?? Number.POSITIVE_INFINITY,
+  });
 
   if (loading) return <PageLoader label="Loading inventory…" />;
   if (loadError) return <PageError message={loadError} onRetry={loadData} />;
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 20,
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
+      <TableToolbar actions={<button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Add Item</button>}>
         <div
           style={{
             display: "flex",
@@ -338,35 +295,25 @@ export default function Inventory() {
           )}
         </div>
 
-        <button className="btn btn-primary" onClick={openNew}>
-          <Plus size={18} />
-          Add Item
-        </button>
-      </div>
+      </TableToolbar>
 
-      <div className="card" style={{ padding: 0 }}>
-        <div className="table-wrapper">
-          <table>
+      <DataTable ariaLabel="Inventory items">
             <thead>
               <tr>
-                <th>Item</th>
-                {role === "admin" && <th>Branch</th>}
-                <th>Stock</th>
-                <th>Min Level</th>
-                <th>Status</th>
-                <th>Forecast</th>
+                <SortableHeader label="Item" column="item" sort={sort} onSort={requestSort} />
+                {role === "admin" && <SortableHeader label="Branch" column="branch" sort={sort} onSort={requestSort} />}
+                <SortableHeader label="Stock" column="stock" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Min Level" column="minimum" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Status" column="status" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Forecast" column="forecast" sort={sort} onSort={requestSort} />
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={role === "admin" ? 7 : 6} className="empty-state">
-                    <p>No items found</p>
-                  </td>
-                </tr>
+              {sortedRows.length === 0 ? (
+                <EmptyState colSpan={role === "admin" ? 7 : 6} message="No items found" />
               ) : (
-                filtered.map((item) => {
+                sortedRows.map((item) => {
                   const isLow =
                     Number(item.current_stock) <= Number(item.minimum_stock);
                   const pct =
@@ -386,7 +333,7 @@ export default function Inventory() {
                   }
                   return (
                     <tr key={item.id}>
-                      <td
+                      <td data-card-primary data-label="Item"
                         style={{
                           fontWeight: 600,
                           color: "var(--text-primary)",
@@ -407,14 +354,14 @@ export default function Inventory() {
                         </div>
                       </td>
                       {role === "admin" && (
-                      <td>
+                      <td data-label="Branch">
                         <span className="badge badge-ok">
                           {item.branch || "—"}
                         </span>
                       </td>
                       )}
 
-                      <td>
+                      <td data-label="Stock">
                         <div>
                           <span
                             style={{
@@ -446,10 +393,10 @@ export default function Inventory() {
                           />
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Minimum level">
                         {item.minimum_stock} {item.unit}
                       </td>
-                      <td>
+                      <td data-label="Status">
                         {isLow ? (
                           <span className="badge badge-low">
                             <AlertTriangle
@@ -462,7 +409,7 @@ export default function Inventory() {
                           <span className="badge badge-ok">OK</span>
                         )}
                       </td>
-                      <td>
+                      <td data-label="Forecast">
                         {daysLeft !== null ? (
                           <div
                             style={{
@@ -501,11 +448,12 @@ export default function Inventory() {
                           </span>
                         )}
                       </td>
-                      <td>
+                      <td data-card-actions data-label="Actions">
                         <div style={{ display: "flex", gap: 4 }}>
                           <button
                             className="btn-icon"
                             title="Restock"
+                            aria-label={`Restock ${item.name}`}
                             onClick={() => {
                               setShowRestock(item);
                               setRestockQty("");
@@ -513,20 +461,24 @@ export default function Inventory() {
                               setRestockSupplier("");
                             }}
                           >
-                            <RefreshCw size={16} />
+                            <RefreshCw size={16} /><span className="mobile-action-label">Restock</span>
                           </button>
                           <button
                             className="btn-icon"
                             onClick={() => openEdit(item)}
+                            title="Edit item"
+                            aria-label={`Edit ${item.name}`}
                           >
-                            <Edit2 size={16} />
+                            <Edit2 size={16} /><span className="mobile-action-label">Edit</span>
                           </button>
                           <button
                             className="btn-icon"
                             onClick={() => setItemToDelete(item)}
                             style={{ color: "var(--danger)" }}
+                            title="Archive item"
+                            aria-label={`Archive ${item.name}`}
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={16} /><span className="mobile-action-label">Archive</span>
                           </button>
                         </div>
                       </td>
@@ -535,17 +487,18 @@ export default function Inventory() {
                 })
               )}
             </tbody>
-          </table>
-        </div>
-      </div>
+      </DataTable>
 
       {/* Add/Edit Item Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>{editing ? "Edit Item" : "Add Item"}</h3>
-              <button className="btn-icon" onClick={() => setShowModal(false)}>
+              <div>
+                <h3>{editing ? "Edit Item" : "Add Item"}</h3>
+                <p>Set the item’s branch, measuring unit, and stock threshold.</p>
+              </div>
+              <button className="btn-icon" type="button" aria-label="Close inventory item form" onClick={() => setShowModal(false)}>
                 <X size={20} />
               </button>
             </div>
@@ -686,8 +639,11 @@ export default function Inventory() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-header">
-              <h3>Restock: {showRestock.name}</h3>
-              <button className="btn-icon" disabled={restocking} onClick={() => setShowRestock(null)}>
+              <div>
+                <h3>Restock {showRestock.name}</h3>
+                <p>Record the quantity received and optional purchase details.</p>
+              </div>
+              <button className="btn-icon" type="button" aria-label="Close restock form" disabled={restocking} onClick={() => setShowRestock(null)}>
                 <X size={20} />
               </button>
             </div>

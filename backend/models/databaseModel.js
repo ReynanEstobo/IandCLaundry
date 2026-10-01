@@ -156,7 +156,6 @@ function validateResourcePayload(table, payload, operation) {
       if (needs('name')) value.name = assertText(value.name, { label: 'Customer name', min: 2, max: 120 })
       if (needs('phone')) value.phone = assertPhilippineMobile(value.phone)
       if (needs('email')) value.email = assertEmail(value.email, { label: 'Customer email', required: true })
-      if (has('notes')) value.notes = assertText(value.notes, { label: 'Customer notes', max: 1_000, required: false }) || null
     }
     if (table === 'inventory_items') {
       if (needs('name')) value.name = assertText(value.name, { label: 'Item name', min: 2, max: 120 })
@@ -208,7 +207,6 @@ function validateResourcePayload(table, payload, operation) {
         if (!Number.isFinite(weight) || weight <= 0) throw Object.assign(new Error('Order weight must be greater than zero.'), { status: 400 })
         value.weight_kg = weight
       }
-      if (has('notes')) value.notes = assertText(value.notes, { label: 'Order notes', max: 1_000, required: false }) || null
     }
     return value
   }
@@ -242,11 +240,7 @@ export async function execute(table, request, identity) {
     throw Object.assign(new Error('Order stages can only be changed through the secure workflow.'), { status: 403 })
   }
   if (table === 'orders' && request.operation === 'update') {
-    const allowedOrderUpdates = new Set(['notes'])
-    const attemptedFields = Object.keys(request.payload || {})
-    if (attemptedFields.some(field => !allowedOrderUpdates.has(field))) {
-      throw Object.assign(new Error('Placed order details are locked. Only notes may be edited; use the secure payment, stage, or cancellation workflow for other changes.'), { status: 403 })
-    }
+    throw Object.assign(new Error('Placed order details are locked; use the secure payment, stage, or cancellation workflow.'), { status: 403 })
   }
   if (table === 'inventory_items' && request.operation === 'update') {
     const updates = request.payload || {}

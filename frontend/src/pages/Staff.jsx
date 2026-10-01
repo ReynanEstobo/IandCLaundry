@@ -11,6 +11,7 @@ import { useRealtime } from "../lib/useRealtime";
 import { PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
+import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
 import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
 
 // ─────────────────────────────────────
@@ -296,6 +297,16 @@ export default function Staff() {
       (s.branch || "").toLowerCase().includes(q)
     );
   });
+  const { sortedRows, sort, requestSort } = useSortableRows(filtered, "name", {
+    name: (staff) => staff.full_name,
+    account: (staff) => staff.staff_code || staff.username,
+    email: (staff) => staff.contact_email || staff.email,
+    phone: (staff) => staff.phone,
+    position: (staff) => staff.position,
+    branch: (staff) => staff.branch,
+    role: (staff) => staff.role,
+    added: (staff) => staff.created_at ? new Date(staff.created_at).getTime() : 0,
+  });
 
   // ─────────────────────────────────────
   // LOADING
@@ -306,16 +317,7 @@ export default function Staff() {
   return (
     <>
       {/* HEADER */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 20,
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
+      <TableToolbar actions={<button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Add Account</button>}>
         {/* SEARCH */}
         <div className="search-box">
           <Search />
@@ -328,42 +330,32 @@ export default function Staff() {
         </div>
 
         {/* ADD BUTTON */}
-        <button className="btn btn-primary" onClick={openNew}>
-          <Plus size={18} />
-          Add Account
-        </button>
-      </div>
+      </TableToolbar>
 
       {/* TABLE */}
-      <div className="card" style={{ padding: 0 }}>
-        <div className="table-wrapper">
-          <table>
+      <DataTable ariaLabel="Staff accounts">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Staff ID / Username</th>
-                <th>Contact Email</th>
-                <th>Phone</th>
-                <th>Position</th>
-                <th>Branch</th>
-                <th>Role</th>
-                <th>Added</th>
+                <SortableHeader label="Name" column="name" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Staff ID / Username" column="account" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Contact Email" column="email" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Phone" column="phone" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Position" column="position" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Branch" column="branch" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Role" column="role" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Added" column="added" sort={sort} onSort={requestSort} />
                 <th>Actions</th>
               </tr>
             </thead>
 
             <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="empty-state">
-                    <p>No staff found</p>
-                  </td>
-                </tr>
+              {sortedRows.length === 0 ? (
+                <EmptyState colSpan={9} message="No staff found" />
               ) : (
-                filtered.map((s) => (
+                sortedRows.map((s) => (
                   <tr key={s.id}>
                     {/* NAME */}
-                    <td
+                    <td data-card-primary data-label="Staff member"
                       style={{
                         fontWeight: 600,
                         color: "var(--text-primary)",
@@ -412,7 +404,7 @@ export default function Staff() {
                       </div>
                     </td>
 
-                    <td>
+                    <td data-label="Staff ID / Username">
                       <div style={{ fontSize: 12, lineHeight: 1.5 }}>
                         <strong>{s.staff_code || "—"}</strong><br />
                         <span style={{ color: "var(--text-muted)" }}>{s.username || "Legacy account"}</span>
@@ -421,19 +413,19 @@ export default function Staff() {
 
                     {/* CONTACT EMAIL — the auth email for provisioned accounts
                         is intentionally internal and must not be shown here. */}
-                    <td>{s.contact_email || (s.username ? "No contact email" : s.email || "—")}</td>
+                    <td data-label="Contact email">{s.contact_email || (s.username ? "No contact email" : s.email || "—")}</td>
 
                     {/* PHONE */}
-                    <td>{s.phone || "—"}</td>
+                    <td data-label="Phone">{s.phone || "—"}</td>
 
                     {/* POSITION */}
-                    <td>{s.position || "—"}</td>
+                    <td data-label="Position">{s.position || "—"}</td>
 
                     {/* BRANCH */}
-                    <td>{s.branch || "—"}</td>
+                    <td data-label="Branch">{s.branch || "—"}</td>
 
                     {/* ROLE */}
-                    <td>
+                    <td data-label="Role">
                       <span
                         className={`badge ${
                           s.role === "admin" ? "badge-paid" : "badge-partial"
@@ -447,7 +439,7 @@ export default function Staff() {
                     </td>
 
                     {/* DATE */}
-                    <td
+                    <td data-label="Added"
                       style={{
                         fontSize: 13,
 
@@ -460,7 +452,7 @@ export default function Staff() {
                     </td>
 
                     {/* ACTIONS */}
-                    <td>
+                    <td data-card-actions data-label="Actions">
                       <div
                         style={{
                           display: "flex",
@@ -473,8 +465,9 @@ export default function Staff() {
                           className="btn-icon"
                           onClick={() => openEdit(s)}
                           title="Edit"
+                          aria-label={`Edit ${s.full_name}`}
                         >
-                          <Edit2 size={16} />
+                          <Edit2 size={16} /><span className="mobile-action-label">Edit</span>
                         </button>
 
                         {s.auth_id && (
@@ -482,8 +475,9 @@ export default function Staff() {
                             className="btn-icon"
                             onClick={() => setStaffToReset(s)}
                             title="Reset generated credentials"
+                            aria-label={`Reset credentials for ${s.full_name}`}
                           >
-                            <KeyRound size={16} />
+                            <KeyRound size={16} /><span className="mobile-action-label">Reset</span>
                           </button>
                         )}
 
@@ -492,11 +486,12 @@ export default function Staff() {
                           className="btn-icon"
                           onClick={() => setStaffToDelete(s)}
                           title="Delete"
+                          aria-label={`Archive ${s.full_name}`}
                           style={{
                             color: "var(--danger)",
                           }}
                         >
-                          <Trash2 size={16} />
+                          <Trash2 size={16} /><span className="mobile-action-label">Archive</span>
                         </button>
                       </div>
                     </td>
@@ -504,9 +499,7 @@ export default function Staff() {
                 ))
               )}
             </tbody>
-          </table>
-        </div>
-      </div>
+      </DataTable>
 
       {/* MODAL */}
       {showModal && (
@@ -514,9 +507,12 @@ export default function Staff() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             {/* HEADER */}
             <div className="modal-header">
-              <h3>{editing ? "Edit Account" : "Add Account"}</h3>
+              <div>
+                <h3>{editing ? "Edit Account" : "Add Account"}</h3>
+                <p>Configure identity, access role, and branch assignment.</p>
+              </div>
 
-              <button className="btn-icon" onClick={() => setShowModal(false)}>
+              <button className="btn-icon" type="button" aria-label="Close account form" onClick={() => setShowModal(false)}>
                 <X size={20} />
               </button>
             </div>

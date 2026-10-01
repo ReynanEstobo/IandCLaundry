@@ -52,13 +52,11 @@ export async function createOrder(body, identity) {
   validatedCustomer.name = assertText(customer.name, { label: 'Customer name', min: 2, max: 120 })
   validatedCustomer.phone = assertPhilippineMobile(customer.phone)
   validatedCustomer.email = assertEmail(customer.email, { label: 'Customer email', required: true })
-  if (Object.hasOwn(customer, 'notes')) validatedCustomer.notes = assertText(customer.notes, { label: 'Customer notes', max: 1_000, required: false })
   const payload = {
     // The database resolves price snapshots. Client totals are previews only.
     items: serviceItems,
     service_type_id: order.service_type_id || serviceItems[0]?.service_type_id || null,
     weight_kg: Number.isFinite(weight) ? weight : null,
-    notes: order.notes || '',
     payment_method: order.payment_method || 'cash',
     payment_status: Number.isFinite(previewTotal) && amountPaid >= previewTotal ? 'paid' : 'partial',
     amount_paid: amountPaid,

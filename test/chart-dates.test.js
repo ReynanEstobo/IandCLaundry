@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { analyticsPeriod, descriptiveChartData, paymentChartData, chartTooltipDate } from '../frontend/src/utils/chartDates.js'
+import { analyticsPeriod, descriptiveChartData, paymentChartData, chartTooltipDate, staffDashboardChartData } from '../frontend/src/utils/chartDates.js'
 
 test('weekly chart uses seven exact calendar dates across a year boundary', () => {
   const rows = descriptiveChartData([], [], 'weekly', {}, new Date(2027, 0, 3, 12))
@@ -44,4 +44,16 @@ test('payment ledger charts group revenue by payment date, not the order date', 
   ], [], 'weekly', { start: '2026-09-01', end: '2026-09-07' })
   assert.equal(rows[0].revenue, 250)
   assert.equal(rows[4].revenue, 250)
+})
+
+test('staff dashboard counts an order once even when it has multiple payments', () => {
+  const rows = staffDashboardChartData([
+    { id: 'order-1', created_at: '2026-09-28T09:00:00' },
+  ], [
+    { order_id: 'order-1', amount: 100, paid_at: '2026-09-28T09:00:00' },
+    { order_id: 'order-1', amount: 100, paid_at: '2026-10-01T09:00:00' },
+  ], 'weekly', new Date(2026, 9, 1, 12))
+
+  assert.equal(rows.reduce((sum, row) => sum + row.orders, 0), 1)
+  assert.equal(rows.reduce((sum, row) => sum + row.revenue, 0), 200)
 })

@@ -80,3 +80,19 @@ export function paymentChartData(payments, expenses, range, customRange, now = n
   }
   return points
 }
+
+export function staffDashboardChartData(orders, payments, range = 'weekly', now = new Date()) {
+  const period = analyticsPeriod(range, {}, now)
+  const pattern = range === 'weekly' ? 'yyyy-MM-dd' : range === 'monthly' ? 'yyyy-MM' : 'yyyy'
+  const points = paymentChartData(payments, [], range, {}, now).map(point => ({ ...point, orders: 0 }))
+  const byKey = new Map(points.map(point => [point.key, point]))
+
+  for (const order of orders) {
+    const date = order?.created_at ? parseISO(order.created_at) : null
+    if (!date || date < period.start || date > period.end || Number.isNaN(+date)) continue
+    const point = byKey.get(format(date, pattern))
+    if (point) point.orders += 1
+  }
+
+  return points
+}

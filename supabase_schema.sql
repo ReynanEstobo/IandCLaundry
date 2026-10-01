@@ -30,7 +30,6 @@ CREATE TABLE customers (
   phone TEXT NOT NULL,
   email TEXT,
   address TEXT,
-  notes TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -69,7 +68,6 @@ CREATE TABLE orders (
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','washing','drying','folding','ready','released','cancelled')),
   payment_status TEXT NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid','partial','paid')),
   payment_method TEXT CHECK (payment_method IN ('cash','gcash','bank_transfer','card')),
-  notes TEXT,
   estimated_completion TIMESTAMPTZ,
   actual_completion TIMESTAMPTZ,
   picked_up_at TIMESTAMPTZ,

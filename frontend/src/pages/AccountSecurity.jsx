@@ -27,7 +27,7 @@ function PasswordField({ label, value, onChange, visible, onToggle, placeholder,
 }
 
 export default function AccountSecurity() {
-  const { signOut } = useAuth()
+  const { signOut, user, staffName, branch, contactEmail } = useAuth()
   const navigate = useNavigate()
   const [savedRequest] = useState(() => readOtpSession(OTP_SESSION_KEY))
   const [newPassword, setNewPassword] = useState('')
@@ -124,7 +124,7 @@ export default function AccountSecurity() {
     </section>
     <ChangeEmail onChanged={() => { clearOtpSession(OTP_SESSION_KEY); setOtp(''); setDestination(''); setOtpStatus('idle') }} />
     <section className="card account-security-session-card">
-      <div><strong>Current session</strong><p>Sign out when you finish using a shared phone or computer.</p></div>
+      <div><strong>{staffName || 'Staff account'}</strong><p>{contactEmail || user?.email || 'No contact email'}{branch ? ` · ${branch}` : ''}<br />Sign out when you finish using a shared phone or computer.</p></div>
       <button type="button" className="btn btn-danger" onClick={signOut}><LogOut size={16} /> Sign Out</button>
     </section>
     {passwordChanged && <div className="modal-overlay account-security-success-overlay" role="presentation">

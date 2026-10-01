@@ -9,6 +9,7 @@ import { getVisibleCustomers, registerBranchCustomer } from "../services/api/ope
 import { PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
+import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
 import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
 
 const BRANCHES = [
@@ -35,7 +36,6 @@ export default function Customers() {
     name: "",
     phone: "",
     email: "",
-    notes: "",
     branch: "Main - Brgy 7",
   });
   // 🔥 PAGINATION STATES
@@ -52,7 +52,7 @@ export default function Customers() {
     }
 
     try {
-      // Admin receives the master client directory. Staff receive only clients
+      // Admin receives the master customer directory. Staff receive only customers
       // associated with their branch through customer_branches.
       const { data: allData = [] } = await getVisibleCustomers();
       const sorted = [...allData].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -61,7 +61,7 @@ export default function Customers() {
       setTotalCount(sorted.length);
     } catch (error) {
       if (!background) {
-        setLoadError(error.message || "Unable to load client records.");
+        setLoadError(error.message || "Unable to load customer records.");
         setCustomers([]);
         setAllCustomers([]);
         setTotalCount(0);
@@ -88,7 +88,6 @@ export default function Customers() {
       name: "",
       phone: "",
       email: "",
-      notes: "",
       branch: "Main - Brgy 7",
     });
     setShowModal(true);
@@ -100,7 +99,6 @@ export default function Customers() {
       name: cust.name,
       phone: cust.phone,
       email: cust.email || "",
-      notes: cust.notes || "",
       branch: cust.branch || "",
     });
     setShowModal(true);
@@ -170,6 +168,14 @@ export default function Customers() {
       (c.email || "").toLowerCase().includes(q)
     );
   });
+  const { sortedRows, sort, requestSort } = useSortableRows(filtered, "name", {
+    name: (customer) => customer.name,
+    phone: (customer) => customer.phone,
+    email: (customer) => customer.email,
+    branch: (customer) => customer.branch,
+    rewards: (customer) => customer.loyaltyRewards?.length || 0,
+    added: (customer) => new Date(customer.created_at).getTime(),
+  });
 
   const rewardLabel = (reward) => {
     if (!reward) return "No issued reward";
@@ -179,21 +185,12 @@ export default function Customers() {
     return `${benefit} · ${reward.status}`;
   };
 
-  if (loading) return <PageLoader label="Loading clients…" />;
+  if (loading) return <PageLoader label="Loading customers…" />;
   if (loadError) return <PageError message={loadError} onRetry={loadCustomers} />;
 
   return (
     <>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 20,
-          gap: 12,
-          flexWrap: "wrap",
-        }}
-      >
+      <TableToolbar actions={<button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Add Customer</button>}>
         <div className="search-box">
           <Search />
           <input
@@ -202,41 +199,32 @@ export default function Customers() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button className="btn btn-primary" onClick={openNew}>
-          <Plus size={18} /> Add Customer
-        </button>
-      </div>
+      </TableToolbar>
 
-      <div className="card" style={{ padding: 0 }}>
-        <div className="table-wrapper">
-          <table>
+      <DataTable ariaLabel="Customers">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Email</th>
-                {isAdmin && <th>Branch</th>}
-                <th>Issued rewards</th>
-                <th>Added</th>
+                <SortableHeader label="Name" column="name" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Phone" column="phone" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Email" column="email" sort={sort} onSort={requestSort} />
+                {isAdmin && <SortableHeader label="Branch" column="branch" sort={sort} onSort={requestSort} />}
+                <SortableHeader label="Issued rewards" column="rewards" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Added" column="added" sort={sort} onSort={requestSort} />
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={isAdmin ? 7 : 6} className="empty-state">
-                    <p>No customers found</p>
-                  </td>
-                </tr>
+              {sortedRows.length === 0 ? (
+                <EmptyState colSpan={isAdmin ? 7 : 6} message="No customers found" />
               ) : (
-                filtered.map((c) => (
+                sortedRows.map((c) => (
                   <tr key={c.id}>
-                    <td
+                    <td data-card-primary data-label="Customer"
                       style={{ fontWeight: 600, color: "var(--text-primary)" }}
                     >
                       {c.name}
                     </td>
-                    <td>
+                    <td data-label="Phone">
                       <span
                         style={{
                           display: "flex",
@@ -247,15 +235,15 @@ export default function Customers() {
                         <Phone size={14} /> {c.phone}
                       </span>
                     </td>
-                    <td>{c.email || "—"}</td>
-                    {isAdmin && <td>{c.branch || "Unassigned"}</td>}
-                    <td>
+                    <td data-label="Email">{c.email || "—"}</td>
+                    {isAdmin && <td data-label="Branch">{c.branch || "Unassigned"}</td>}
+                    <td data-label="Issued rewards">
                       <button
                         type="button"
                         className="btn btn-sm"
                         onClick={() => setRewardCustomer(c)}
                         style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: 210 }}
-                        title="View this client's issued loyalty rewards"
+                        title="View this customer's issued loyalty rewards"
                       >
                         <Gift size={14} />
                         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -263,23 +251,27 @@ export default function Customers() {
                         </span>
                       </button>
                     </td>
-                    <td style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                    <td data-label="Added" style={{ fontSize: 13, color: "var(--text-muted)" }}>
                       {format(new Date(c.created_at), "MMM d, yyyy")}
                     </td>
-                    <td>
+                    <td data-card-actions data-label="Actions">
                       <div style={{ display: "flex", gap: 4 }}>
                         <button
                           className="btn-icon"
                           onClick={() => openEdit(c)}
+                          title="Edit customer"
+                          aria-label={`Edit ${c.name}`}
                         >
-                          <Edit2 size={16} />
+                          <Edit2 size={16} /><span className="mobile-action-label">Edit</span>
                         </button>
                         <button
                           className="btn-icon"
                           onClick={() => setCustomerToDelete(c)}
                           style={{ color: "var(--danger)" }}
+                          title="Archive customer"
+                          aria-label={`Archive ${c.name}`}
                         >
-                          <Trash2 size={16} />
+                          <Trash2 size={16} /><span className="mobile-action-label">Archive</span>
                         </button>
                       </div>
                     </td>
@@ -287,9 +279,7 @@ export default function Customers() {
                 ))
               )}
             </tbody>
-          </table>
-        </div>
-      </div>
+      </DataTable>
       {!search && (
         <div style={{ marginTop: 14, textAlign: "center" }}>
           <div
@@ -372,8 +362,11 @@ export default function Customers() {
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>{editing ? "Edit Customer" : "Add Customer"}</h3>
-              <button className="btn-icon" disabled={saving} onClick={() => setShowModal(false)}>
+              <div>
+                <h3>{editing ? "Edit Customer" : "Add Customer"}</h3>
+                <p>Enter the customer’s contact details. Fields marked * are required.</p>
+              </div>
+              <button className="btn-icon" type="button" aria-label="Close customer form" disabled={saving} onClick={() => setShowModal(false)}>
                 <X size={20} />
               </button>
             </div>
@@ -441,17 +434,6 @@ export default function Customers() {
                     </select>
                   </div>
                 )}
-                <div className="form-group">
-                  <label>Notes</label>
-                  <textarea
-                    className="form-control"
-                    placeholder="Notes about this customer..."
-                    value={form.notes}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, notes: e.target.value }))
-                    }
-                  />
-                </div>
               </div>
               <div className="modal-footer">
                 <button
@@ -482,7 +464,7 @@ export default function Customers() {
             </div>
             <div className="modal-body">
               {!rewardCustomer.loyaltyRewards?.length ? (
-                <p style={{ margin: 0, color: "var(--text-muted)" }}>No loyalty rewards have been issued to this client yet.</p>
+                <p style={{ margin: 0, color: "var(--text-muted)" }}>No loyalty rewards have been issued to this customer yet.</p>
               ) : (
                 <div style={{ display: "grid", gap: 10 }}>
                   {rewardCustomer.loyaltyRewards.map((reward) => (
@@ -505,7 +487,7 @@ export default function Customers() {
       <ConfirmDialog
         open={Boolean(customerToDelete)}
         title="Archive customer?"
-        message={<> <strong>{customerToDelete?.name}</strong> will be hidden from active client lists. An administrator can restore the client later from the Audit Log.</>}
+        message={<> <strong>{customerToDelete?.name}</strong> will be hidden from active customer lists. An administrator can restore the customer later from the Audit Log.</>}
         confirmLabel="Archive Customer"
         cancelLabel="Keep Customer"
         loading={deleting}

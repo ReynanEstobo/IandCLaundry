@@ -54,6 +54,7 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   await db.exec(cancellationMigration)
   const migration = await readFile(new URL('../supabase_migrations/20260926_multi_service_per_load.sql', import.meta.url), 'utf8')
   await db.exec(migration)
+  const removeNotesMigration = await readFile(new URL('../supabase_migrations/20261001_remove_note_fields.sql', import.meta.url), 'utf8')
   assert.equal((await db.query("SELECT has_function_privilege('authenticated', 'public.cancel_branch_order(uuid,uuid,text)', 'EXECUTE') AS allowed")).rows[0].allowed, false)
   assert.equal((await db.query("SELECT has_function_privilege('service_role', 'public.cancel_branch_order(uuid,uuid,text)', 'EXECUTE') AS allowed")).rows[0].allowed, true)
   await db.exec(`
@@ -83,6 +84,11 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   await db.query("INSERT INTO service_types(id,name,bundle_kg,bundle_price,excess_kg_price,processing_type) VALUES ($1,'Gown',4,250,20,'air_dry_only')", [gownServiceId])
   await db.query("INSERT INTO service_types(id,name,bundle_kg,bundle_price,excess_kg_price,processing_type) VALUES ($1,'Complimentary',1,0,0,'full_service')", [freeServiceId])
   await db.exec(migration) // Safe to rerun without replacing an intentional zero price.
+  await db.exec(removeNotesMigration)
+  for (const table of ['customers', 'orders', 'order_items']) {
+    const result = await db.query(`SELECT COUNT(*)::int AS count FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='notes'`, [table])
+    assert.equal(result.rows[0].count, 0)
+  }
   assert.equal(Number((await db.query('SELECT bundle_price FROM service_types WHERE id=$1', [freeServiceId])).rows[0].bundle_price), 0)
   await db.query("INSERT INTO inventory_items(id,name,unit,current_stock,branch_id) VALUES ($1,'Detergent','ml',100,$2)", [inventoryId, branchId])
   await db.query("INSERT INTO inventory_items(id,name,unit,current_stock,branch_id) VALUES ($1,'Hanger','piece',100,$2)", [hangerId, branchId])
