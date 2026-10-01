@@ -24,7 +24,7 @@ const navigation = [
   { name: "Garment", path: "/dashboard/orders", icon: ShoppingBag },
   { name: "Client", path: "/dashboard/customers", icon: Users },
   { name: "Inventory", path: "/dashboard/inventory", icon: Package },
-  { name: "Account Security", path: "/dashboard/change-password", icon: KeyRound, staffOnly: true },
+  { name: "Account Security", mobileName: "Account", path: "/dashboard/change-password", icon: KeyRound, staffOnly: true },
   {
     name: "Analytics",
     path: "/dashboard/analytics",
@@ -86,18 +86,23 @@ export default function Layout() {
     setMobileOpen(false);
   }, [location.pathname]);
 
+  const visibleNavigation = navigation.filter(
+    (item) => (!item.adminOnly || role === "admin") && (!item.staffOnly || role !== "admin"),
+  );
+  const mobileNavigation = role === "admin" ? [] : visibleNavigation;
+
   // A collapsed desktop preference must not hide the contents of the mobile
   // drawer. The drawer is a full navigation surface, not the icon rail.
   const sidebarExpanded = !collapsed || mobileOpen;
 
   return (
-    <div className={`app-layout ${collapsed ? "sidebar-collapsed" : ""}`}>
+    <div className={`app-layout ${collapsed ? "sidebar-collapsed" : ""} ${role === "admin" ? "admin-layout" : "staff-layout"}`}>
       {/* Mobile overlay */}
       {mobileOpen && (
         <div className="sidebar-overlay" onClick={() => setMobileOpen(false)} />
       )}
 
-      <aside className={`sidebar ${mobileOpen ? "mobile-open" : ""}`}>
+      <aside id="mobile-full-navigation" className={`sidebar ${mobileOpen ? "mobile-open" : ""}`}>
         <div className="sidebar-brand">
           <div className="brand-icon">
             <img
@@ -116,22 +121,20 @@ export default function Layout() {
 
         <nav className="sidebar-nav">
           {sidebarExpanded && <div className="sidebar-section-label">Main Menu</div>}
-          {navigation
-            .filter((item) => (!item.adminOnly || role === "admin") && (!item.staffOnly || role !== "admin"))
-            .map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                end={item.path === "/dashboard"}
-                className={({ isActive }) =>
-                  `nav-link ${isActive ? "active" : ""}`
-                }
-                title={!sidebarExpanded ? item.name : undefined}
-              >
-                <item.icon size={19} />
-                {sidebarExpanded && item.name}
-              </NavLink>
-            ))}
+          {visibleNavigation.map((item) => (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              end={item.path === "/dashboard"}
+              className={({ isActive }) =>
+                `nav-link ${isActive ? "active" : ""}`
+              }
+              title={!sidebarExpanded ? item.name : undefined}
+            >
+              <item.icon size={19} />
+              {sidebarExpanded && item.name}
+            </NavLink>
+          ))}
         </nav>
 
         <div className="sidebar-footer">
@@ -209,6 +212,20 @@ export default function Layout() {
           <Outlet />
         </div>
       </main>
+
+      {role !== "admin" && <nav className="mobile-bottom-nav" aria-label="Primary mobile navigation">
+        {mobileNavigation.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            end={item.path === "/dashboard"}
+            className={({ isActive }) => `mobile-bottom-link ${isActive ? "active" : ""}`}
+          >
+            <span className="mobile-bottom-icon"><item.icon size={21} aria-hidden="true" /></span>
+            <span>{item.mobileName || item.name}</span>
+          </NavLink>
+        ))}
+      </nav>}
     </div>
   );
 }

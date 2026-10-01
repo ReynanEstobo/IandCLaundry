@@ -18,6 +18,7 @@
     "axios": "^1.15.2",
     "date-fns": "^4.1.0",
     "dotenv": "^17.3.1",
+    "exceljs": "^4.4.0",
     "lucide-react": "^0.469.0",
     "nodemailer": "^10.0.1",
     "react": "^19.0.0",

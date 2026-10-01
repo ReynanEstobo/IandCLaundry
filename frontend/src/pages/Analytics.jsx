@@ -35,6 +35,7 @@ import LoadingButton from '../components/LoadingButton'
 import { analyticsPeriod, chartTooltipDate, dailyChartLabel, paymentChartData } from '../utils/chartDates'
 import { recordedPaymentAmount } from '../utils/businessForecast'
 import { analyticsDailyHistory, branchPerformance } from '../utils/analyticsMetrics'
+import { buildAnalyticsReport } from '../utils/analyticsReport'
 
 // ─── Custom tooltip ────────────────────────────────────────────────────────────
 const CustomTooltip = ({ active, payload, label }) => {
@@ -161,7 +162,7 @@ export default function Analytics() {
 
   const [stats, setStats] = useState({});
   const [operationalSummary, setOperationalSummary] = useState({
-    topServices: [], topBranches: [], staffPerformance: [], lowStockItems: [], repeatCustomers: 0, completedOrders: 0, averageTurnaroundHours: null,
+    services: [], branches: [], topServices: [], topBranches: [], staffPerformance: [], lowStockItems: [], repeatCustomers: 0, completedOrders: 0, averageTurnaroundHours: null,
   });
 
   const [forecastLoading, setForecastLoading] = useState(false);
@@ -327,11 +328,19 @@ export default function Analytics() {
         if (order.created_at && order.updated_at) turnaroundTotalHours += Math.max(0, (new Date(order.updated_at) - new Date(order.created_at)) / 3600000);
       }
     });
+    const rankedServices = [...serviceTotals.values()].sort((a, b) => b.revenue - a.revenue || b.orders - a.orders);
+    const rankedBranches = branchTotals.sort((a, b) => b.revenue - a.revenue || b.orders - a.orders);
+    const rankedStaff = [...staffTotals.values()].sort((a, b) => b.completed - a.completed || b.created - a.created);
+    const lowStockItems = inventoryData
+      .filter((item) => Number(item.current_stock) <= Number(item.minimum_stock))
+      .sort((a, b) => (Number(a.current_stock) - Number(a.minimum_stock)) - (Number(b.current_stock) - Number(b.minimum_stock)));
     setOperationalSummary({
-      topServices: [...serviceTotals.values()].sort((a, b) => b.revenue - a.revenue || b.orders - a.orders).slice(0, 3),
-      topBranches: branchTotals.sort((a, b) => b.revenue - a.revenue || b.orders - a.orders).slice(0, 3),
-      staffPerformance: [...staffTotals.values()].sort((a, b) => b.completed - a.completed || b.created - a.created).slice(0, 3),
-      lowStockItems: inventoryData.filter((item) => Number(item.current_stock) <= Number(item.minimum_stock)).slice(0, 5),
+      services: rankedServices,
+      branches: rankedBranches,
+      topServices: rankedServices.slice(0, 3),
+      topBranches: rankedBranches.slice(0, 3),
+      staffPerformance: rankedStaff,
+      lowStockItems,
       repeatCustomers: [...customerVisits.values()].filter((visits) => visits > 1).length,
       completedOrders,
       averageTurnaroundHours: completedOrders ? turnaroundTotalHours / completedOrders : null,
@@ -745,7 +754,8 @@ Rules:
   const csvCell = (value) => `"${String(value ?? "").replaceAll('"', '""')}"`;
   const html = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
 
-  function downloadReportCsv() {
+  /* Previous generic export retained in source history only.
+  function legacyDownloadReportCsv() {
     const rows = [
       ["I&C Laundry Cash Collection & Analytics Report"],
       ["Scope", reportScope],
@@ -788,7 +798,7 @@ Rules:
     URL.revokeObjectURL(link.href);
   }
 
-  function printReport() {
+  function legacyPrintReport() {
     // `noopener` in the feature string can make window.open return null in
     // Chromium, which prevented the report from ever being written.
     const popup = window.open("", "_blank");
@@ -818,6 +828,59 @@ Rules:
     popup.document.close();
     popup.focus();
     window.setTimeout(() => popup.print(), 250);
+  }
+
+  */
+  function createManagementReportInput() {
+    return {
+      reportScope,
+      reportPeriod,
+      stats,
+      payments,
+      descriptiveData,
+      forecastData,
+      forecastModel,
+      aiInsights,
+      operationalSummary,
+      logoUrl: new URL('/assets/Rectangle.png', window.location.origin).href,
+      forecastSource: describeAiSource(forecastAiMeta),
+      decisionSupportSource: describeAiSource(insightAiMeta),
+      generatedAt: new Date(),
+    };
+  }
+
+  function createManagementReport() {
+    return buildAnalyticsReport(createManagementReportInput());
+  }
+
+  async function downloadReportCsv() {
+    try {
+      const { downloadAnalyticsWorkbook } = await import('../utils/analyticsWorkbook');
+      await downloadAnalyticsWorkbook(createManagementReportInput());
+    } catch (error) {
+      console.error('Unable to export the management spreadsheet:', error);
+      window.alert('The spreadsheet could not be created. Please try again.');
+    }
+  }
+
+  function printReport() {
+    const popup = window.open("", "_blank");
+    if (!popup) return window.alert("Allow pop-ups to preview, print, or save this management report as PDF.");
+    popup.opener = null;
+    const report = createManagementReport();
+    popup.document.write(report.printHtml);
+    popup.document.close();
+    popup.focus();
+
+    // Open the print dialog only after the I&C logo is ready. The branded
+    // preview remains open and also provides its own Print / Save as PDF action.
+    const logo = popup.document.querySelector('.logo-shell img');
+    const openPrintDialog = () => window.setTimeout(() => popup.print(), 180);
+    if (!logo || logo.complete) openPrintDialog();
+    else {
+      logo.addEventListener('load', openPrintDialog, { once: true });
+      logo.addEventListener('error', openPrintDialog, { once: true });
+    }
   }
 
   if (loading) return <PageLoader label="Preparing analytics…" />;
@@ -896,7 +959,7 @@ Rules:
         />
 
         <div className="analytics-report-actions">
-          <button type="button" onClick={downloadReportCsv} className="analytics-report-button">
+          <button type="button" onClick={downloadReportCsv} className="analytics-report-button" title="Download the formatted management spreadsheet">
             <Download size={16} /> Export CSV
           </button>
           <button type="button" onClick={printReport} className="analytics-report-button primary">
@@ -984,7 +1047,7 @@ Rules:
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(245px, 1fr))", gap: 14 }}>
           <OperationalList icon={<TrendingUp size={17} />} title="High-Performing Services" accent="#8b5cf6" empty="No service data yet" items={operationalSummary.topServices.map((service) => `${service.name} · ${service.orders} service requests · ₱${service.revenue.toLocaleString()}`)} />
           <OperationalList icon={<Building2 size={17} />} title="Top Branches" accent="#0ea5e9" empty="No branch data yet" items={operationalSummary.topBranches.map((branchMetric) => `${branchMetric.name} · ${branchMetric.orders} orders created · ₱${branchMetric.revenue.toLocaleString()}`)} />
-          <OperationalList icon={<Users size={17} />} title="Staff Productivity" accent="#10b981" empty="No staff activity yet" items={operationalSummary.staffPerformance.map((staff) => `${staff.name} · ${staff.completed} released / ${staff.created} handled`)} />
+          <OperationalList icon={<Users size={17} />} title="Staff Productivity" accent="#10b981" empty="No staff activity yet" items={operationalSummary.staffPerformance.slice(0, 3).map((staff) => `${staff.name} · ${staff.completed} released / ${staff.created} handled`)} />
         </div>
       </div>
 

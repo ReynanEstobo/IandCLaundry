@@ -1,4 +1,4 @@
-import { CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole, MailCheck, ShieldCheck } from 'lucide-react'
+import { CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, MailCheck, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -8,6 +8,7 @@ import ChangeEmail from '../components/ChangeEmail'
 import useOtpCooldown from '../hooks/useOtpCooldown'
 import { clearOtpSession, readOtpSession, writeOtpSession } from '../utils/otpSession'
 import { passwordPolicyError } from '../utils/validation'
+import { useAuth } from '../context/AuthContext'
 
 const OTP_SESSION_KEY = 'ic-laundry:account-password-otp'
 const OTP_COOLDOWN_KEY = 'ic-laundry:account-password-otp-cooldown'
@@ -26,6 +27,7 @@ function PasswordField({ label, value, onChange, visible, onToggle, placeholder,
 }
 
 export default function AccountSecurity() {
+  const { signOut } = useAuth()
   const navigate = useNavigate()
   const [savedRequest] = useState(() => readOtpSession(OTP_SESSION_KEY))
   const [newPassword, setNewPassword] = useState('')
@@ -121,6 +123,10 @@ export default function AccountSecurity() {
       </form>
     </section>
     <ChangeEmail onChanged={() => { clearOtpSession(OTP_SESSION_KEY); setOtp(''); setDestination(''); setOtpStatus('idle') }} />
+    <section className="card account-security-session-card">
+      <div><strong>Current session</strong><p>Sign out when you finish using a shared phone or computer.</p></div>
+      <button type="button" className="btn btn-danger" onClick={signOut}><LogOut size={16} /> Sign Out</button>
+    </section>
     {passwordChanged && <div className="modal-overlay account-security-success-overlay" role="presentation">
       <section className="account-security-success-dialog" role="alertdialog" aria-modal="true" aria-labelledby="password-success-title">
         <span className="account-security-success-icon"><CheckCircle2 size={32} /></span>
