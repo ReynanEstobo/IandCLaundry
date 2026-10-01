@@ -14,7 +14,7 @@ import {
   Wallet,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
 import {
   Area,
@@ -106,14 +106,16 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 // ─── Sub-filter pill group ─────────────────────────────────────────────────────
-function SubFilter({ value, onChange, options }) {
+function SubFilter({ value, onChange, options, disabled = false }) {
   return (
-    <div className="analytics-period-filter">
+    <div className="analytics-period-filter" aria-busy={disabled || undefined}>
       {options.map((opt) => (
         <button
+          type="button"
           key={opt.value}
           onClick={() => onChange(opt.value)}
           className={`analytics-period-option${value === opt.value ? " active" : ""}`}
+          disabled={disabled}
         >
           {opt.label}
         </button>
@@ -159,9 +161,11 @@ export default function Analytics() {
   const [forecastData, setForecastData] = useState([]);
 
   const [loading, setLoading] = useState(true);
+  const [filterLoading, setFilterLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [hasLoadedAnalytics, setHasLoadedAnalytics] = useState(false);
   const [filterError, setFilterError] = useState("");
+  const analyticsRequestId = useRef(0);
 
   const [stats, setStats] = useState({});
   const [operationalSummary, setOperationalSummary] = useState({
@@ -195,11 +199,11 @@ export default function Analytics() {
     }
 
     setFilterError("");
-    loadAnalytics(hasLoadedAnalytics);
+    loadAnalytics(hasLoadedAnalytics, hasLoadedAnalytics);
   }, [range, customRange.start, customRange.end, selectedBranch]);
 
   useRealtime(["orders", "payments", "expenses"], () => {
-    loadAnalytics(true);
+    loadAnalytics(true, false);
   });
   useEffect(() => {
     if (aiLoading || manualAiRefresh) return;
@@ -209,8 +213,10 @@ export default function Analytics() {
     }
   }, [forecastData, selectedBranch, range, operationalSummary, manualAiRefresh]);
 
-  async function loadAnalytics(background = false) {
+  async function loadAnalytics(background = false, showFilterLoading = false) {
+    const requestId = ++analyticsRequestId.current;
     const keepCurrentReport = background || hasLoadedAnalytics;
+    if (showFilterLoading) setFilterLoading(true);
     if (!keepCurrentReport) {
       setLoading(true);
       setLoadError("");
@@ -268,6 +274,7 @@ export default function Analytics() {
       paymentQuery,
       serviceItemQuery,
     ]);
+    if (requestId !== analyticsRequestId.current) return;
     const requestError = ordersRes.error || expensesRes.error || staffRes.error || inventoryRes.error || paymentsRes.error || serviceItemsRes.error;
     if (requestError) throw requestError;
 
@@ -353,6 +360,7 @@ export default function Analytics() {
     setHasLoadedAnalytics(true);
 
     } catch (error) {
+      if (requestId !== analyticsRequestId.current) return;
       if (!keepCurrentReport) {
         setLoadError(error.message || "Unable to load analytics data.");
       } else {
@@ -360,7 +368,10 @@ export default function Analytics() {
         setFilterError("Unable to refresh the report. Your previous results are still shown.");
       }
     } finally {
-      if (!keepCurrentReport) setLoading(false);
+      if (requestId === analyticsRequestId.current) {
+        if (!keepCurrentReport) setLoading(false);
+        setFilterLoading(false);
+      }
     }
   }
 
@@ -902,6 +913,7 @@ Rules:
             aria-label="Start date"
             aria-invalid={Boolean(filterError)}
             className="analytics-date-input"
+            disabled={filterLoading}
             onChange={(e) => updateCustomRange("start", e.target.value)}
           />
 
@@ -913,6 +925,7 @@ Rules:
             aria-label="End date"
             aria-invalid={Boolean(filterError)}
             className="analytics-date-input"
+            disabled={filterLoading}
             onChange={(e) => updateCustomRange("end", e.target.value)}
           />
           {hasCustomRange && (
@@ -920,6 +933,7 @@ Rules:
               type="button"
               onClick={clearCustomRange}
               className="btn-icon"
+              disabled={filterLoading}
               aria-label="Clear date range"
               title="Clear date range"
               style={{ flex: "0 0 auto", color: "var(--text-secondary)" }}
@@ -943,6 +957,8 @@ Rules:
           value={selectedBranch}
           onChange={(e) => setSelectedBranch(e.target.value)}
           className="analytics-branch-filter"
+          disabled={filterLoading}
+          aria-label="Filter analytics by branch"
         >
           <option value="all">All Branches</option>
           {branchNames.map(branchName => (
@@ -953,6 +969,7 @@ Rules:
         <SubFilter
           value={range}
           onChange={setRange}
+          disabled={filterLoading}
           options={[
             { value: "weekly", label: "Weekly" },
             { value: "monthly", label: "Monthly" },
@@ -961,16 +978,24 @@ Rules:
         />
 
         <div className="analytics-report-actions">
-          <button type="button" onClick={downloadReportCsv} className="analytics-report-button" title="Download the formatted management spreadsheet">
+          <button type="button" onClick={downloadReportCsv} className="analytics-report-button" disabled={filterLoading} title="Download the formatted management spreadsheet">
             <Download size={16} /> Export CSV
           </button>
-          <button type="button" onClick={printReport} className="analytics-report-button primary">
+          <button type="button" onClick={printReport} className="analytics-report-button primary" disabled={filterLoading}>
             <Printer size={16} /> Print / PDF
           </button>
         </div>
       </div>
 
+      {filterLoading && (
+        <div className="filter-loading-notice" role="status" aria-live="polite">
+          <RefreshCw size={16} className="button-spinner" aria-hidden="true" />
+          <span>Updating analytics with the selected filters…</span>
+        </div>
+      )}
+
       {/* STATS */}
+      <div className={`analytics-results${filterLoading ? " is-filter-loading" : ""}`} aria-busy={filterLoading || undefined}>
       <div className="stats-grid">
         <div className="stat-card green">
           <div className="stat-icon">
@@ -1370,7 +1395,7 @@ Rules:
                         <div
                           style={{
                             fontSize: 13.5,
-                            color: "#374151",
+                            color: "var(--text-secondary)",
                             lineHeight: 1.6,
                           }}
                         >
@@ -1382,6 +1407,7 @@ Rules:
                 })}
           </div>
         </div>
+      </div>
       </div>
     </>
   );

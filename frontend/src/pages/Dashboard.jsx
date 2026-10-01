@@ -558,76 +558,48 @@ export default function Dashboard() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {suggestions.map((tip, idx) => {
               const TipIcon = tip.icon;
-              const colors = {
-                critical: {
-                  bg: "#fee2e2",
-                  border: "#fecaca",
-                  icon: "#991b1b",
-                  text: "#991b1b",
-                },
-                warning: {
-                  bg: "#fffbeb",
-                  border: "#fde68a",
-                  icon: "#d97706",
-                  text: "#92400e",
-                },
-                info: {
-                  bg: "#eef8fd",
-                  border: "#b3e0f5",
-                  icon: "#2EA7E0",
-                  text: "#1a7da8",
-                },
-                success: {
-                  bg: "#ecfdf5",
-                  border: "#a7f3d0",
-                  icon: "#059669",
-                  text: "#065f46",
-                },
-              };
-              const c = colors[tip.type] || colors.info;
+              const tone = ["critical", "warning", "info", "success"].includes(tip.type) ? tip.type : "info";
               return (
                 <div
                   key={idx}
+                  className={`dashboard-suggestion dashboard-suggestion-${tone}`}
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: 14,
                     padding: "14px 16px",
                     borderRadius: 10,
-                    background: c.bg,
-                    border: `1px solid ${c.border}`,
                   }}
                 >
                   <div
+                    className="dashboard-suggestion-icon"
                     style={{
                       width: 36,
                       height: 36,
                       borderRadius: 8,
-                      background: "white",
-                      border: `1px solid ${c.border}`,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       flexShrink: 0,
                     }}
                   >
-                    <TipIcon size={18} style={{ color: c.icon }} />
+                    <TipIcon size={18} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div
+                      className="dashboard-suggestion-title"
                       style={{
                         fontWeight: 600,
                         fontSize: 14,
-                        color: c.text,
                         marginBottom: 2,
                       }}
                     >
                       {tip.title}
                     </div>
                     <div
+                      className="dashboard-suggestion-message"
                       style={{
                         fontSize: 13,
-                        color: "#4b5563",
                         lineHeight: 1.5,
                       }}
                     >
@@ -636,12 +608,9 @@ export default function Dashboard() {
                   </div>
                   {tip.action && tip.link && (
                     <button
-                      className="btn btn-sm"
+                      className="btn btn-sm dashboard-suggestion-action"
                       onClick={() => navigate(tip.link)}
                       style={{
-                        background: "white",
-                        border: `1px solid ${c.border}`,
-                        color: c.text,
                         fontWeight: 600,
                         flexShrink: 0,
                         display: "flex",
@@ -786,13 +755,10 @@ export default function Dashboard() {
               {[1, 2, 3].map((i) => (
                 <div
                   key={i}
+                  className="dashboard-ai-skeleton"
                   style={{
                     height: 60,
                     borderRadius: 12,
-                    background:
-                      "linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%)",
-                    backgroundSize: "200% 100%",
-                    animation: "shimmer 1.5s infinite",
                   }}
                 />
               ))}
@@ -810,21 +776,17 @@ export default function Dashboard() {
                   const clean = line.replace(/\*\*/g, "").trim();
 
                   let icon = Lightbulb;
-                  let color = "#8b5cf6";
-                  let bg = "#faf5ff";
+                  let tone = "general";
 
                   if (clean.toLowerCase().includes("operational")) {
                     icon = Zap;
-                    color = "#3b82f6";
-                    bg = "#eff6ff";
+                    tone = "operational";
                   } else if (clean.toLowerCase().includes("inventory")) {
                     icon = Package;
-                    color = "#f59e0b";
-                    bg = "#fffbeb";
+                    tone = "inventory";
                   } else if (clean.toLowerCase().includes("revenue")) {
                     icon = TrendingUp;
-                    color = "#10b981";
-                    bg = "#ecfdf5";
+                    tone = "revenue";
                   }
 
                   const Icon = icon;
@@ -832,34 +794,33 @@ export default function Dashboard() {
                   return (
                     <div
                       key={i}
+                      className={`dashboard-ai-insight dashboard-ai-insight-${tone}`}
                       style={{
                         display: "flex",
                         gap: 12,
                         padding: "14px 16px",
                         borderRadius: 12,
-                        background: bg,
-                        border: "1px solid rgba(0,0,0,0.05)",
                       }}
                     >
                       <div
+                        className="dashboard-ai-insight-icon"
                         style={{
                           width: 36,
                           height: 36,
                           borderRadius: 10,
-                          background: "white",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
                         }}
                       >
-                        <Icon size={18} style={{ color }} />
+                        <Icon size={18} />
                       </div>
 
                       <div>
-                        <div style={{ fontWeight: 600, color }}>
+                        <div className="dashboard-ai-insight-title">
                           {clean.split(":")[0]}
                         </div>
-                        <div style={{ fontSize: 13.5, color: "#374151" }}>
+                        <div className="dashboard-ai-insight-copy" style={{ fontSize: 13.5 }}>
                           {clean.split(":").slice(1).join(":")}
                         </div>
                       </div>

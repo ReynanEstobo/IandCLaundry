@@ -11,7 +11,6 @@ import {
   Palette,
   Save,
   Shield,
-  Sun,
   Timer,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -45,6 +44,7 @@ export default function Settings() {
   const [pwLoading, setPwLoading] = useState(false);
   const [passwordChanged, setPasswordChanged] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [appearanceSaving, setAppearanceSaving] = useState(false);
   const passwordOtpCooldown = useOtpCooldown(PASSWORD_OTP_COOLDOWN_KEY);
 
   const requestPasswordOtp = async () => {
@@ -89,7 +89,6 @@ export default function Settings() {
   // Business settings
   const [settings, setSettings] = useState(null);
 
-  const [darkMode, setDarkMode] = useState(false);
   const [notifications, setNotifications] = useState(true);
 
   // ETA settings
@@ -115,7 +114,6 @@ export default function Settings() {
 
         // populate UI fields
 
-        setDarkMode(data.darkmode || false);
         setNotifications(data.notifications !== false);
 
         setDefaultProcessingMinutes(data.default_processing_minutes || ((data.etawash || 45) + (data.etadrying || 40) + (data.etafolding || 15)));
@@ -143,7 +141,6 @@ export default function Settings() {
 
           if (data) {
             setSettings(data);
-            setDarkMode(data.darkmode || false);
             setNotifications(data.notifications !== false);
 
             setDefaultProcessingMinutes(data.default_processing_minutes || ((data.etawash || 45) + (data.etadrying || 40) + (data.etafolding || 15)));
@@ -162,14 +159,6 @@ export default function Settings() {
 
     return () => supabase.removeChannel(channel);
   }, []);
-
-  // Apply dark mode on mount and changes
-  useEffect(() => {
-    document.documentElement.setAttribute(
-      "data-theme",
-      darkMode ? "dark" : "light",
-    );
-  }, [darkMode]);
 
   const handlePasswordChange = async (e) => {
     e.preventDefault();
@@ -215,8 +204,6 @@ export default function Settings() {
       const { error } = await supabase
         .from("settings")
         .update({
-          darkmode: darkMode,
-          notifications,
           default_processing_minutes: Number(defaultProcessingMinutes),
           eta_buffer_minutes: Number(etaBufferMinutes),
           eta_min_completed_orders: Number(etaMinCompletedOrders),
@@ -237,14 +224,35 @@ export default function Settings() {
     }
   };
 
-  const handleDarkModeToggle = () => {
-    const next = !darkMode;
-    setDarkMode(next);
+  const saveAppearancePreference = async (field, nextValue, previousValue) => {
+    if (!settings?.id || appearanceSaving) return false;
+    setAppearanceSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from("settings")
+        .update({ [field]: nextValue })
+        .eq("id", settings.id)
+        .select("id, notifications")
+        .single();
+      if (error) throw error;
+
+      setSettings((current) => ({ ...current, ...data }));
+      toast.success("Notification preference saved");
+      return true;
+    } catch (error) {
+      if (field === "notifications") setNotifications(previousValue);
+      toast.error(error?.message || "Failed to save appearance preference");
+      return false;
+    } finally {
+      setAppearanceSaving(false);
+    }
   };
 
-  const handleNotificationsToggle = () => {
+  const handleNotificationsToggle = async () => {
+    if (appearanceSaving) return;
     const next = !notifications;
     setNotifications(next);
+    await saveAppearancePreference("notifications", next, notifications);
   };
 
   // Format time for display
@@ -356,28 +364,13 @@ export default function Settings() {
             </div>
             <div>
               <h3>Appearance</h3>
-              <p>Customize the look and feel of the system</p>
+              <p>Manage your display and notification preferences</p>
             </div>
           </div>
 
-          <div className="settings-toggle-row">
-            <div className="settings-toggle-info">
-              <div className="settings-toggle-icon-wrap">
-                {darkMode ? <Moon size={18} /> : <Sun size={18} />}
-              </div>
-              <div>
-                <span className="settings-toggle-label">Dark Mode</span>
-                <span className="settings-toggle-desc">
-                  Switch between light and dark theme
-                </span>
-              </div>
-            </div>
-            <button
-              className={`settings-toggle ${darkMode ? "active" : ""}`}
-              onClick={handleDarkModeToggle}
-            >
-              <div className="settings-toggle-knob" />
-            </button>
+          <div className="settings-theme-note">
+            <Moon size={17} aria-hidden="true" />
+            <span>Use the moon or sun button in the page header to change the theme for only your account on this browser.</span>
           </div>
 
           <div className="settings-toggle-row">
@@ -393,12 +386,19 @@ export default function Settings() {
               </div>
             </div>
             <button
+              type="button"
               className={`settings-toggle ${notifications ? "active" : ""}`}
               onClick={handleNotificationsToggle}
+              disabled={appearanceSaving}
+              aria-pressed={notifications}
+              aria-label={`${notifications ? "Disable" : "Enable"} notifications`}
             >
               <div className="settings-toggle-knob" />
             </button>
           </div>
+          <p className="settings-auto-save-status" role="status">
+            {appearanceSaving ? "Saving notification preference…" : "Notification changes are saved automatically."}
+          </p>
         </div>
 
         {/* ====== ETA / PROCESS TIMES ====== */}

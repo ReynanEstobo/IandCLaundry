@@ -467,7 +467,7 @@ export default function Customers() {
                     <div key={reward.id} style={{ border: "1px solid var(--border-color)", borderRadius: 10, padding: 12, background: "var(--bg-secondary)" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
                         <strong>{reward.reward_type === "free_load" ? `Free ${Number(reward.free_load_kg || 8)} kg load` : `${reward.discount_percent}% discount`}</strong>
-                        <span style={{ textTransform: "capitalize", fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: reward.status === "redeemed" ? "#dcfce7" : reward.status === "available" ? "#dbeafe" : "#f1f5f9", color: reward.status === "redeemed" ? "#166534" : "#334155" }}>{reward.status}</span>
+                        <span className={`loyalty-reward-status loyalty-reward-status-${reward.status}`} style={{ textTransform: "capitalize", fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 999 }}>{reward.status}</span>
                       </div>
                       <p style={{ margin: "7px 0 0", color: "var(--text-muted)", fontSize: 13 }}>Issued {format(new Date(reward.earned_at), "MMM d, yyyy, h:mm a")}</p>
                       {reward.status === "revoked" && reward.revoke_reason && <p style={{ margin: "6px 0 0", color: "var(--danger)", fontSize: 13 }}>Reason: {reward.revoke_reason}</p>}

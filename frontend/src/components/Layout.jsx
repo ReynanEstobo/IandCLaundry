@@ -4,6 +4,7 @@ import {
   LogOut,
   Menu,
   MessageSquare,
+  Moon,
   Package,
   PanelLeft,
   PanelLeftClose,
@@ -12,12 +13,14 @@ import {
   KeyRound,
   MapPin,
   ShoppingBag,
+  Sun,
   UserCog,
   Users,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import useUserTheme from "../hooks/useUserTheme";
 
 const navigation = [
   { name: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
@@ -65,6 +68,7 @@ const pageNames = {
 
 export default function Layout() {
   const { signOut, user, role, staffName, branch, contactEmail } = useAuth();
+  const { darkMode, toggleTheme } = useUserTheme(user?.id);
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -177,7 +181,17 @@ export default function Layout() {
             <h2>{pageNames[location.pathname] || "Dashboard"}</h2>
           </div>
           <div className="top-bar-actions">
+            <button
+              type="button"
+              className="theme-toggle-button"
+              onClick={toggleTheme}
+              aria-label={darkMode ? "Use light mode" : "Use dark mode"}
+              title={darkMode ? "Use light mode" : "Use dark mode"}
+            >
+              {darkMode ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
+            </button>
             <div
+              className="top-bar-date"
               style={{
                 fontSize: 13,
                 color: "var(--text-muted)",

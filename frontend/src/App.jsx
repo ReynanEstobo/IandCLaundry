@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
 import { AppErrorBoundary, PageLoader } from './components/AsyncState'
 import { supabase } from './lib/supabase'
+import useUserTheme from './hooks/useUserTheme'
 
 // Page modules (and their data effects) are loaded only after their route opens.
 const LandingPage = lazy(() => import('./pages/LandingPage'))
@@ -150,19 +151,20 @@ function TableMouseDragScroll() {
 }
 
 function GlobalDisplayPreferences() {
+  const { user } = useAuth()
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
+  useUserTheme(user?.id)
 
   useEffect(() => {
     let mounted = true
 
     const applySettings = (settings) => {
       if (!settings || !mounted) return
-      document.documentElement.setAttribute('data-theme', settings.darkmode ? 'dark' : 'light')
       setNotificationsEnabled(settings.notifications !== false)
     }
 
     const loadSettings = async () => {
-      const { data, error } = await supabase.from('settings').select('darkmode, notifications').single()
+      const { data, error } = await supabase.from('settings').select('notifications').single()
       if (!error) applySettings(data)
     }
 

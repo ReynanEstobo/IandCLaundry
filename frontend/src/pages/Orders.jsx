@@ -233,6 +233,7 @@ export default function Orders() {
   const orderRequestId = useRef(globalThis.crypto.randomUUID());
   const hasLoadedOrders = useRef(false);
   const paginationRefresh = useRef(false);
+  const filterRefresh = useRef(false);
 
   useEffect(() => {
     if (settings?.defaultview) {
@@ -389,14 +390,12 @@ export default function Orders() {
   useEffect(() => {
     const isInitialLoad = !hasLoadedOrders.current;
     const isPaginationRefresh = paginationRefresh.current;
+    const isFilterRefresh = filterRefresh.current;
     hasLoadedOrders.current = true;
     paginationRefresh.current = false;
-    loadData(!isInitialLoad, isPaginationRefresh);
+    filterRefresh.current = false;
+    loadData(!isInitialLoad, isPaginationRefresh || isFilterRefresh);
   }, [loadData]); // ✅ FIXED // ✅ ADD page
-
-  useEffect(() => {
-    setPage(0);
-  }, [filter]);
 
   // Realtime: refresh when orders, customers, or inventory change
   useRealtime(["orders", "order_items", "customers", "inventory_items", "service_addon_items"], () => loadData(true));
@@ -425,6 +424,14 @@ export default function Orders() {
     if (nextPage === page || nextPage < 0 || nextPage >= totalPages) return;
     paginationRefresh.current = true;
     setPage(nextPage);
+  }
+
+  function changeStatusFilter(nextFilter) {
+    if (nextFilter === filter || tableLoading) return;
+    filterRefresh.current = true;
+    setTableLoading(true);
+    setPage(0);
+    setFilter(nextFilter);
   }
 
   function updateServiceItem(index, changes) {
@@ -962,7 +969,8 @@ export default function Orders() {
               key={s}
               type="button"
               className={`garment-filter-btn ${filter === s ? "active" : ""}`}
-              onClick={() => setFilter(s)}
+              onClick={() => changeStatusFilter(s)}
+              disabled={tableLoading}
               aria-pressed={filter === s}
             >
               {s !== "all" && (
@@ -1009,6 +1017,13 @@ export default function Orders() {
           </button>
         </div>
       </div>
+
+      {tableLoading && viewMode !== "table" && (
+        <div className="filter-loading-notice" role="status" aria-live="polite">
+          <Loader2 size={16} className="button-spinner" aria-hidden="true" />
+          <span>Updating orders with the selected filter…</span>
+        </div>
+      )}
 
       {/* Kanban Board */}
       {viewMode === "board" && (
@@ -1168,7 +1183,7 @@ export default function Orders() {
                     <td colSpan={isAdmin ? 10 : 9} className="empty-state">
                       <p>{searchInput || filter !== "all" ? "No orders match the current search or status filter." : "No orders have been created yet."}</p>
                       {(searchInput || filter !== "all") && (
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setSearchInput(""); setFilter("all"); }}>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setSearchInput(""); changeStatusFilter("all"); }}>
                           Clear filters
                         </button>
                       )}
@@ -1843,7 +1858,7 @@ export default function Orders() {
                       const reward = loyaltyPreview;
                       const total = loyaltyPrice(rawTotal, reward);
                       return <>
-                        {reward && <div className="pricing-row" style={{ color: "#047857", fontWeight: 700 }}>
+                        {reward && <div className="pricing-row loyalty-discount-row" style={{ fontWeight: 700 }}>
                           <span>{reward.reward_type === "percentage_discount" ? `${reward.discount_percent}% loyalty discount` : "Free 8 kg standard load"}</span>
                           <span>−₱{(rawTotal - total).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                         </div>}
@@ -1941,12 +1956,12 @@ export default function Orders() {
                               </span>
                             )}
                             {paid >= minRequired && paid < total && (
-                              <span style={{ color: "#d97706" }}>
+                              <span className="payment-balance-copy">
                                 Balance: ₱{(total - paid).toLocaleString()}
                               </span>
                             )}
                             {paid >= total && (
-                              <span style={{ color: "#059669" }}>
+                              <span className="payment-paid-copy">
                                 Fully paid
                               </span>
                             )}

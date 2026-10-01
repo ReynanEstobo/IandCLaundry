@@ -292,21 +292,20 @@ Thank you for choosing I&C Laundry!
               }}
             >
               <div
+                className="email-delivery-info"
                 style={{
-                  background: "#dcfce7",
-                  border: "1px solid #86efac",
                   borderRadius: "var(--radius-sm)",
                   padding: 16,
                   marginBottom: 20,
                 }}
               >
                 <div
+                  className="email-delivery-info-title"
                   style={{
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
                     fontWeight: 600,
-                    color: "#166534",
                     marginBottom: 4,
                   }}
                 >
