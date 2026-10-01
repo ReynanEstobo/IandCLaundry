@@ -18,6 +18,7 @@ export default function DashboardCharts({ data, range, onRangeChange, loading = 
             key={period}
             className={`btn btn-sm ${range === period ? 'btn-primary' : ''}`}
             onClick={() => onRangeChange(period)}
+            disabled={loading}
             aria-pressed={range === period}
           >
             {period}

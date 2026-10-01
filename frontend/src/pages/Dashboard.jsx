@@ -8,6 +8,7 @@ import {
   Clock,
   PhilippinePeso,
   Lightbulb,
+  Loader2,
   Package,
   Radio,
   ShoppingBag,
@@ -50,33 +51,43 @@ export default function Dashboard() {
   const [forecasts, setForecasts] = useState(null);
   const [overviewAlertPage, setOverviewAlertPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [recentLoading, setRecentLoading] = useState(false);
+  const [backgroundRefreshing, setBackgroundRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
   const [aiUsage, setAiUsage] = useState({ count: 0, limit: 20 });
 
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
 
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 10;
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-  const isFirstDashboardEffect = useRef(true);
+  const hasLoadedDashboard = useRef(false);
+  const isFirstRangeEffect = useRef(true);
+  const isFirstPageEffect = useRef(true);
 
   useEffect(() => {
-    // The one-time effect below performs the initial load with AI insights.
-    // Skip this effect's first run so the same dashboard queries are not doubled.
-    if (isFirstDashboardEffect.current) {
-      isFirstDashboardEffect.current = false;
+    if (isFirstRangeEffect.current) {
+      isFirstRangeEffect.current = false;
       return;
     }
-    loadDashboard(false);
-  }, [range, page]);
+    loadDashboard(false, "charts");
+  }, [range]);
 
   useEffect(() => {
-    loadDashboard(true); // ✅ run AI only once
+    if (isFirstPageEffect.current) {
+      isFirstPageEffect.current = false;
+      return;
+    }
+    loadDashboard(false, "recent");
+  }, [page]);
+
+  useEffect(() => {
+    loadDashboard(true, "initial"); // run AI only once
   }, []);
 
   // Stream every data source used by the dashboard. useRealtime debounces
   // related transaction events and retains a quiet polling fallback.
-  const loadDashboardCb = useCallback(() => loadDashboard(false), [range, page]);
+  const loadDashboardCb = useCallback(() => loadDashboard(false, "background"), [range, page]);
   useRealtime([
     "orders",
     "order_items",
@@ -150,11 +161,20 @@ export default function Dashboard() {
     return data;
   }
 
-  async function loadDashboard(runAI = true) {
-    if (isInitialLoad) setLoading(true);
-    setChartLoading(true);
-    setLoadError("");
-    setIsInitialLoad(false);
+  async function loadDashboard(runAI = true, scope = "background") {
+    const firstLoad = !hasLoadedDashboard.current;
+    if (firstLoad || scope === "initial") {
+      setLoading(true);
+      setChartLoading(true);
+      setLoadError("");
+    } else if (scope === "charts") {
+      setChartLoading(true);
+    } else if (scope === "recent") {
+      setRecentLoading(true);
+    } else {
+      setBackgroundRefreshing(true);
+    }
+    setRefreshError("");
     try {
     const today = startOfToday().toISOString();
 
@@ -241,11 +261,13 @@ export default function Dashboard() {
     // Generate AI forecasts
     const fc = generateForecasts(orders, payments, inventory, usageLogs);
     setForecasts(fc);
-    setOverviewAlertPage(0);
+    setOverviewAlertPage((current) => Math.min(current, Math.max(0, fc.restockAlerts.length - 1)));
     // Charts are ready as soon as the filtered operational data is ready.
     // Do not keep them blocked by the separate Gemini/DSS request below.
     setWeeklyData(buildChartData(orders, payments, range));
-    setChartLoading(false);
+    hasLoadedDashboard.current = true;
+    setLoading(false);
+    if (firstLoad || scope === "initial" || scope === "charts") setChartLoading(false);
 
     // 🔥 GEMINI AI (Decision Support Layer)
     // 🔥 Gemini AI (Decision Support Layer - optimized)
@@ -302,10 +324,14 @@ export default function Dashboard() {
     }
 
     } catch (error) {
-      setLoadError(error.message || "Unable to load dashboard data.");
+      const message = error.message || "Unable to load dashboard data.";
+      if (firstLoad) setLoadError(message);
+      else setRefreshError(message);
     } finally {
       setLoading(false);
-      setChartLoading(false);
+      if (firstLoad || scope === "initial" || scope === "charts") setChartLoading(false);
+      if (scope === "recent") setRecentLoading(false);
+      if (scope === "background") setBackgroundRefreshing(false);
     }
   }
 
@@ -479,8 +505,8 @@ export default function Dashboard() {
     });
   }
 
-  if (loading) return <PageLoader label="Loading dashboard…" />;
-  if (loadError) return <PageError message={loadError} onRetry={() => loadDashboard(false)} />;
+  if (loading && !hasLoadedDashboard.current) return <PageLoader label="Loading dashboard…" />;
+  if (loadError && !hasLoadedDashboard.current) return <PageError message={loadError} onRetry={() => loadDashboard(false, "initial")} />;
 
   const restockAlertCount = forecasts?.restockAlerts?.length || 0;
   const activeRestockAlert = restockAlertCount
@@ -496,9 +522,18 @@ export default function Dashboard() {
           <p>Monitor orders, revenue, customers, and inventory across all branches.</p>
         </div>
         <span className="live-update-indicator" role="status" aria-live="polite">
-          <Radio size={14} aria-hidden="true" /> All branches · Live updates
+          {backgroundRefreshing
+            ? <><Loader2 size={14} className="button-spinner" aria-hidden="true" /> Syncing updates…</>
+            : <><Radio size={14} aria-hidden="true" /> All branches · Live updates</>}
         </span>
       </div>
+      {refreshError && (
+        <div className="dashboard-refresh-error" role="alert">
+          <AlertTriangle size={15} aria-hidden="true" />
+          <span>Dashboard refresh failed. Existing information is still shown.</span>
+          <button type="button" onClick={() => loadDashboard(false, "background")}>Try again</button>
+        </div>
+      )}
       <div className="stats-grid staff-dashboard-stats admin-dashboard-stats">
         <div className="stat-card blue">
           <div className="stat-icon">
@@ -833,9 +868,14 @@ export default function Dashboard() {
       )}
       <DashboardCharts data={weeklyData} range={range} onRangeChange={setRange} loading={chartLoading} />
 
-      <div className="card">
+      <div className="card dashboard-recent-orders">
         <div className="card-header">
           <h3>Recent Orders</h3>
+          {recentLoading && (
+            <span className="dashboard-section-loading" role="status" aria-live="polite">
+              <Loader2 size={14} className="button-spinner" aria-hidden="true" /> Updating orders…
+            </span>
+          )}
         </div>
         <div className="table-wrapper">
           <table>
@@ -919,7 +959,7 @@ export default function Dashboard() {
               {/* FIRST */}
               <button
                 className="btn btn-sm"
-                disabled={page === 0}
+                disabled={page === 0 || recentLoading}
                 onClick={() => setPage(0)}
                 style={{
                   opacity: page === 0 ? 0.4 : 1,
@@ -932,7 +972,7 @@ export default function Dashboard() {
               {/* PREVIOUS */}
               <button
                 className="btn btn-sm"
-                disabled={page === 0}
+                disabled={page === 0 || recentLoading}
                 onClick={() => setPage((p) => Math.max(p - 1, 0))}
                 style={{
                   opacity: page === 0 ? 0.4 : 1,
@@ -964,6 +1004,7 @@ export default function Dashboard() {
                     <button
                       key={i}
                       onClick={() => setPage(i)}
+                      disabled={recentLoading}
                       style={{
                         minWidth: 36,
                         height: 36,
@@ -988,7 +1029,7 @@ export default function Dashboard() {
               {/* NEXT */}
               <button
                 className="btn btn-sm"
-                disabled={page + 1 >= totalPages}
+                disabled={page + 1 >= totalPages || recentLoading}
                 onClick={() => setPage((p) => (p + 1 < totalPages ? p + 1 : p))}
                 style={{
                   opacity: page + 1 >= totalPages ? 0.4 : 1,
@@ -1001,7 +1042,7 @@ export default function Dashboard() {
               {/* LAST */}
               <button
                 className="btn btn-sm"
-                disabled={page + 1 >= totalPages}
+                disabled={page + 1 >= totalPages || recentLoading}
                 onClick={() => setPage(totalPages - 1)}
                 style={{
                   opacity: page + 1 >= totalPages ? 0.4 : 1,

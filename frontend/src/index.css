@@ -1207,6 +1207,122 @@ textarea.form-control {
     opacity: 1;
   }
 }
+
+/* The sign-in page is a single fixed screen. Its vertical rhythm scales with
+   the available viewport so the page never creates a document scrollbar. */
+.login-page-wrapper.login-screen {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.login-screen .login-left-panel,
+.login-screen .login-right-panel {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.login-screen .login-right-panel {
+  padding: clamp(14px, 3.5vh, 36px) clamp(16px, 3vw, 32px);
+}
+
+.login-screen .login-form-wrapper {
+  max-height: 100%;
+}
+
+.login-screen .login-back-btn {
+  margin-bottom: clamp(8px, 2.5vh, 24px);
+}
+
+.login-screen .login-card-enhanced {
+  padding: clamp(20px, 3.6vh, 36px) clamp(20px, 3vw, 34px);
+}
+
+.login-screen .login-card-header {
+  margin-bottom: clamp(16px, 3vh, 28px);
+}
+
+.login-screen .login-form {
+  gap: clamp(10px, 1.8vh, 16px);
+}
+
+.login-screen .login-submit-btn {
+  margin-top: clamp(2px, 1vh, 8px);
+}
+
+.login-screen .login-forgot-row {
+  margin-top: 0;
+  padding-top: clamp(10px, 1.5vh, 16px);
+}
+
+.login-screen .login-card-enhanced > .login-card-footer {
+  margin-top: clamp(14px, 2.2vh, 22px);
+  padding-top: clamp(12px, 2vh, 18px);
+}
+
+@media (max-height: 650px) {
+  .login-screen .login-left-panel {
+    gap: 18px;
+    padding: 28px;
+  }
+
+  .login-screen .login-left-logo {
+    width: 64px;
+    height: 64px;
+  }
+
+  .login-screen .login-left-text h1 {
+    font-size: 30px;
+  }
+
+  .login-screen .login-left-text p {
+    margin-top: 6px;
+    font-size: 14px;
+  }
+
+  .login-screen .login-card-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+  }
+
+  .login-screen .login-input {
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .login-screen .login-submit-btn {
+    padding: 11px;
+  }
+
+  .login-screen .login-remember-hint {
+    line-height: 1.3;
+  }
+}
+
+@media (max-height: 540px) {
+  .login-screen .login-remember-hint,
+  .login-screen .login-card-enhanced > .login-card-footer {
+    display: none;
+  }
+
+  .login-screen .login-card-header {
+    margin-bottom: 10px;
+  }
+}
+
+@media (max-width: 767px) {
+  .login-screen .login-right-panel {
+    width: 100%;
+  }
+
+  .login-screen .login-form-wrapper {
+    max-width: 400px;
+  }
+}
 @keyframes slideUp {
   from {
     opacity: 0;
@@ -7550,4 +7666,441 @@ input, select, textarea, button { max-width: 100%; }
 
 [data-theme="dark"] .app-layout .prediction-card .days-left.warning {
   color: #fcd34d;
+}
+
+/* ============================================
+   BALANCED APPLICATION DENSITY
+   A single medium-density rhythm for authenticated admin and staff screens.
+   Public landing, sign-in, and recovery layouts intentionally stay unchanged.
+   ============================================ */
+.app-layout {
+  --app-header-height: 72px;
+  --app-page-gutter: 24px;
+  --app-section-gap: 16px;
+  --app-card-padding: 20px;
+}
+
+.app-layout .sidebar-brand {
+  padding: 22px 20px 19px;
+  gap: 12px;
+}
+
+.app-layout .sidebar-brand .brand-icon {
+  width: 40px;
+  height: 40px;
+}
+
+.app-layout .sidebar-nav {
+  padding: 12px 10px;
+}
+
+.app-layout .sidebar-section-label {
+  padding: 16px 12px 7px;
+}
+
+.app-layout .nav-link {
+  gap: 11px;
+  padding: 9px 12px;
+}
+
+.app-layout .sidebar-footer {
+  padding: 14px 14px 17px;
+}
+
+.app-layout .top-bar {
+  min-height: var(--app-header-height);
+  padding: 14px var(--app-page-gutter);
+}
+
+.app-layout .top-bar-actions {
+  gap: 10px;
+}
+
+.app-layout .page-content {
+  padding: calc(var(--app-header-height) + 20px) var(--app-page-gutter) 28px;
+}
+
+.app-layout .card {
+  padding: var(--app-card-padding);
+}
+
+.app-layout .card.data-table-card,
+.app-layout .card.audit-section-card {
+  padding: 0;
+}
+
+.app-layout .card-header {
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.app-layout .stats-grid {
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.app-layout .stat-card {
+  padding: 18px 20px;
+}
+
+.app-layout .stat-card .stat-icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 12px;
+}
+
+.app-layout .stat-card .stat-value {
+  font-size: 26px;
+}
+
+.app-layout .btn {
+  min-height: 38px;
+  padding: 8px 15px;
+  gap: 7px;
+}
+
+.app-layout .btn-sm {
+  min-height: 34px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+}
+
+.app-layout .btn-icon {
+  min-width: 36px;
+  min-height: 36px;
+}
+
+.app-layout .form-group {
+  margin-bottom: 16px;
+}
+
+.app-layout .form-row {
+  gap: 12px;
+}
+
+.app-layout .form-control {
+  min-height: 40px;
+  padding: 9px 12px;
+}
+
+.app-layout textarea.form-control {
+  min-height: 76px;
+}
+
+.app-layout th {
+  padding: 10px 14px;
+}
+
+.app-layout td {
+  padding: 12px 14px;
+}
+
+.app-layout .table-toolbar {
+  margin-bottom: 16px;
+}
+
+.app-layout .table-toolbar-controls,
+.app-layout .table-toolbar-actions {
+  gap: 10px;
+}
+
+.app-layout .page-header-card {
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.app-layout .page-header-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+}
+
+.app-layout .settings-grid {
+  gap: 16px;
+}
+
+.app-layout .settings-card {
+  padding: 22px;
+}
+
+.app-layout .settings-card-header {
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.app-layout .settings-card-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+}
+
+.app-layout .modal-header,
+.app-layout .order-modal-header {
+  gap: 14px;
+  padding: 19px 20px 16px;
+}
+
+.app-layout .modal-body,
+.app-layout .order-modal-body {
+  padding: 20px;
+}
+
+.app-layout .modal-footer,
+.app-layout .order-modal-footer {
+  gap: 9px;
+  padding: 14px 20px;
+}
+
+.app-layout .dashboard-decision-layout,
+.app-layout .dashboard-workspace {
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.app-layout .dashboard-ai-header,
+.app-layout .dashboard-ai-card > div {
+  padding: 18px 20px;
+}
+
+.app-layout .dashboard-overview-header {
+  padding: 15px 16px 13px;
+}
+
+.app-layout .dashboard-overview-body {
+  gap: 10px;
+  padding: 12px;
+}
+
+.app-layout .staff-dashboard {
+  gap: 16px;
+}
+
+.app-layout .staff-dss-header {
+  padding: 16px;
+}
+
+.app-layout .staff-dss-metrics {
+  gap: 8px;
+  padding: 12px 12px 0;
+}
+
+.app-layout .staff-dss-revenue,
+.app-layout .staff-dss-alert-group,
+.app-layout .staff-dss-ok {
+  margin-right: 12px;
+  margin-left: 12px;
+}
+
+@media (min-width: 1151px) {
+  .app-layout .page-content:has(.dashboard-overview-card) {
+    padding-right: calc(clamp(360px, 26vw, 440px) + clamp(36px, 3vw, 48px));
+  }
+
+  .app-layout .dashboard-overview-card {
+    top: calc(var(--app-header-height) + 10px);
+    right: var(--app-page-gutter);
+    max-height: calc(100vh - var(--app-header-height) - 30px);
+  }
+}
+
+@media (min-width: 1181px) {
+  /* The active admin/staff DSS panel uses .staff-dss-overview. Reserve its
+     full width after the general page-gutter rule above so dashboard cards
+     can never slide underneath the fixed panel. */
+  .app-layout .page-content:has(.staff-dss-overview) {
+    --staff-dss-width: clamp(360px, 26vw, 440px);
+    padding-right: calc(var(--staff-dss-width) + clamp(36px, 3vw, 48px));
+  }
+
+  .app-layout .staff-dss-overview {
+    top: calc(var(--app-header-height) + 10px);
+    right: var(--app-page-gutter);
+    width: var(--staff-dss-width);
+    max-height: calc(100vh - var(--app-header-height) - 30px);
+  }
+}
+
+@media (max-width: 900px) {
+  .app-layout {
+    --app-header-height: 68px;
+    --app-page-gutter: 18px;
+  }
+
+  .app-layout .page-content {
+    padding-bottom: 22px;
+  }
+}
+
+@media (max-width: 640px) {
+  .app-layout {
+    --app-header-height: 64px;
+    --app-page-gutter: 12px;
+    --app-card-padding: 16px;
+  }
+
+  .app-layout .page-content {
+    padding-top: calc(var(--app-header-height) + 14px);
+    padding-bottom: 24px;
+  }
+
+  .app-layout.staff-layout .page-content {
+    padding-bottom: calc(102px + env(safe-area-inset-bottom));
+  }
+
+  .app-layout .top-bar {
+    padding: 10px 12px;
+  }
+
+  .app-layout .card-header {
+    margin-bottom: 14px;
+  }
+
+  .app-layout .stats-grid {
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .app-layout .stat-card {
+    padding: 16px;
+  }
+
+  .app-layout .btn {
+    min-height: 42px;
+  }
+
+  .app-layout .btn-icon {
+    min-width: 42px;
+    min-height: 42px;
+  }
+
+  .app-layout .form-control,
+  .app-layout .modal .form-control,
+  .app-layout .order-modal .form-control {
+    min-height: 44px;
+  }
+
+  .app-layout .page-header-card,
+  .app-layout .modal-header,
+  .app-layout .order-modal-header,
+  .app-layout .modal-body,
+  .app-layout .order-modal-body {
+    padding: 16px;
+  }
+
+  .app-layout .modal-footer,
+  .app-layout .order-modal-footer {
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+
+  .app-layout .settings-card {
+    padding: 18px;
+  }
+
+  .app-layout .settings-card-header {
+    margin-bottom: 16px;
+  }
+
+  .app-layout .dashboard-ai-header,
+  .app-layout .dashboard-ai-card > div,
+  .app-layout .dashboard-overview-header {
+    padding: 16px;
+  }
+
+  .app-layout .dashboard-suggestion {
+    align-items: flex-start !important;
+    flex-wrap: wrap;
+    gap: 10px !important;
+    padding: 12px !important;
+  }
+
+  .app-layout .dashboard-suggestion-action {
+    width: calc(100% - 46px);
+    margin-left: 46px;
+  }
+
+  .app-layout .responsive-card-table tbody {
+    gap: 10px;
+  }
+
+  .app-layout .responsive-card-table tbody td {
+    gap: 10px;
+    padding: 9px 12px;
+  }
+
+  .app-layout .responsive-card-table tbody td[data-card-primary] {
+    padding: 12px;
+  }
+
+  .app-layout .responsive-card-table tbody td[data-card-actions] {
+    padding: 9px 12px;
+  }
+}
+
+/* Dashboard refreshes preserve the current screen. Only the chart or recent
+   orders section that the user changes displays a local loading state. */
+.dashboard-section-loading {
+  display: inline-flex;
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid var(--primary-100);
+  border-radius: 999px;
+  background: var(--primary-50);
+  color: var(--primary-hover);
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.dashboard-refresh-error {
+  display: flex;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #b91c1c;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.dashboard-refresh-error span {
+  flex: 1;
+}
+
+.dashboard-refresh-error button {
+  padding: 4px 7px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+[data-theme="dark"] .dashboard-section-loading {
+  border-color: rgba(56, 189, 248, 0.3);
+  background: rgba(14, 165, 233, 0.13);
+  color: #bae6fd;
+}
+
+[data-theme="dark"] .dashboard-refresh-error {
+  border-color: rgba(248, 113, 113, 0.32);
+  background: rgba(127, 29, 29, 0.22);
+  color: #fca5a5;
+}
+
+@media (max-width: 640px) {
+  .dashboard-refresh-error {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .dashboard-refresh-error button {
+    margin-left: 23px;
+  }
 }

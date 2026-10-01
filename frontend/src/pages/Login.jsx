@@ -52,7 +52,7 @@ export default function Login() {
   }
 
   return (
-    <div className="login-page-wrapper">
+    <div className="login-page-wrapper login-screen">
       <div className="login-left-panel">
         <div className="login-left-circle login-left-circle-1" />
         <div className="login-left-circle login-left-circle-2" />
@@ -137,7 +137,7 @@ export default function Login() {
                 Your account is remembered by this system; your password is protected by your browser's password manager.
               </p>
               <LoadingButton type="submit" className="login-submit-btn" loading={loading} loadingLabel="Signing in...">Sign In</LoadingButton>
-              <div className="login-card-footer" style={{ marginTop: 16 }}>
+              <div className="login-card-footer login-forgot-row">
                 <button type="button" className="login-forgot-password" disabled={loading} onClick={() => navigate('/forgot-password')}>Forgot password?</button>
               </div>
             </form>
