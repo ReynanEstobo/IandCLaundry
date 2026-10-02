@@ -1,7 +1,7 @@
 import { authenticate, requireAdmin } from '../backend/middleware/authenticate.js'
 import { handleData } from '../backend/controllers/dataController.js'
 import { cancelOrder, collectOrderPayment, createOrder, restockInventory, settleAndReleaseOrder, transitionAllOrderItems, transitionOrder, transitionOrderItem } from '../backend/controllers/operationController.js'
-import { listVisibleCustomers, lookupCustomer, registerCustomer } from '../backend/controllers/customerController.js'
+import { listVisibleCustomers, lookupCustomer } from '../backend/controllers/customerController.js'
 import { listAuditLog, restoreRecord } from '../backend/controllers/auditController.js'
 import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from '../backend/controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from '../backend/controllers/staffProvisionController.js'
@@ -148,7 +148,6 @@ async function api(request, env) {
   if (method === 'POST' && path === 'loyalty/revoke') return json(await revokeLoyaltyReward(await body(request), await authenticate(request)))
   if (method === 'GET' && path === 'customers/visible') return json(await listVisibleCustomers(await authenticate(request)))
   if (method === 'GET' && path === 'customers/lookup') return json(await lookupCustomer(url.searchParams.get('phone'), await authenticate(request)))
-  if (method === 'POST' && path === 'customers/register') return json(await registerCustomer(await body(request), await authenticate(request)))
   if (method === 'GET' && (path === 'audit-log' || path === 'recycle-bin')) return json(await listAuditLog(await authenticate(request), {
     page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'),
   }))

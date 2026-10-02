@@ -1,5 +1,5 @@
 import { database } from '../config/supabase.js'
-import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
+import { assertPhilippineMobile } from '../utils/validation.js'
 
 async function attachIssuedRewards(customers) {
   const customerIds = customers.map(customer => customer?.id).filter(Boolean)
@@ -20,18 +20,6 @@ async function attachIssuedRewards(customers) {
     byCustomer.set(reward.customer_id, list)
   }
   return customers.map(customer => ({ ...customer, loyaltyRewards: byCustomer.get(customer.id) || [] }))
-}
-
-async function resolveBranch(identity, requestedBranch) {
-  if (!identity.staffId) throw Object.assign(new Error('Your account must have a staff profile before managing clients.'), { status: 403 })
-  if (identity.role === 'staff') {
-    if (!identity.branchId) throw Object.assign(new Error('Your staff account must be assigned to a branch.'), { status: 403 })
-    return { id: identity.branchId, name: identity.branch }
-  }
-  if (identity.role !== 'admin' || !requestedBranch) throw Object.assign(new Error('Administrators must select a branch.'), { status: 400 })
-  const { data, error } = await database.from('branches').select('id, name').eq('name', requestedBranch).maybeSingle()
-  if (error || !data) throw Object.assign(new Error('The selected branch does not exist.'), { status: 400 })
-  return data
 }
 
 export async function listVisibleCustomers(identity) {
@@ -86,20 +74,4 @@ export async function lookupCustomer(phone, identity) {
   // The client directory remains branch-scoped, but an exact phone match in
   // the order form may safely hydrate the name/email to prevent duplicates.
   return { exists: true, visible: Boolean(association), customer, loyalty }
-}
-
-export async function registerCustomer(body, identity) {
-  const branch = await resolveBranch(identity, body?.branch)
-  const name = assertText(body?.name, { label: 'Customer name', min: 2, max: 120 })
-  const phone = assertPhilippineMobile(body?.phone)
-  const email = assertEmail(body?.email, { label: 'Customer email', required: true })
-  const { data, error } = await database.rpc('register_branch_customer', {
-    p_branch_id: branch.id,
-    p_staff_id: identity.staffId,
-    p_name: name,
-    p_phone: phone,
-    p_email: email,
-  })
-  if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
-  return { data }
 }

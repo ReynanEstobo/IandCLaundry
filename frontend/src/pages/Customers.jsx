@@ -1,11 +1,11 @@
 import { format } from "date-fns";
-import { Edit2, Gift, Phone, Plus, Search, Trash2, X } from "lucide-react";
+import { Edit2, Gift, Phone, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { useAuth } from "../context/AuthContext";
-import { getVisibleCustomers, registerBranchCustomer } from "../services/api/operationsApi";
+import { getVisibleCustomers } from "../services/api/operationsApi";
 import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
@@ -37,7 +37,7 @@ export default function Customers() {
   // 🔥 PAGINATION STATES
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 10;
-  const [totalCount, setTotalCount] = useState(0);
+  const totalCount = allCustomers.length;
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
@@ -49,16 +49,14 @@ export default function Customers() {
 
     try {
       // Admin receives the master customer directory. Staff receive only customers
-      // associated with their branch through customer_branches.
+      // associated with their branch through customer_branches. Preserve the
+      // server order because it reflects the correct recency for each role.
       const { data: allData = [] } = await getVisibleCustomers();
-      const sorted = [...allData].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-      setAllCustomers(sorted);
-      setTotalCount(sorted.length);
+      setAllCustomers(allData);
     } catch (error) {
       if (!background) {
         setLoadError(error.message || "Unable to load customer records.");
         setAllCustomers([]);
-        setTotalCount(0);
       } else {
         console.error("Background customer refresh failed:", error);
       }
@@ -91,17 +89,6 @@ export default function Customers() {
   // Realtime: refresh when customers change
   useRealtime(["customers"], () => loadCustomers(true));
 
-  function openNew() {
-    setEditing(null);
-    setForm({
-      name: "",
-      phone: "",
-      email: "",
-      branch: branchNames[0] || "",
-    });
-    setShowModal(true);
-  }
-
   function openEdit(cust) {
     setEditing(cust);
     setForm({
@@ -124,20 +111,13 @@ export default function Customers() {
 
     setSaving(true);
     try {
-      let error;
-      if (editing) {
-        ({ error } = await supabase
-          .from("customers")
-          .update(form)
-          .eq("id", editing.id));
-      } else {
-        await registerBranchCustomer({
-          ...form,
-          ...(isAdmin ? { branch: form.branch } : {}),
-        });
-      }
+      if (!editing?.id) throw new Error("Customers can only be created while placing an order.");
+      const { error } = await supabase
+        .from("customers")
+        .update(form)
+        .eq("id", editing.id);
       if (error) throw error;
-      toast.success(editing ? "Customer updated!" : "Customer added!");
+      toast.success("Customer updated!");
       setShowModal(false);
       await loadCustomers(true);
     } catch (error) {
@@ -199,7 +179,7 @@ export default function Customers() {
 
   return (
     <>
-      <TableToolbar actions={<button className="btn btn-primary" onClick={openNew}><Plus size={18} /> Add Customer</button>}>
+      <TableToolbar>
         <div className="search-box">
           <Search />
           <input
@@ -379,8 +359,8 @@ export default function Customers() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div>
-                <h3>{editing ? "Edit Customer" : "Add Customer"}</h3>
-                <p>Enter the customer’s contact details. Fields marked * are required.</p>
+                <h3>Edit Customer</h3>
+                <p>Update the customer’s contact details. New customers are created when an order is placed.</p>
               </div>
               <button className="btn-icon" type="button" aria-label="Close customer form" disabled={saving} onClick={() => setShowModal(false)}>
                 <X size={20} />
@@ -460,8 +440,8 @@ export default function Customers() {
                 >
                   Cancel
                 </button>
-                <LoadingButton type="submit" className="btn btn-primary" loading={saving} loadingLabel={editing ? "Updating…" : "Adding…"}>
-                  {editing ? "Update" : "Add Customer"}
+                <LoadingButton type="submit" className="btn btn-primary" loading={saving} loadingLabel="Updating…">
+                  Update Customer
                 </LoadingButton>
               </div>
             </form>

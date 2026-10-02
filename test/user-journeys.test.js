@@ -84,6 +84,15 @@ test('visitor journey: contact form validation rejects incomplete input before e
   assert.equal(result.body.error, 'Name, email, and message are required.')
 })
 
+test('customer creation is available only through order placement', async () => {
+  const result = await api('customers/register', {
+    method: 'POST',
+    body: { name: 'Standalone Customer', phone: '09123456789', email: 'customer@example.com' },
+  })
+  assert.equal(result.response.status, 404)
+  assert.equal(result.body.error, 'Endpoint not found')
+})
+
 test('security journey: protected staff endpoints reject a visitor without a session', async () => {
   const cases = [
     ['auth/me', 'GET'],

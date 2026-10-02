@@ -40,10 +40,6 @@ export async function lookupCustomerByPhone(phone) {
   return apiFetch(`/api/customers/lookup?phone=${encodeURIComponent(phone)}`)
 }
 
-export async function registerBranchCustomer(payload) {
-  return apiFetch('/api/customers/register', { method: 'POST', body: JSON.stringify(payload) })
-}
-
 export async function getLoyaltyRewards() {
   return apiFetch('/api/loyalty/rewards')
 }
