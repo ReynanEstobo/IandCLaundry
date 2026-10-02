@@ -2,14 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { MessageCircle, Send, X, ArrowUpRight, Tag, MapPin, Mail, Clock, Search, Truck, Wallet } from 'lucide-react';
 import './LandingChatbot.css';
 import FacebookIcon from './FacebookIcon';
+import { servicePricingResponse } from '../utils/servicePricingResponse';
+import { apiFetch } from '../services/api/client';
 
 const topics = ['Prices per load', 'Shop location', 'Contact management', 'Opening hours', 'Track my order', 'Pickup / delivery', 'Payment'];
 const topicIcons = [Tag, MapPin, Mail, Clock, Search, Truck, Wallet];
 const contact = 'Call 0967-281-3602, email iclaundryshop@gmail.com, or message I and C Laundry Hub on Facebook. You can also use the Contact Us form below.';
-export function answerQuestion(question, settings = {}) {
+const isPriceQuestion = question => /price|cost|magkano|presyo|per load|extra|add.?on|kilo|\bkg\b|(?:available|offer|list|what).*(?:services?)/.test(question.toLowerCase());
+export function answerQuestion(question, settings = {}, services = []) {
   const q = question.toLowerCase().trim();
-  if (/price|cost|magkano|presyo|per load|extra|add.?on|kilo|\bkg\b/.test(q)) {
-    return { text: 'Prices are configured separately for each service, such as regular laundry, comforters, pads, and air-dry-only gowns. Add-on prices also depend on the selected service and branch. Please contact the shop so staff can confirm the current per-load rate and final total.', section: 'contact' };
+  if (isPriceQuestion(q)) {
+    return { text: servicePricingResponse(services) };
   }
   if (/location|address|branch|map|directions|(?:where|saan).*(?:shop|store|located|kayo)/.test(q))
     return { text: 'Our listed shop address is Paz Street, Brgy. 7, Balayan, Batangas. Contact management for directions or details about other branches.', section: 'contact', map: true };
@@ -28,7 +31,7 @@ export function answerQuestion(question, settings = {}) {
   };
 }
 
-export default function LandingChatbot({ settings }) {
+export default function LandingChatbot({ settings, services = [], onServicesChange }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState([{ id: 0, text: 'Hi! Welcome to I&C Laundry. How can I help you today?' }]);
@@ -43,14 +46,26 @@ export default function LandingChatbot({ settings }) {
   useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [messages, open]);
   useEffect(() => () => window.clearTimeout(replyTimer.current), []);
   const close = () => { setOpen(false); launcher.current?.focus(); };
-  const ask = question => {
+  const ask = async question => {
     const text = question.trim().slice(0, 300);
     if (!text || isTyping) return;
     const userMessage = { id: nextMessageId.current++, text, user: true };
-    const reply = { ...answerQuestion(text, settings), id: nextMessageId.current++ };
     setMessages(previous => [...previous.slice(-39), userMessage]);
     setDraft('');
     setIsTyping(true);
+    let currentServices = services;
+    if (isPriceQuestion(text)) {
+      try {
+        const { data } = await apiFetch('/api/public/services');
+        if (Array.isArray(data)) {
+          currentServices = data;
+          onServicesChange?.(data);
+        }
+      } catch (error) {
+        console.error('Unable to load current service prices:', error);
+      }
+    }
+    const reply = { ...answerQuestion(text, settings, currentServices), id: nextMessageId.current++ };
     replyTimer.current = window.setTimeout(() => {
       setMessages(previous => [...previous.slice(-39), reply]);
       setIsTyping(false);

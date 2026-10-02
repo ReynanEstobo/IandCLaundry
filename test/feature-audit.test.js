@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { database } from '../backend/config/supabase.js'
 import { execute } from '../backend/models/databaseModel.js'
-import { trackOrder } from '../backend/controllers/publicController.js'
+import { getPublicServices, trackOrder } from '../backend/controllers/publicController.js'
 import { listVisibleCustomers } from '../backend/controllers/customerController.js'
 import { cancelOrder, createOrder, restockInventory } from '../backend/controllers/operationController.js'
 import { describeAuditEvent, listRecycleBin, restoreRecord } from '../backend/controllers/auditController.js'
@@ -117,6 +117,20 @@ test('public tracking must reject wildcard-only input before querying orders', a
     await assert.rejects(trackOrder(input))
   }
   assert.equal(calls.length,0)
+})
+
+test('public service pricing returns only active, non-archived service rates', async t => {
+  const active = {
+    name: 'Regular Laundry', bundle_kg: 8, bundle_price: 200,
+    excess_kg_price: 30, processing_type: 'full_service', is_active: true, deleted_at: null,
+  }
+  mockDatabase(t, [
+    active,
+    { ...active, name: 'Inactive', is_active: false },
+    { ...active, name: 'Archived', deleted_at: '2026-10-02T00:00:00Z' },
+  ])
+  const result = await getPublicServices()
+  assert.deepEqual(result.data, [active])
 })
 
 test('customer directory must exclude records in the recycle bin', async t => {

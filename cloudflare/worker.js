@@ -5,7 +5,7 @@ import { listVisibleCustomers, lookupCustomer, registerCustomer } from '../backe
 import { listAuditLog, restoreRecord } from '../backend/controllers/auditController.js'
 import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from '../backend/controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from '../backend/controllers/staffProvisionController.js'
-import { getPublicSettings, sendContactMessage, trackOrder } from '../backend/controllers/publicController.js'
+import { getPublicServices, getPublicSettings, sendContactMessage, trackOrder } from '../backend/controllers/publicController.js'
 import { sendSms } from '../backend/services/notificationService.js'
 import { askGemini, generateForecast, generateDecisionSupport } from '../backend/services/aiService.js'
 import { resourceRoutes } from '../backend/routes/resourceRoutes.js'
@@ -134,6 +134,7 @@ async function api(request, env) {
   if (method === 'POST' && path === 'ai/dss') { requireAdmin(await authenticate(request)); return json(await generateDecisionSupport(await body(request))) }
   if (method === 'GET' && path === 'public/orders/track') return json(await trackOrder(url.searchParams.get('q')))
   if (method === 'GET' && path === 'public/settings') return json(await getPublicSettings())
+  if (method === 'GET' && path === 'public/services') return json(await getPublicServices())
   if (method === 'POST' && path === 'public/contact') return json(await sendContactMessage(await body(request)))
   if (method === 'POST' && path === 'orders/create') return json(await createOrder(await body(request), await authenticate(request)))
   if (method === 'POST' && path === 'orders/transition') return json(await transitionOrder(await body(request), await authenticate(request)))

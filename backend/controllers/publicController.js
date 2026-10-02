@@ -25,6 +25,16 @@ export async function getPublicSettings() {
   return { data }
 }
 
+export async function getPublicServices() {
+  const { data, error } = await database.from('service_types')
+    .select('name, description, bundle_kg, bundle_price, excess_kg_price, processing_type')
+    .eq('is_active', true)
+    .is('deleted_at', null)
+    .order('name', { ascending: true })
+  if (error) throw Object.assign(new Error(error.message), { status: 400 })
+  return { data: data || [] }
+}
+
 export async function sendContactMessage(body) {
   const name = String(body?.name || '').trim()
   const email = String(body?.email || '').trim()

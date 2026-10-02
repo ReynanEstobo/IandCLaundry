@@ -244,6 +244,7 @@ export default function LandingPage() {
   });
   const [sending, setSending] = useState(false);
   const [settings, setSettings] = useState({});
+  const [services, setServices] = useState([]);
   const [settingsVersion, setSettingsVersion] = useState(0);
   const [formData, setFormData] = useState({
     name: "",
@@ -380,6 +381,33 @@ export default function LandingPage() {
             setSettingsVersion((v) => v + 1);
           }
         },
+      )
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      supabase.removeChannel(channel);
+    };
+  }, []);
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchServices = async () => {
+      try {
+        const { data } = await apiFetch("/api/public/services");
+        if (isMounted) setServices(Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error("Unable to refresh public service prices:", error);
+      }
+    };
+
+    fetchServices();
+    const channel = supabase
+      .channel("public-service-prices-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "service_types" },
+        fetchServices,
       )
       .subscribe();
 
@@ -996,7 +1024,7 @@ export default function LandingPage() {
           </div>
         </div>
       </footer>
-      <LandingChatbot settings={settings} />
+      <LandingChatbot settings={settings} services={services} onServicesChange={setServices} />
       {/* 🔝 Back to Top Button */}
       {showTopBtn && (
         <button className="back-to-top" onClick={scrollToTop}>
