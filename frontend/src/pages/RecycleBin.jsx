@@ -1,5 +1,5 @@
 import { ArchiveRestore, ChevronLeft, ChevronRight, History, RotateCcw, ShieldCheck } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { PageError, PageLoader, TableSkeleton } from '../components/AsyncState'
 import ConfirmDialog from '../components/ConfirmDialog'
@@ -10,6 +10,8 @@ const labels = {
   customers: 'Customer', staff: 'Staff account', inventory_items: 'Inventory item',
   inventory_categories: 'Inventory category', service_types: 'Service type', expenses: 'Expense',
 }
+
+const ARCHIVED_PAGE_SIZE = 10
 
 function recordName(record) {
   return record.full_name || record.name || record.description || record.category || record.id
@@ -23,6 +25,7 @@ export default function RecycleBin() {
   const [error, setError] = useState('')
   const [restoringId, setRestoringId] = useState('')
   const [recordToRestore, setRecordToRestore] = useState(null)
+  const [archivedPage, setArchivedPage] = useState(1)
   const hasLoaded = useRef(false)
 
   const load = useCallback(async (page = 1, background = false) => {
@@ -73,12 +76,26 @@ export default function RecycleBin() {
     branch: record => record.branch,
     archived: record => record.deleted_at ? new Date(record.deleted_at).getTime() : 0,
   }, 'desc')
+  const archivedTotalPages = Math.max(1, Math.ceil(records.length / ARCHIVED_PAGE_SIZE))
+  const paginatedArchivedRecords = useMemo(() => {
+    const from = (archivedPage - 1) * ARCHIVED_PAGE_SIZE
+    return archivedSort.sortedRows.slice(from, from + ARCHIVED_PAGE_SIZE)
+  }, [archivedPage, archivedSort.sortedRows])
   const activitySort = useSortableRows(audit.items, 'when', {
     activity: log => log.description,
     branch: log => log.table_name === 'orders' ? log.branch?.name : '',
     actor: log => log.staff?.full_name || 'System / unassigned',
     when: log => new Date(log.created_at).getTime(),
   }, 'desc')
+
+  useEffect(() => {
+    setArchivedPage(current => Math.min(current, archivedTotalPages))
+  }, [archivedTotalPages])
+
+  function sortArchivedRecords(column) {
+    archivedSort.requestSort(column)
+    setArchivedPage(1)
+  }
 
   if (loading && !hasLoaded.current) return <PageLoader label="Loading Audit Log…" />
   if (error) return <PageError message={error} onRetry={() => load(audit.page)} />
@@ -98,14 +115,14 @@ export default function RecycleBin() {
       </div>
       <DataTable ariaLabel="Archived records">
         <thead><tr>
-          <SortableHeader label="Type" column="type" sort={archivedSort.sort} onSort={archivedSort.requestSort} />
-          <SortableHeader label="Record" column="record" sort={archivedSort.sort} onSort={archivedSort.requestSort} />
-          <SortableHeader label="Branch" column="branch" sort={archivedSort.sort} onSort={archivedSort.requestSort} />
-          <SortableHeader label="Archived at" column="archived" sort={archivedSort.sort} onSort={archivedSort.requestSort} />
+          <SortableHeader label="Type" column="type" sort={archivedSort.sort} onSort={sortArchivedRecords} />
+          <SortableHeader label="Record" column="record" sort={archivedSort.sort} onSort={sortArchivedRecords} />
+          <SortableHeader label="Branch" column="branch" sort={archivedSort.sort} onSort={sortArchivedRecords} />
+          <SortableHeader label="Archived at" column="archived" sort={archivedSort.sort} onSort={sortArchivedRecords} />
           <th>Action</th>
         </tr></thead>
         <tbody>
-          {!records.length ? <EmptyState colSpan={5} message="No archived records" /> : archivedSort.sortedRows.map(record => {
+          {!records.length ? <EmptyState colSpan={5} message="No archived records" /> : paginatedArchivedRecords.map(record => {
             const key = `${record.table_name}:${record.id}`
             return <tr key={key}>
               <td data-card-primary data-label="Type"><span className="record-type-badge">{labels[record.table_name] || record.table_name}</span></td>
@@ -117,6 +134,30 @@ export default function RecycleBin() {
           })}
         </tbody>
       </DataTable>
+      <div className="audit-pagination system-pagination" aria-label="Archived records pagination">
+        <span>
+          {records.length === 0
+            ? '0 of 0 records'
+            : `${(archivedPage - 1) * ARCHIVED_PAGE_SIZE + 1}–${Math.min(archivedPage * ARCHIVED_PAGE_SIZE, records.length)} out of ${records.length}`}
+        </span>
+        <div>
+          <button
+            className="btn btn-sm btn-secondary"
+            disabled={archivedPage <= 1}
+            onClick={() => setArchivedPage(page => Math.max(1, page - 1))}
+          >
+            <ChevronLeft size={15} /> Previous
+          </button>
+          <span className="audit-pagination-page" aria-live="polite">Page {archivedPage} of {archivedTotalPages}</span>
+          <button
+            className="btn btn-sm btn-secondary"
+            disabled={archivedPage >= archivedTotalPages}
+            onClick={() => setArchivedPage(page => Math.min(archivedTotalPages, page + 1))}
+          >
+            Next <ChevronRight size={15} />
+          </button>
+        </div>
+      </div>
     </section>
 
     <section className="card audit-section-card" aria-busy={auditLoading || undefined}>

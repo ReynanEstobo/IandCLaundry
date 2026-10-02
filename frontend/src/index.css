@@ -6730,7 +6730,8 @@ input, select, textarea, button { max-width: 100%; }
 .audit-description { min-width: 390px; }
 .audit-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--border); flex-wrap: wrap; }
 .audit-pagination > span { color: var(--text-muted); font-size: 13px; }
-.audit-pagination > div { display: flex; gap: 8px; }
+.audit-pagination > div { display: flex; align-items: center; gap: 8px; }
+.audit-pagination-page { min-width: 82px; color: var(--text-secondary); font-size: 12px; font-weight: 700; text-align: center; }
 
 @media (max-width: 900px) {
   .sidebar {
@@ -6912,7 +6913,7 @@ input, select, textarea, button { max-width: 100%; }
   .responsive-card-table .empty-state-row td::before { display: none; }
   .audit-description { min-width: 0; }
   .audit-pagination { padding: 14px; }
-  .audit-pagination > div { width: 100%; }
+  .audit-pagination > div { width: 100%; justify-content: space-between; }
   .audit-pagination .btn { flex: 1; justify-content: center; }
 }
 
