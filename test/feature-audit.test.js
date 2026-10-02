@@ -80,6 +80,24 @@ test('new client records and order clients require a valid email', async t => {
   assert.equal(calls.length, 0)
 })
 
+test('staff cannot change customer phone numbers or email addresses', async t => {
+  const calls = mockDatabase(t)
+  for (const payload of [
+    { phone: '09999999999' },
+    { email: 'replacement@example.com' },
+    { name: 'Changed Name', phone: '09999999999', email: 'replacement@example.com' },
+  ]) {
+    await assert.rejects(
+      execute('customers', {
+        operation: 'update', payload,
+        filters: [{ type: 'eq', column: 'id', value: 'customer-1' }],
+      }, staff),
+      /Only administrators/,
+    )
+  }
+  assert.equal(calls.length, 0)
+})
+
 test('staff cannot overwrite current inventory stock outside audited workflows', async t => {
   const calls = mockDatabase(t)
   for (const payload of [{ current_stock: 999 }, { branch: 'Other' }, { branch_id: 'other' }, { unit: 'kg' }]) {

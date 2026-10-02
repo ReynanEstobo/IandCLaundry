@@ -242,6 +242,12 @@ export async function execute(table, request, identity) {
   if (table === 'orders' && request.operation === 'update') {
     throw Object.assign(new Error('Placed order details are locked; use the secure payment, stage, or cancellation workflow.'), { status: 403 })
   }
+  if (table === 'customers' && request.operation === 'update' && identity.role !== 'admin') {
+    const updates = Array.isArray(request.payload) ? request.payload : [request.payload || {}]
+    if (updates.some(entry => Object.hasOwn(entry, 'phone') || Object.hasOwn(entry, 'email'))) {
+      throw Object.assign(new Error('Only administrators can change a customer phone number or email address.'), { status: 403 })
+    }
+  }
   if (table === 'inventory_items' && request.operation === 'update') {
     const updates = request.payload || {}
     if (Object.hasOwn(updates, 'current_stock')) {

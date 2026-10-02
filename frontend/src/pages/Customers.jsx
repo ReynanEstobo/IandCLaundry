@@ -102,9 +102,10 @@ export default function Customers() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.name.trim() || !form.phone.trim() || !form.email.trim())
-      return toast.error("Name, phone, and email are required");
-    if (!isValidPhilippineMobile(form.phone))
+    if (!form.name.trim()) return toast.error("Customer name is required");
+    if (isAdmin && (!form.phone.trim() || !form.email.trim()))
+      return toast.error("Phone and email are required");
+    if (isAdmin && !isValidPhilippineMobile(form.phone))
       return toast.error("Phone number must start with 09 and contain exactly 11 digits.");
     if (isAdmin && !form.branch)
       return toast.error("Please assign this customer to a branch");
@@ -114,7 +115,7 @@ export default function Customers() {
       if (!editing?.id) throw new Error("Customers can only be created while placing an order.");
       const { error } = await supabase
         .from("customers")
-        .update(form)
+        .update(isAdmin ? form : { name: form.name.trim() })
         .eq("id", editing.id);
       if (error) throw error;
       toast.success("Customer updated!");
@@ -360,7 +361,9 @@ export default function Customers() {
             <div className="modal-header">
               <div>
                 <h3>Edit Customer</h3>
-                <p>Update the customer’s contact details. New customers are created when an order is placed.</p>
+                <p>{isAdmin
+                  ? "Update the customer’s contact details. New customers are created when an order is placed."
+                  : "Update the customer’s name. Phone numbers and email addresses can only be changed by an administrator."}</p>
               </div>
               <button className="btn-icon" type="button" aria-label="Close customer form" disabled={saving} onClick={() => setShowModal(false)}>
                 <X size={20} />
@@ -384,7 +387,7 @@ export default function Customers() {
                   <div className="form-group">
                     <label>Phone Number *</label>
                     <input
-                      className="form-control"
+                      className={`form-control ${!isAdmin ? "is-readonly" : ""}`}
                       placeholder="09171234567"
                       value={form.phone}
                       onChange={(e) =>
@@ -393,22 +396,28 @@ export default function Customers() {
                       inputMode="numeric"
                       pattern="09[0-9]{9}"
                       maxLength={11}
+                      readOnly={!isAdmin}
+                      aria-readonly={!isAdmin}
                       required
                     />
+                    {!isAdmin && <span className="form-hint is-readonly-hint">Read-only · Only an administrator can change this phone number.</span>}
                   </div>
                 </div>
                 <div className="form-group">
                   <label>Email *</label>
                   <input
-                    className="form-control"
+                    className={`form-control ${!isAdmin ? "is-readonly" : ""}`}
                     type="email"
                     placeholder="email@example.com"
                     value={form.email}
                     onChange={(e) =>
                       setForm((f) => ({ ...f, email: e.target.value }))
                     }
+                    readOnly={!isAdmin}
+                    aria-readonly={!isAdmin}
                     required
                   />
+                  {!isAdmin && <span className="form-hint is-readonly-hint">Read-only · Only an administrator can change this email address.</span>}
                 </div>
                 {isAdmin && (
                   <div className="form-group">

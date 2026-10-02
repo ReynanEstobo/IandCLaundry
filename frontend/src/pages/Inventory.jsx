@@ -527,7 +527,7 @@ export default function Inventory() {
                       <label>Assigned Branch *</label>
 
                       <select
-                        className="form-control"
+                        className={`form-control ${editing ? "is-readonly" : ""}`}
                         value={form.branch}
                         disabled={Boolean(editing)}
                         onChange={(e) =>
@@ -543,6 +543,7 @@ export default function Inventory() {
                           </option>
                         ))}
                       </select>
+                      {editing && <span className="form-hint is-readonly-hint">Read-only · Branch assignment is locked after the item is created.</span>}
                     </div>
                   )}
 
@@ -551,7 +552,7 @@ export default function Inventory() {
                     <label>Unit</label>
 
                     <select
-                      className="form-control"
+                      className={`form-control ${editing ? "is-readonly" : ""}`}
                       value={form.unit}
                       disabled={Boolean(editing)}
                       onChange={(e) =>
@@ -570,13 +571,14 @@ export default function Inventory() {
                       <option value="bottles">Bottles</option>
                       <option value="sachets">Sachets</option>
                     </select>
+                    {editing && <span className="form-hint is-readonly-hint">Read-only · The measuring unit is locked to preserve inventory history.</span>}
                   </div>
                 </div>
                 <div className="form-row">
                   <div className="form-group">
                     <label>Current Stock *</label>
                     <input
-                      className="form-control"
+                      className={`form-control ${editing ? "is-readonly" : ""}`}
                       type="number"
                       step="0.01"
                       placeholder="0"
@@ -590,7 +592,7 @@ export default function Inventory() {
                       }
                       required
                     />
-                    {editing && <span className="form-hint">Use the Restock action to increase stock. Order usage and cancellations update it automatically.</span>}
+                    {editing && <span className="form-hint is-readonly-hint">Read-only · Use Restock to increase stock. Order usage and cancellations update it automatically.</span>}
                   </div>
                   <div className="form-group">
                     <label>Minimum Stock Level</label>

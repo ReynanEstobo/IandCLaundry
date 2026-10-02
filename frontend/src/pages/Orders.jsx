@@ -1636,7 +1636,7 @@ export default function Orders() {
                     <div className="form-group">
                       <label>Customer Name *</label>
                       <input
-                        className="form-control"
+                        className={`form-control ${phoneMatch?.id ? "is-readonly" : ""}`}
                         placeholder="Juan Dela Cruz"
                         value={form.customer_name}
                         onChange={(e) =>
@@ -1648,6 +1648,7 @@ export default function Orders() {
                         required
                         disabled={!!(phoneMatch && phoneMatch.id)}
                       />
+                      {phoneMatch?.id && <span className="form-hint is-readonly-hint">Read-only · This order uses the existing customer record.</span>}
                     </div>
                     {isAdmin && (
                       <div className="form-group">
@@ -1676,7 +1677,7 @@ export default function Orders() {
                     <div className="form-group">
                       <label>Customer Email *</label>
                       <input
-                        className="form-control"
+                        className={`form-control ${phoneMatch?.email ? "is-readonly" : ""}`}
                         type="email"
                         placeholder="email@example.com"
                         value={form.customer_email}
@@ -1689,6 +1690,7 @@ export default function Orders() {
                         required
                         disabled={Boolean(phoneMatch?.email)}
                       />
+                      {phoneMatch?.email && <span className="form-hint is-readonly-hint">Read-only · The saved customer email is used for notifications.</span>}
                       <span
                         style={{
                           fontSize: 11,
@@ -1724,14 +1726,14 @@ export default function Orders() {
                         <div className="form-row">
                           <div className="form-group" style={{ flex: 2 }}>
                             <label>Service {index + 1} *</label>
-                            <select className="form-control" value={item.service_type_id} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { service_type_id: event.target.value, weight_kg: '', quantity: '1' })} required>
+                            <select className={`form-control ${editing && !['received'].includes(editing.status) ? 'is-readonly' : ''}`} value={item.service_type_id} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { service_type_id: event.target.value, weight_kg: '', quantity: '1' })} required>
                               <option value="">Select service</option>
                               {serviceTypes.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
                             </select>
                           </div>
                           {inputLabel && <div className="form-group">
                             <label>{inputLabel} *</label>
-                            <input className="form-control" type="number" step="0.1" min="0.1" value={item.weight_kg} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { weight_kg: event.target.value })} required />
+                            <input className={`form-control ${editing && !['received'].includes(editing.status) ? 'is-readonly' : ''}`} type="number" step="0.1" min="0.1" value={item.weight_kg} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { weight_kg: event.target.value })} required />
                           </div>}
                           <div className="form-group" style={{ alignSelf: 'end' }}>
                             <button type="button" className="btn btn-secondary btn-sm" onClick={() => removeServiceItem(index)} disabled={form.items.length === 1 || Boolean(editing && !['received'].includes(editing.status))}>Remove</button>
@@ -1918,17 +1920,18 @@ export default function Orders() {
                     <div className="form-group">
                       <label>Method</label>
                       <select
-                        className="form-control"
+                        className="form-control is-readonly"
                         value={form.payment_method}
                         disabled
                       >
                         <option value="cash">Cash</option>
                       </select>
+                      <span className="form-hint is-readonly-hint">Read-only · Cash is the only accepted payment method.</span>
                     </div>
                     <div className="form-group">
                       <label>Amount Paid (₱) *</label>
                       <input
-                        className="form-control"
+                        className={`form-control ${editing ? "is-readonly" : ""}`}
                         type="number"
                         step="0.01"
                         min="0"
@@ -1943,6 +1946,7 @@ export default function Orders() {
                         }
                         required
                       />
+                      {editing && <span className="form-hint is-readonly-hint">Read-only · Existing payments are preserved in the audit ledger.</span>}
                       {(() => {
                         const rawTotal = calcPrice(form.items, form.addons);
                         const reward = loyaltyPreview;
@@ -2024,16 +2028,17 @@ export default function Orders() {
             <div className="order-modal-body">
               <div className="form-group">
                 <label>Remaining Balance</label>
-                <div className="form-control" style={{ display: "flex", alignItems: "center", fontWeight: 700, background: "var(--bg-secondary)" }}>
+                <div className="form-control is-readonly" aria-readonly="true" style={{ display: "flex", alignItems: "center", fontWeight: 700 }}>
                   ₱{Math.max(0, Number(selectedOrder?.total_price || 0) - Number(selectedOrder?.amount_paid || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
               <div className="form-row">
                 <div className="form-group">
                   <label>Method</label>
-                  <select className="form-control" value={additionalPayment.paymentMethod} disabled>
+                  <select className="form-control is-readonly" value={additionalPayment.paymentMethod} disabled>
                     <option value="cash">Cash</option>
                   </select>
+                  <span className="form-hint is-readonly-hint">Read-only · Cash is the only accepted payment method.</span>
                 </div>
                 <div className="form-group">
                   <label>Amount to Add (₱)</label>
@@ -2089,7 +2094,7 @@ export default function Orders() {
             <div className="order-modal-body">
               <div className="form-group">
                 <label>Remaining Amount</label>
-                <div className="form-control" style={{ display: "flex", alignItems: "center", fontWeight: 700, background: "var(--bg-secondary)" }}>
+                <div className="form-control is-readonly" aria-readonly="true" style={{ display: "flex", alignItems: "center", fontWeight: 700 }}>
                   ₱{Math.max(0, Number(selectedOrder?.total_price || 0) - Number(selectedOrder?.amount_paid || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>

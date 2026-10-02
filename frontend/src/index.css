@@ -1080,6 +1080,25 @@ tbody tr:hover {
   opacity: 0.72;
   background: var(--bg-body);
 }
+.form-control[readonly],
+.form-control.is-readonly {
+  cursor: default;
+  opacity: 1;
+  border-left: 3px solid var(--primary);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.form-control.is-readonly:disabled {
+  cursor: default;
+  opacity: 1;
+}
+.form-hint.is-readonly-hint {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
 .form-control[aria-invalid="true"],
 input[aria-invalid="true"],
 select[aria-invalid="true"],
@@ -7156,6 +7175,9 @@ input, select, textarea, button { max-width: 100%; }
   background: #151b26 !important;
   color: #9aa5b8;
   opacity: 1;
+}
+[data-theme="dark"] .form-control.is-readonly {
+  border-left-color: #38bdf8;
 }
 
 [data-theme="dark"] .btn-secondary,
