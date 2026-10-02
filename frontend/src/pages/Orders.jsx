@@ -118,8 +118,8 @@ async function sendReadyEmail(order, customerName, customerEmail) {
   try {
     const res = await sendEmail({
         to: customerEmail,
-        subject: `Your Laundry is Ready for Pickup! (Tracking #: ${order.order_number})`,
-        body: `Hi ${customerName || "Customer"},\n\nGreat news! Your laundry is now ready for pickup at I&C Laundry.\n\nTracking Number: ${order.order_number}\n\nPlease pick it up at your earliest convenience during our business hours.\n\nThank you for choosing I&C Laundry!\n\n-- I&C Laundry Team`,
+        subject: `Your I&C Laundry order is ready - ${order.order_number}`,
+        body: `Hello ${customerName || "Customer"},\n\nYour laundry is ready for pickup at I&C Laundry.\n\nTracking number: ${order.order_number}\n\nYou may collect it during our regular business hours. Please bring your tracking number so our staff can locate your order.\n\nThank you,\nI&C Laundry`,
     });
     if (res.success) {
       toast.success(`Email notification sent to ${customerEmail}`);
@@ -180,8 +180,8 @@ async function sendOrderReceivedEmail(
 
     const res = await sendEmail({
         to: customerEmail,
-        subject: `Order Received! (Tracking #: ${orderNumber})`,
-        body: `Hi ${customerName || "Customer"},\n\nThank you for choosing I&C Laundry! Your garment has been received.\n\nOrder Details:\n- Tracking Number: ${orderNumber}\n- Service: ${serviceName}\n- Weight: ${weightKg} kg\n- Total: P${totalPrice.toLocaleString()}\n\nEstimated ready-for-pickup time: ${completionText}\n\nYou can track your order anytime on our website using your tracking number. We'll notify you once it is ready for pickup.\n\nThank you!\n\n-- I&C Laundry Team`,
+        subject: `We received your I&C Laundry order - ${orderNumber}`,
+        body: `Hello ${customerName || "Customer"},\n\nWe have received your laundry order. Here is a copy of the information recorded by our staff.\n\nOrder summary:\n- Tracking number: ${orderNumber}\n- Service: ${serviceName}\n- Weight: ${weightKg} kg\n- Total: ₱${totalPrice.toLocaleString()}\n\nEstimated pickup time: ${completionText}\n\nYou can check the order status on our website using the tracking number above. We will send another message when the order is ready.\n\nThank you,\nI&C Laundry`,
     });
     if (res.success) {
       toast.success(`Order confirmation email sent to ${customerEmail}`);
