@@ -31,7 +31,7 @@ import {
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { generateAiForecast, generateDecisionSupport } from "../services/geminiService";
-import { LoadingVisual, PageError, PageLoader } from "../components/AsyncState";
+import { InlineSkeleton, LoadingVisual, PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from '../components/LoadingButton'
 import { analyticsPeriod, chartTooltipDate, dailyChartLabel, paymentChartData } from '../utils/chartDates'
 import { recordedPaymentAmount } from '../utils/businessForecast'
@@ -989,8 +989,7 @@ Rules:
 
       {filterLoading && (
         <div className="filter-loading-notice" role="status" aria-live="polite">
-          <RefreshCw size={16} className="button-spinner" aria-hidden="true" />
-          <span>Updating analytics with the selected filters…</span>
+          <InlineSkeleton label="Updating analytics with the selected filters…" />
         </div>
       )}
 
@@ -1183,12 +1182,6 @@ Rules:
               }}
             >
               <LoadingVisual label="Generating AI revenue forecast…" compact />
-              <strong style={{ color: "#a78bfa" }}>
-                Generating AI revenue forecast
-              </strong>
-              <span style={{ fontSize: 13 }}>
-                Analyzing historical revenue and laundry demand in PHP…
-              </span>
             </div>
           ) : (
           <ResponsiveContainer width="100%" height={280}>
@@ -1266,11 +1259,7 @@ Rules:
                   fontWeight: 600,
                 }}
               >
-                <div
-                  className="spinner"
-                  style={{ width: 20, height: 20, borderWidth: 2 }}
-                />
-                AI is analyzing PHP revenue, demand, and operations…
+                <InlineSkeleton label="AI is analyzing PHP revenue, demand, and operations…" />
               </div>
             )}
             {aiLoading

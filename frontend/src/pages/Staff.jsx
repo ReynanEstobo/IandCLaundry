@@ -8,7 +8,7 @@ import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { apiFetch } from "../services/api/client";
 import { useRealtime } from "../lib/useRealtime";
-import { PageError, PageLoader } from "../components/AsyncState";
+import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
 import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
@@ -41,6 +41,7 @@ export default function Staff() {
   const [staffList, setStaffList] = useState([]);
 
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
 
   const [showModal, setShowModal] = useState(false);
@@ -75,7 +76,7 @@ export default function Staff() {
     if (!background) {
       setLoading(true);
       setLoadError("");
-    }
+    } else setRefreshing(true);
     try {
       const { data, error } = await supabase.from("staff").select("*").order("created_at", { ascending: false });
       if (error) throw error;
@@ -85,6 +86,7 @@ export default function Staff() {
       else console.error("Background staff refresh failed:", error);
     } finally {
       if (!background) setLoading(false);
+      else setRefreshing(false);
     }
   }, []);
 
@@ -316,6 +318,8 @@ export default function Staff() {
 
         {/* ADD BUTTON */}
       </TableToolbar>
+
+      {refreshing && <div className="section-fetch-state"><InlineSkeleton label="Refreshing staff accounts…" /></div>}
 
       {/* TABLE */}
       <DataTable ariaLabel="Staff accounts">

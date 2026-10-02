@@ -1,7 +1,7 @@
 import { ArchiveRestore, ChevronLeft, ChevronRight, History, RotateCcw, ShieldCheck } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
-import { PageError, PageLoader } from '../components/AsyncState'
+import { PageError, PageLoader, TableSkeleton } from '../components/AsyncState'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { DataTable, EmptyState, PageHeader, SortableHeader, useSortableRows } from '../components/DataView'
 import { getAuditLog, restoreDeletedRecord } from '../services/api/auditApi'
@@ -19,21 +19,33 @@ export default function RecycleBin() {
   const [records, setRecords] = useState([])
   const [audit, setAudit] = useState({ items: [], page: 1, pageSize: 25, total: 0, totalPages: 1 })
   const [loading, setLoading] = useState(true)
+  const [auditLoading, setAuditLoading] = useState(false)
   const [error, setError] = useState('')
   const [restoringId, setRestoringId] = useState('')
   const [recordToRestore, setRecordToRestore] = useState(null)
+  const hasLoaded = useRef(false)
 
   const load = useCallback(async (page = 1, background = false) => {
-    if (!background) { setLoading(true); setError('') }
+    const isInitialLoad = !hasLoaded.current
+    if (!background) {
+      if (isInitialLoad) setLoading(true)
+      else setAuditLoading(true)
+      setError('')
+    }
     try {
       const data = await getAuditLog({ page, pageSize: 25 })
       setRecords(data.records || [])
       setAudit(data.audit || { items: [], page, pageSize: 25, total: 0, totalPages: 1 })
+      hasLoaded.current = true
     } catch (requestError) {
-      if (!background) setError(requestError.message || 'Unable to load the Audit Log.')
+      if (isInitialLoad) setError(requestError.message || 'Unable to load the Audit Log.')
+      else if (!background) toast.error(requestError.message || 'Unable to load that audit page.')
       else console.error('Background Audit Log refresh failed:', requestError)
     } finally {
-      if (!background) setLoading(false)
+      if (!background) {
+        setLoading(false)
+        setAuditLoading(false)
+      }
     }
   }, [])
 
@@ -68,7 +80,7 @@ export default function RecycleBin() {
     when: log => new Date(log.created_at).getTime(),
   }, 'desc')
 
-  if (loading) return <PageLoader label="Loading Audit Log…" />
+  if (loading && !hasLoaded.current) return <PageLoader label="Loading Audit Log…" />
   if (error) return <PageError message={error} onRetry={() => load(audit.page)} />
 
   return <div className="audit-page">
@@ -107,12 +119,12 @@ export default function RecycleBin() {
       </DataTable>
     </section>
 
-    <section className="card audit-section-card">
+    <section className="card audit-section-card" aria-busy={auditLoading || undefined}>
       <div className="card-header audit-card-header">
         <h3><History size={18} color="#7c3aed" /> Activity history</h3>
         <span>{audit.total} event{audit.total === 1 ? '' : 's'}</span>
       </div>
-      <DataTable ariaLabel="Audit activity">
+      {auditLoading ? <TableSkeleton label="Loading audit page…" rows={5} columns={4} /> : <DataTable ariaLabel="Audit activity">
         <thead><tr>
           <SortableHeader label="Activity" column="activity" sort={activitySort.sort} onSort={activitySort.requestSort} />
           <SortableHeader label="Branch" column="branch" sort={activitySort.sort} onSort={activitySort.requestSort} />
@@ -127,12 +139,12 @@ export default function RecycleBin() {
             <td data-label="When">{new Date(log.created_at).toLocaleString('en-PH')}</td>
           </tr>)}
         </tbody>
-      </DataTable>
-      <div className="audit-pagination">
+      </DataTable>}
+      <div className="audit-pagination system-pagination">
         <span>Page {audit.page} of {audit.totalPages}</span>
         <div>
-          <button className="btn btn-sm btn-secondary" disabled={audit.page <= 1 || loading} onClick={() => load(audit.page - 1)}><ChevronLeft size={15} /> Previous</button>
-          <button className="btn btn-sm btn-secondary" disabled={audit.page >= audit.totalPages || loading} onClick={() => load(audit.page + 1)}>Next <ChevronRight size={15} /></button>
+          <button className="btn btn-sm btn-secondary" disabled={audit.page <= 1 || auditLoading} onClick={() => load(audit.page - 1)}><ChevronLeft size={15} /> Previous</button>
+          <button className="btn btn-sm btn-secondary" disabled={audit.page >= audit.totalPages || auditLoading} onClick={() => load(audit.page + 1)}>Next <ChevronRight size={15} /></button>
         </div>
       </div>
     </section>

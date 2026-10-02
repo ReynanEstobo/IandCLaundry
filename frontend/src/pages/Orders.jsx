@@ -23,8 +23,9 @@ import { useRealtime } from "../lib/useRealtime";
 import { sendEmail, sendSms } from "../services/api/notificationApi";
 import { cancelBranchOrder, collectBranchOrderPayment, createBranchOrder, getVisibleCustomers, lookupCustomerByPhone, settleAndReleaseBranchOrder, transitionAllOrderServiceItems, transitionBranchOrder } from "../services/api/operationsApi";
 import { useAuth } from "../context/AuthContext";
-import { LoadingVisual, PageError, PageLoader } from "../components/AsyncState";
+import { InlineSkeleton, PageError, PageLoader, TableSkeleton } from "../components/AsyncState";
 import LoadingButton from "../components/LoadingButton";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { isValidPhilippineMobile } from "../utils/validation";
 import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
@@ -203,6 +204,7 @@ export default function Orders() {
   const { role, branch } = useAuth();
   const isAdmin = role === "admin";
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [releaseConfirmationOrder, setReleaseConfirmationOrder] = useState(null);
   const [showAdditionalPaymentModal, setShowAdditionalPaymentModal] = useState(false);
   const [additionalPayment, setAdditionalPayment] = useState({ amount: "", paymentMethod: "cash" });
   const [recordingPayment, setRecordingPayment] = useState(false);
@@ -794,8 +796,8 @@ export default function Orders() {
     }
   }
 
-  async function updateStatus(order, newStatus, correctionNote = "") {
-    if (newStatus === "released") {
+  async function updateStatus(order, newStatus, correctionNote = "", releaseConfirmed = false) {
+    if (newStatus === "released" && !releaseConfirmed) {
       const total = Number(order.total_price) || 0;
 
       // ✅ handle downpayment / partial safely
@@ -814,6 +816,9 @@ export default function Orders() {
         setShowPaymentModal(true);
         return;
       }
+
+      setReleaseConfirmationOrder(order);
+      return;
     }
 
     setUpdatingOrderId(order.id);
@@ -821,7 +826,7 @@ export default function Orders() {
       if (!correctionNote && ["on_process", "ready"].includes(newStatus) && order.order_items?.length) {
         await transitionAllOrderServiceItems(order.id, newStatus);
       } else if (PROCESS_FLOW.includes(newStatus) || newStatus === "released") {
-        await transitionBranchOrder(order.id, newStatus, correctionNote);
+        await transitionBranchOrder(order.id, newStatus, correctionNote, newStatus === "released");
       } else {
         const { error } = await supabase
           .from("orders")
@@ -854,6 +859,12 @@ export default function Orders() {
     await new Promise((resolve) => requestAnimationFrame(resolve));
     setUpdatingOrderId(null);
     return true;
+  }
+
+  async function confirmFullyPaidRelease() {
+    if (!releaseConfirmationOrder) return;
+    const released = await updateStatus(releaseConfirmationOrder, "released", "", true);
+    if (released) setReleaseConfirmationOrder(null);
   }
   async function advanceStatus(order) {
     if (updatingOrderId === order.id) return;
@@ -1028,8 +1039,7 @@ export default function Orders() {
 
       {tableLoading && viewMode !== "table" && (
         <div className="filter-loading-notice" role="status" aria-live="polite">
-          <Loader2 size={16} className="button-spinner" aria-hidden="true" />
-          <span>Updating orders with the selected filter…</span>
+          <InlineSkeleton label="Updating orders with the selected filter…" />
         </div>
       )}
 
@@ -1369,10 +1379,17 @@ export default function Orders() {
                 )}
               </tbody>
             </table>
+            {tableLoading && (
+              <div className="orders-table-loading" role="status" aria-live="polite">
+                <TableSkeleton label="Loading orders…" rows={5} columns={isAdmin ? 7 : 6} />
+              </div>
+            )}
+          </div>
             {!searchInput && (
-              <div style={{ marginTop: 14, textAlign: "center" }}>
+              <div className="system-pagination" style={{ textAlign: "center" }}>
                 {/* PAGINATION BUTTONS */}
                 <div
+                  className="system-pagination-controls"
                   style={{
                     display: "flex",
                     justifyContent: "center",
@@ -1489,12 +1506,6 @@ export default function Orders() {
                 </div>
               </div>
             )}
-            {tableLoading && (
-              <div className="orders-table-loading" role="status" aria-live="polite">
-                <LoadingVisual label="Loading orders…" compact />
-              </div>
-            )}
-          </div>
         </div>
       )}
 
@@ -2038,16 +2049,37 @@ export default function Orders() {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={Boolean(releaseConfirmationOrder)}
+        title="Confirm garment release"
+        message={releaseConfirmationOrder ? (
+          <div className="release-confirmation-message">
+            <p>Release order <strong>#{releaseConfirmationOrder.order_number}</strong> to the customer?</p>
+            <div className="release-confirmation-summary">
+              <span>Payment</span>
+              <strong>Fully paid · ₱{Number(releaseConfirmationOrder.total_price || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+            </div>
+            <small>Confirm only after the customer has received the garment. The pickup time will be recorded and the order cannot be cancelled after release.</small>
+          </div>
+        ) : null}
+        confirmLabel="Confirm Release"
+        cancelLabel="Keep as Ready"
+        variant="primary"
+        loading={updatingOrderId === releaseConfirmationOrder?.id}
+        onClose={() => setReleaseConfirmationOrder(null)}
+        onConfirm={confirmFullyPaidRelease}
+      />
       {showPaymentModal && (
         <div
           className="modal-overlay"
-          onClick={() => setShowPaymentModal(false)}
+          onClick={() => updatingOrderId !== selectedOrder?.id && setShowPaymentModal(false)}
         >
           <div className="order-modal" onClick={(e) => e.stopPropagation()}>
             <div className="order-modal-header">
               <h3>Complete Payment</h3>
               <button
                 className="btn-icon"
+                disabled={updatingOrderId === selectedOrder?.id}
                 onClick={() => setShowPaymentModal(false)}
               >
                 <X size={20} />

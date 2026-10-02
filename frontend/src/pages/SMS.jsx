@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { apiFetch } from "../services/api/client";
 import { useRealtime } from "../lib/useRealtime";
-import { PageError, PageLoader } from "../components/AsyncState";
+import { PageError, PageLoader, TableSkeleton } from "../components/AsyncState";
 import LoadingButton from "../components/LoadingButton";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { getEmailDeliveryAudit, retryEmail } from "../services/api/notificationApi";
@@ -554,11 +554,12 @@ I&C Laundry`,
             </div>
           )}
 
-          {auditLoading ? (
-            <div className="notification-audit-loading"><span className="spinner" /> Loading delivery history…</div>
-          ) : (
-            <div className="table-wrapper">
-              <table className="responsive-card-table notification-audit-table">
+          <div className="notification-audit-results" aria-busy={auditLoading || undefined}>
+            {auditLoading ? (
+              <div className="notification-audit-loading"><TableSkeleton label="Loading delivery history…" rows={6} columns={7} /></div>
+            ) : (
+              <div className="table-wrapper notification-audit-table-scroll">
+                <table className="responsive-card-table notification-audit-table">
                 <thead>
                   <tr>
                     <th>Status</th>
@@ -621,8 +622,10 @@ I&C Laundry`,
                     </tr>
                   ))}
                 </tbody>
-              </table>
-              <div className="audit-pagination notification-audit-pagination">
+                </table>
+              </div>
+            )}
+              <div className="audit-pagination notification-audit-pagination system-pagination">
                 <span>
                   {auditPagination.total
                     ? `Showing ${(auditPage - 1) * auditPagination.pageSize + 1}–${Math.min(auditPage * auditPagination.pageSize, auditPagination.total)} of ${auditPagination.total}`
@@ -639,7 +642,6 @@ I&C Laundry`,
                 </div>
               </div>
             </div>
-          )}
         </section>
       )}
     </>

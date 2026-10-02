@@ -17,7 +17,7 @@ import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { predictInventoryDaysLeft } from "../utils/inventoryForecast";
 import { restockBranchInventory } from "../services/api/operationsApi";
-import { PageError, PageLoader } from "../components/AsyncState";
+import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
 import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
@@ -31,6 +31,7 @@ export default function Inventory() {
   const [serviceRecipes, setServiceRecipes] = useState([]);
   const [serviceOrderItems, setServiceOrderItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [showRestock, setShowRestock] = useState(null);
@@ -60,7 +61,7 @@ export default function Inventory() {
     if (!background) {
       setLoading(true);
       setLoadError("");
-    }
+    } else setRefreshing(true);
     try {
       const [itemsRes, usageRes, recipesRes, orderItemsRes] = await Promise.all([
         supabase.from("inventory_items").select("*").order("name"),
@@ -79,6 +80,7 @@ export default function Inventory() {
       else console.error("Background inventory refresh failed:", error);
     } finally {
       if (!background) setLoading(false);
+      else setRefreshing(false);
     }
   }, []);
 
@@ -293,6 +295,8 @@ export default function Inventory() {
         </div>
 
       </TableToolbar>
+
+      {refreshing && <div className="section-fetch-state"><InlineSkeleton label="Refreshing inventory…" /></div>}
 
       <DataTable ariaLabel="Inventory items">
             <thead>

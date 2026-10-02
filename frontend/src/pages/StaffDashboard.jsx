@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRealtime } from '../lib/useRealtime'
 import { useAuth } from '../context/AuthContext'
-import { PageError, PageLoader } from '../components/AsyncState'
+import { InlineSkeleton, PageError, PageLoader } from '../components/AsyncState'
 import { compareOrdersForList } from '../utils/orderListPriority'
 import { rollingDemandForecast } from '../utils/businessForecast'
 import { staffDashboardChartData } from '../utils/chartDates'
@@ -45,6 +45,7 @@ export default function StaffDashboard() {
   const [serviceRecipes, setServiceRecipes] = useState([])
   const [serviceOrderItems, setServiceOrderItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [chartRange, setChartRange] = useState('weekly')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -53,7 +54,7 @@ export default function StaffDashboard() {
     if (!background) {
       setLoading(true)
       setLoadError('')
-    }
+    } else setRefreshing(true)
     try {
       const [ordersRes, inventoryRes, historyRes, paymentsRes, usageRes, recipesRes, orderItemsRes] = await Promise.all([
         supabase.from('orders').select('*, customers(name, phone), service_types(name), order_items(service_name_snapshot, weight_kg, status)')
@@ -86,6 +87,7 @@ export default function StaffDashboard() {
       else console.error('Background staff dashboard refresh failed:', error)
     } finally {
       if (!background) setLoading(false)
+      else setRefreshing(false)
     }
   }, [])
 
@@ -142,7 +144,7 @@ export default function StaffDashboard() {
           <p>Monitor the orders and inventory assigned to {branch || 'your branch'}.</p>
         </div>
         <span className="live-update-indicator" role="status" aria-live="polite">
-          <Radio size={14} aria-hidden="true" /> Live updates
+          {refreshing ? <InlineSkeleton label="Syncing updates…" /> : <><Radio size={14} aria-hidden="true" /> Live updates</>}
         </span>
       </div>
 

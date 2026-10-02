@@ -1,7 +1,7 @@
 import { Edit2, PackageCheck, Plus, Save, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { PageError, PageLoader } from '../components/AsyncState'
+import { InlineSkeleton, PageError, PageLoader } from '../components/AsyncState'
 import LoadingButton from '../components/LoadingButton'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { runQuery } from '../services/api/client'
@@ -14,27 +14,37 @@ export default function ServiceManagement() {
   const [branchId, setBranchId] = useState(''), [serviceId, setServiceId] = useState('')
   const [recipeDraft, setRecipeDraft] = useState({}), [addonDraft, setAddonDraft] = useState({})
   const [form, setForm] = useState(blankService), [editing, setEditing] = useState(null), [showModal, setShowModal] = useState(false)
-  const [loading, setLoading] = useState(true), [saving, setSaving] = useState(false), [savingConfig, setSavingConfig] = useState(false), [error, setError] = useState('')
+  const [loading, setLoading] = useState(true), [refreshing, setRefreshing] = useState(false), [saving, setSaving] = useState(false), [savingConfig, setSavingConfig] = useState(false), [error, setError] = useState('')
   const [serviceToArchive, setServiceToArchive] = useState(null), [archiving, setArchiving] = useState(false)
 
   const load = useCallback(async (background = false) => {
-    if (!background) setLoading(true); setError('')
-    const results = await Promise.all([
-      runQuery('service_types', { operation: 'select', selection: '*', orders: [{ column: 'name', options: { ascending: true } }] }),
-      runQuery('branches', { operation: 'select', selection: 'id, name', orders: [{ column: 'name', options: { ascending: true } }] }),
-      runQuery('inventory_items', { operation: 'select', selection: 'id, name, unit, current_stock, branch_id', orders: [{ column: 'name', options: { ascending: true } }] }),
-      runQuery('service_inventory_requirements', { operation: 'select', selection: '*' }),
-      runQuery('service_addon_items', { operation: 'select', selection: '*' }),
-    ])
-    const failed = results.find(result => result.error)
-    if (failed) setError(failed.error?.message || 'Unable to load service configuration.')
-    else {
+    if (!background) { setLoading(true); setError('') }
+    else setRefreshing(true)
+    try {
+      const results = await Promise.all([
+        runQuery('service_types', { operation: 'select', selection: '*', orders: [{ column: 'name', options: { ascending: true } }] }),
+        runQuery('branches', { operation: 'select', selection: 'id, name', orders: [{ column: 'name', options: { ascending: true } }] }),
+        runQuery('inventory_items', { operation: 'select', selection: 'id, name, unit, current_stock, branch_id', orders: [{ column: 'name', options: { ascending: true } }] }),
+        runQuery('service_inventory_requirements', { operation: 'select', selection: '*' }),
+        runQuery('service_addon_items', { operation: 'select', selection: '*' }),
+      ])
+      const failed = results.find(result => result.error)
+      if (failed) {
+        if (!background) setError(failed.error?.message || 'Unable to load service configuration.')
+        else console.error('Background service refresh failed:', failed.error)
+        return
+      }
       setServices(results[0].data || []); setBranches(results[1].data || []); setInventory(results[2].data || [])
       setRequirements(results[3].data || []); setAddons(results[4].data || [])
       setBranchId(current => current || results[1].data?.[0]?.id || '')
       setServiceId(current => current || results[0].data?.[0]?.id || '')
+    } catch (loadError) {
+      if (!background) setError(loadError.message || 'Unable to load service configuration.')
+      else console.error('Background service refresh failed:', loadError)
+    } finally {
+      if (!background) setLoading(false)
+      else setRefreshing(false)
     }
-    if (!background) setLoading(false)
   }, [])
   useEffect(() => { load() }, [load])
   useEffect(() => {
@@ -97,6 +107,7 @@ export default function ServiceManagement() {
   if (loading) return <PageLoader label="Loading service configuration…" />
   if (error) return <PageError message={error} onRetry={load} />
   return <div className="settings-page">
+    {refreshing && <div className="section-fetch-state"><InlineSkeleton label="Refreshing service configuration…" /></div>}
     <div className="card settings-card" style={{ marginBottom: 18 }}>
       <div className="settings-card-header"><div><h3>Services and pricing</h3><p>Every service uses per-load pricing. Configure its included kilograms, load price, excess rate, and workflow.</p></div><button className="btn btn-primary" onClick={() => openService()}><Plus size={16} /> Add service</button></div>
       <div className="table-wrapper"><table><thead><tr><th>Service</th><th>Load price</th><th>Excess</th><th>Workflow</th><th>Status</th><th /></tr></thead><tbody>{services.map(service => <tr key={service.id}>

@@ -8,7 +8,6 @@ import {
   Clock,
   PhilippinePeso,
   Lightbulb,
-  Loader2,
   Package,
   Radio,
   ShoppingBag,
@@ -22,7 +21,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { generateDecisionSupport } from "../services/geminiService";
-import { PageError, PageLoader } from "../components/AsyncState";
+import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import DashboardCharts from "../components/DashboardCharts";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { paymentTimestamp, recordedPaymentAmount, rollingDemandForecast } from "../utils/businessForecast";
@@ -523,7 +522,7 @@ export default function Dashboard() {
         </div>
         <span className="live-update-indicator" role="status" aria-live="polite">
           {backgroundRefreshing
-            ? <><Loader2 size={14} className="button-spinner" aria-hidden="true" /> Syncing updates…</>
+            ? <InlineSkeleton label="Syncing updates…" />
             : <><Radio size={14} aria-hidden="true" /> All branches · Live updates</>}
         </span>
       </div>
@@ -746,7 +745,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 {restockAlertCount > 1 && (
-                  <div className="overview-pagination" aria-label="Restock alert pagination">
+                  <div className="overview-pagination system-pagination overview-system-pagination" aria-label="Restock alert pagination">
                     <button
                       type="button"
                       className="overview-pagination-button"
@@ -873,7 +872,7 @@ export default function Dashboard() {
           <h3>Recent Orders</h3>
           {recentLoading && (
             <span className="dashboard-section-loading" role="status" aria-live="polite">
-              <Loader2 size={14} className="button-spinner" aria-hidden="true" /> Updating orders…
+              <InlineSkeleton label="Updating orders…" />
             </span>
           )}
         </div>
@@ -945,9 +944,11 @@ export default function Dashboard() {
               )}
             </tbody>
           </table>
-          <div style={{ marginTop: 14, textAlign: "center" }}>
+        </div>
+          <div className="system-pagination dashboard-table-pagination" style={{ textAlign: "center" }}>
             {/* PAGINATION BUTTONS */}
             <div
+              className="system-pagination-controls"
               style={{
                 display: "flex",
                 justifyContent: "center",
@@ -1063,7 +1064,6 @@ export default function Dashboard() {
                   )} out of ${totalCount}`}
             </div>
           </div>
-        </div>
       </div>
         </div>
       </section>

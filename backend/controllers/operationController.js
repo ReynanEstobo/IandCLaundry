@@ -160,6 +160,9 @@ export async function transitionOrder(body, identity) {
   if (!orderId || !['received', 'on_process', 'ready', 'released'].includes(nextStatus)) {
     throw Object.assign(new Error('A valid order stage is required.'), { status: 400 })
   }
+  if (nextStatus === 'released' && body?.releaseConfirmed !== true) {
+    throw Object.assign(new Error('Confirm the garment release before continuing.'), { status: 400 })
+  }
   requireBranch(identity)
   const { data: order, error: orderError } = await database
     .from('orders')
@@ -191,6 +194,9 @@ export async function transitionOrder(body, identity) {
 export async function settleAndReleaseOrder(body, identity) {
   const orderId = String(body?.orderId || '').trim()
   if (!orderId) throw Object.assign(new Error('An order is required.'), { status: 400 })
+  if (body?.releaseConfirmed !== true) {
+    throw Object.assign(new Error('Confirm the payment collection and garment release before continuing.'), { status: 400 })
+  }
   requireBranch(identity)
   const { data: order, error: orderError } = await database.from('orders')
     .select('id, branch_id, status, total_price, amount_paid, payment_status, payment_method')

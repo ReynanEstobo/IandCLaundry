@@ -194,6 +194,29 @@ test('staff journey: moving a garment backward uses the audited correction workf
   assert.equal(result.data.status, 'on_process')
 })
 
+test('staff journey: releasing a fully paid garment requires explicit confirmation', async t => {
+  let rpcCalled = false
+  withDatabaseMocks(t, {
+    from: () => queryResult({ id: 'order-1', branch_id: 'main-branch', status: 'ready' }),
+    rpc: async () => {
+      rpcCalled = true
+      return { data: { id: 'order-1', status: 'released' }, error: null }
+    },
+  })
+  const identity = { staffId: 'staff-1', role: 'staff', branchId: 'main-branch', branch: 'Main Branch' }
+  await assert.rejects(
+    transitionOrder({ orderId: 'order-1', status: 'released' }, identity),
+    /Confirm the garment release/,
+  )
+  assert.equal(rpcCalled, false)
+
+  const result = await transitionOrder({
+    orderId: 'order-1', status: 'released', releaseConfirmed: true,
+  }, identity)
+  assert.equal(rpcCalled, true)
+  assert.equal(result.data.status, 'released')
+})
+
 test('staff journey: invalid orders never reach the database', async t => {
   let rpcCalled = false
   withDatabaseMocks(t, { rpc: async () => { rpcCalled = true; return { data: null, error: null } } })

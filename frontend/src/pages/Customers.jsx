@@ -1,12 +1,12 @@
 import { format } from "date-fns";
 import { Edit2, Gift, Phone, Plus, Search, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { useAuth } from "../context/AuthContext";
 import { getVisibleCustomers, registerBranchCustomer } from "../services/api/operationsApi";
-import { PageError, PageLoader } from "../components/AsyncState";
+import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
 import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
@@ -17,9 +17,9 @@ export default function Customers() {
   const branchNames = useActiveBranches();
   const { role } = useAuth();
   const isAdmin = role === "admin";
-  const [customers, setCustomers] = useState([]);
   const [allCustomers, setAllCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState(null);
@@ -45,20 +45,18 @@ export default function Customers() {
     if (!background) {
       setLoading(true);
       setLoadError("");
-    }
+    } else setRefreshing(true);
 
     try {
       // Admin receives the master customer directory. Staff receive only customers
       // associated with their branch through customer_branches.
       const { data: allData = [] } = await getVisibleCustomers();
       const sorted = [...allData].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-      setCustomers(sorted.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE));
       setAllCustomers(sorted);
       setTotalCount(sorted.length);
     } catch (error) {
       if (!background) {
         setLoadError(error.message || "Unable to load customer records.");
-        setCustomers([]);
         setAllCustomers([]);
         setTotalCount(0);
       } else {
@@ -67,7 +65,22 @@ export default function Customers() {
     }
 
     if (!background) setLoading(false);
-  }, [page]);
+    else setRefreshing(false);
+  }, []);
+
+  // Page changes use the already loaded directory and never trigger a
+  // full-screen network refresh.
+  useEffect(() => {
+    const lastPage = Math.max(0, Math.ceil(allCustomers.length / PAGE_SIZE) - 1);
+    if (page > lastPage) {
+      setPage(lastPage);
+    }
+  }, [allCustomers, page]);
+
+  const customers = useMemo(
+    () => allCustomers.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
+    [allCustomers, page]
+  );
 
   // 🔥 RESET PAGE WHEN SEARCH CHANGES
   // 🔥 LOAD DATA ON START + PAGE CHANGE
@@ -197,6 +210,8 @@ export default function Customers() {
         </div>
       </TableToolbar>
 
+      {refreshing && <div className="section-fetch-state"><InlineSkeleton label="Refreshing customers…" /></div>}
+
       <DataTable ariaLabel="Customers">
             <thead>
               <tr>
@@ -277,8 +292,9 @@ export default function Customers() {
             </tbody>
       </DataTable>
       {!search && (
-        <div style={{ marginTop: 14, textAlign: "center" }}>
+        <div className="system-pagination" style={{ textAlign: "center" }}>
           <div
+            className="system-pagination-controls"
             style={{
               display: "flex",
               justifyContent: "center",
@@ -306,22 +322,26 @@ export default function Customers() {
             </button>
 
             {/* PAGE NUMBERS */}
-            {Array.from({ length: totalPages }).map((_, i) => (
-              <button
-                key={i}
-                onClick={() => setPage(i)}
-                style={{
-                  minWidth: 36,
-                  height: 36,
-                  borderRadius: 8,
-                  background: i === page ? "#1e293b" : "transparent",
-                  color: i === page ? "#fff" : "#94a3b8",
-                  fontWeight: 600,
-                }}
-              >
-                {i + 1}
-              </button>
-            ))}
+            {Array.from({ length: Math.min(totalPages, 3) }).map((_, offset) => {
+              const start = Math.min(Math.max(page - 1, 0), Math.max(totalPages - 3, 0));
+              const pageIndex = start + offset;
+              return (
+                <button
+                  key={pageIndex}
+                  onClick={() => setPage(pageIndex)}
+                  style={{
+                    minWidth: 36,
+                    height: 36,
+                    borderRadius: 8,
+                    background: pageIndex === page ? "#1e293b" : "transparent",
+                    color: pageIndex === page ? "#fff" : "#94a3b8",
+                    fontWeight: 600,
+                  }}
+                >
+                  {pageIndex + 1}
+                </button>
+              );
+            })}
 
             {/* NEXT */}
             <button

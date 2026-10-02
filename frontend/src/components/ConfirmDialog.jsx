@@ -1,4 +1,4 @@
-import { AlertTriangle, RotateCcw, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, RotateCcw, X } from "lucide-react";
 import LoadingButton from './LoadingButton'
 
 /** A keyboard-accessible in-app confirmation dialog; never uses window.confirm. */
@@ -15,6 +15,7 @@ export default function ConfirmDialog({
 }) {
   if (!open) return null;
   const isRestore = variant === "restore";
+  const isPrimary = variant === "primary";
 
   return (
     <div
@@ -32,7 +33,7 @@ export default function ConfirmDialog({
       >
         <header className="confirm-dialog-header">
           <span className="confirm-dialog-icon">
-            {isRestore ? <RotateCcw size={22} /> : <AlertTriangle size={22} />}
+            {isRestore ? <RotateCcw size={22} /> : isPrimary ? <CheckCircle2 size={22} /> : <AlertTriangle size={22} />}
           </span>
           <div>
             <h3 id="confirm-dialog-title">{title}</h3>
@@ -44,7 +45,7 @@ export default function ConfirmDialog({
         <div className="confirm-dialog-body" id="confirm-dialog-message">{message}</div>
         <footer className="confirm-dialog-footer">
           <button className="btn btn-secondary" disabled={loading} onClick={onClose}>{cancelLabel}</button>
-          <LoadingButton className={`btn ${isRestore ? "btn-primary" : "btn-danger"} confirm-dialog-action`} loading={loading} loadingLabel="Processing…" onClick={onConfirm}>
+          <LoadingButton className={`btn ${isRestore || isPrimary ? "btn-primary" : "btn-danger"} confirm-dialog-action`} loading={loading} loadingLabel="Processing…" onClick={onConfirm}>
             {confirmLabel}
           </LoadingButton>
         </footer>

@@ -9,15 +9,15 @@ export async function cancelBranchOrder(orderId, reason) {
 }
 
 export async function settleAndReleaseBranchOrder(orderId) {
-  return apiFetch('/api/orders/settle-and-release', { method: 'POST', body: JSON.stringify({ orderId }) })
+  return apiFetch('/api/orders/settle-and-release', { method: 'POST', body: JSON.stringify({ orderId, releaseConfirmed: true }) })
 }
 
 export async function collectBranchOrderPayment(orderId, amount, paymentMethod) {
   return apiFetch('/api/orders/collect-payment', { method: 'POST', body: JSON.stringify({ orderId, amount, paymentMethod }) })
 }
 
-export async function transitionBranchOrder(orderId, status, correctionReason = '') {
-  return apiFetch('/api/orders/transition', { method: 'POST', body: JSON.stringify({ orderId, status, correctionReason }) })
+export async function transitionBranchOrder(orderId, status, correctionReason = '', releaseConfirmed = false) {
+  return apiFetch('/api/orders/transition', { method: 'POST', body: JSON.stringify({ orderId, status, correctionReason, releaseConfirmed }) })
 }
 
 export async function transitionOrderServiceItem(orderItemId, status) {
