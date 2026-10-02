@@ -3,6 +3,7 @@ import { sendEmail } from '../services/notificationService.js'
 import { assertEmail, assertText } from '../utils/validation.js'
 
 const DELIVERY_TYPES = new Set(['manual', 'order_received', 'ready_for_pickup'])
+const RETRYABLE_TYPES = new Set(['manual', 'order_received', 'ready_for_pickup'])
 const badRequest = message => Object.assign(new Error(message), { status: 400 })
 
 function requireActiveStaff(identity) {
@@ -111,19 +112,28 @@ export async function sendAuditedEmail(body, identity) {
   return deliver(body, identity)
 }
 
-export async function listEmailDeliveryAudit(identity, { limit = 100 } = {}) {
+export async function listEmailDeliveryAudit(identity, { page = 1, pageSize = 10 } = {}) {
   requireActiveStaff(identity)
-  const safeLimit = Math.min(200, Math.max(1, Number.parseInt(limit, 10) || 100))
+  const safePage = Math.max(1, Number.parseInt(page, 10) || 1)
+  const safePageSize = Math.min(50, Math.max(1, Number.parseInt(pageSize, 10) || 10))
+  const from = (safePage - 1) * safePageSize
   let query = database.from('email_delivery_audit')
-    .select('id, order_id, branch_id, retry_of_id, notification_type, recipient_email, subject, order_number, garment_details, status, provider, error_message, attempted_at, staff:attempted_by_staff_id(full_name), branch:branch_id(name)')
-    .order('attempted_at', { ascending: false }).limit(safeLimit)
+    .select('id, order_id, branch_id, retry_of_id, notification_type, recipient_email, subject, order_number, garment_details, status, provider, error_message, attempted_at, staff:attempted_by_staff_id(full_name), branch:branch_id(name)', { count: 'exact' })
+    .order('attempted_at', { ascending: false }).range(from, from + safePageSize - 1)
   if (identity.role !== 'admin') {
     if (!identity.branchId) throw Object.assign(new Error('A branch assignment is required.'), { status: 403 })
     query = query.eq('branch_id', identity.branchId)
   }
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
-  return { data: data || [] }
+  const total = count || 0
+  return {
+    items: data || [],
+    page: safePage,
+    pageSize: safePageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / safePageSize)),
+  }
 }
 
 export async function retryEmailDelivery(body, identity) {
@@ -137,6 +147,9 @@ export async function retryEmailDelivery(body, identity) {
     throw Object.assign(new Error('You can only retry email notifications for your branch.'), { status: 403 })
   }
   if (previous.status !== 'failed') throw badRequest('Only failed email deliveries can be retried.')
+  if (!RETRYABLE_TYPES.has(previous.notification_type)) {
+    throw badRequest('Security-code emails cannot be retried. Request a new verification code instead.')
+  }
   return deliver({
     to: previous.recipient_email,
     subject: previous.subject,

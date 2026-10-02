@@ -9,8 +9,7 @@ CREATE TABLE IF NOT EXISTS public.email_delivery_audit (
   branch_id UUID REFERENCES public.branches(id) ON DELETE SET NULL,
   attempted_by_staff_id UUID REFERENCES public.staff(id) ON DELETE SET NULL,
   retry_of_id UUID REFERENCES public.email_delivery_audit(id) ON DELETE RESTRICT,
-  notification_type TEXT NOT NULL DEFAULT 'manual'
-    CHECK (notification_type IN ('manual', 'order_received', 'ready_for_pickup')),
+  notification_type TEXT NOT NULL DEFAULT 'manual',
   recipient_email TEXT NOT NULL,
   subject TEXT NOT NULL,
   message_body TEXT NOT NULL,
@@ -25,6 +24,18 @@ CREATE TABLE IF NOT EXISTS public.email_delivery_audit (
   CONSTRAINT email_delivery_body_present CHECK (trim(message_body) <> ''),
   CONSTRAINT email_delivery_garments_array CHECK (jsonb_typeof(garment_details) = 'array')
 );
+
+-- Keep this constraint upgrade-safe when the migration was applied before
+-- security-code delivery auditing was introduced.
+ALTER TABLE public.email_delivery_audit
+  DROP CONSTRAINT IF EXISTS email_delivery_audit_notification_type_check;
+ALTER TABLE public.email_delivery_audit
+  ADD CONSTRAINT email_delivery_audit_notification_type_check CHECK (
+    notification_type IN (
+      'manual', 'order_received', 'ready_for_pickup',
+      'password_otp', 'email_change_otp'
+    )
+  );
 
 CREATE INDEX IF NOT EXISTS idx_email_delivery_audit_attempted
   ON public.email_delivery_audit(attempted_at DESC);

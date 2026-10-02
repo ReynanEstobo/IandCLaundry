@@ -1405,6 +1405,33 @@ textarea.form-control {
   color: #b91c1c;
 }
 
+.notification-type-badge {
+  display: inline-flex;
+  padding: 5px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.notification-type-order_received { background: #e0f2fe; color: #0369a1; }
+.notification-type-ready_for_pickup { background: #ccfbf1; color: #0f766e; }
+.notification-type-password_otp { background: #ede9fe; color: #6d28d9; }
+.notification-type-email_change_otp { background: #fef3c7; color: #a16207; }
+
+.notification-audit-page {
+  display: inline-flex;
+  min-width: 92px;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .notification-garment,
 .notification-attempt {
   display: flex;
@@ -1459,6 +1486,17 @@ textarea.form-control {
   background: rgba(220, 38, 38, 0.2);
   color: #fca5a5;
 }
+
+[data-theme="dark"] .notification-type-badge {
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(100, 116, 139, 0.2);
+  color: #cbd5e1;
+}
+
+[data-theme="dark"] .notification-type-order_received { background: rgba(14, 165, 233, 0.18); color: #7dd3fc; }
+[data-theme="dark"] .notification-type-ready_for_pickup { background: rgba(20, 184, 166, 0.18); color: #5eead4; }
+[data-theme="dark"] .notification-type-password_otp { background: rgba(139, 92, 246, 0.2); color: #c4b5fd; }
+[data-theme="dark"] .notification-type-email_change_otp { background: rgba(245, 158, 11, 0.18); color: #fcd34d; }
 
 [data-theme="dark"] .notification-failure-reason { color: #fca5a5; }
 
@@ -8254,3 +8292,91 @@ input, select, textarea, button { max-width: 100%; }
     margin-left: 23px;
   }
 }
+
+/* High-contrast dark status palette. Operational stages remain visually
+   distinct from payment results, even when they appear in the same row. */
+[data-theme="dark"] .badge {
+  border: 1px solid transparent;
+  font-weight: 700;
+}
+
+[data-theme="dark"] .badge-pending,
+[data-theme="dark"] .badge-partial,
+[data-theme="dark"] .kanban-payment-badge.badge-partial {
+  border-color: rgba(251, 191, 36, 0.34);
+  background: rgba(180, 83, 9, 0.28);
+  color: #fde68a;
+}
+
+[data-theme="dark"] .badge-received {
+  border-color: rgba(56, 189, 248, 0.34);
+  background: rgba(3, 105, 161, 0.28);
+  color: #bae6fd;
+}
+
+[data-theme="dark"] .badge-on_process,
+[data-theme="dark"] .badge-washing,
+[data-theme="dark"] .badge-drying,
+[data-theme="dark"] .badge-folding {
+  border-color: rgba(167, 139, 250, 0.38);
+  background: rgba(109, 40, 217, 0.3);
+  color: #ddd6fe;
+}
+
+[data-theme="dark"] .badge-ready {
+  border-color: rgba(45, 212, 191, 0.36);
+  background: rgba(13, 148, 136, 0.27);
+  color: #99f6e4;
+}
+
+[data-theme="dark"] .badge-released {
+  border-color: rgba(148, 163, 184, 0.36);
+  background: rgba(71, 85, 105, 0.38);
+  color: #e2e8f0;
+}
+
+[data-theme="dark"] .badge-paid,
+[data-theme="dark"] .badge-sent,
+[data-theme="dark"] .badge-ok,
+[data-theme="dark"] .kanban-payment-badge.badge-paid {
+  border-color: rgba(74, 222, 128, 0.34);
+  background: rgba(21, 128, 61, 0.27);
+  color: #bbf7d0;
+}
+
+[data-theme="dark"] .badge-cancelled,
+[data-theme="dark"] .badge-unpaid,
+[data-theme="dark"] .badge-failed,
+[data-theme="dark"] .badge-low,
+[data-theme="dark"] .kanban-payment-badge.badge-unpaid {
+  border-color: rgba(248, 113, 113, 0.38);
+  background: rgba(185, 28, 28, 0.27);
+  color: #fecaca;
+}
+
+[data-theme="dark"] .status-line {
+  background: #475569;
+}
+
+[data-theme="dark"] .status-dot {
+  background: #64748b;
+}
+
+[data-theme="dark"] .status-line.filled,
+[data-theme="dark"] .status-dot.filled {
+  background: #38bdf8;
+}
+
+[data-theme="dark"] .status-dot.current {
+  background: #38bdf8;
+  box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.22);
+}
+
+[data-theme="dark"] .status-text.status-pending { color: #fde68a; }
+[data-theme="dark"] .status-text.status-received { color: #bae6fd; }
+[data-theme="dark"] .status-text.status-on_process,
+[data-theme="dark"] .status-text.status-washing,
+[data-theme="dark"] .status-text.status-drying,
+[data-theme="dark"] .status-text.status-folding { color: #ddd6fe; }
+[data-theme="dark"] .status-text.status-ready { color: #99f6e4; }
+[data-theme="dark"] .status-text.status-released { color: #e2e8f0; }

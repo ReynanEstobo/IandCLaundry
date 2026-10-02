@@ -1,6 +1,6 @@
 import { createHmac, randomInt, randomUUID } from 'node:crypto'
 import { authClient, database, runtimeValue } from '../config/supabase.js'
-import { sendEmail } from '../services/notificationService.js'
+import { sendSecurityEmailWithAudit } from '../services/emailAuditService.js'
 
 const invalid = message => Object.assign(new Error(message), { status: 400 })
 const OTP_COOLDOWN_SECONDS = 300
@@ -49,8 +49,14 @@ export async function requestEmailChange({ newEmail, currentPassword }, identity
   if (insertError) throw new Error('Unable to create email verification challenge')
   if (!created?.success) throw invalid(created?.error || 'Unable to request a code.')
   try {
-    await sendEmail({ to: email, subject: 'Verify your new I&C Laundry account email',
-      body: `Your email-change verification code is: ${code}\n\nEnter it in Account Security to bind this address to your account. It expires in 10 minutes. Do not share it. If you did not request this, ignore this email.` })
+    await sendSecurityEmailWithAudit({
+      to: email,
+      subject: 'Verify your new I&C Laundry account email',
+      body: `Your email-change verification code is: ${code}\n\nEnter it in Account Security to bind this address to your account. It expires in 10 minutes. Do not share it. If you did not request this, ignore this email.`,
+      notificationType: 'email_change_otp',
+      staffId: identity.staffId,
+      branchId: identity.branchId,
+    })
   } catch (error) {
     await database.from('email_change_otps').update({ consumed_at: new Date().toISOString() }).eq('id', id)
     throw error

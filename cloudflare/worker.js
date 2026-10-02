@@ -126,7 +126,7 @@ async function api(request, env) {
   if (method === 'POST' && path === 'staff/reset-credentials') { const identity = await authenticate(request); requireAdmin(identity); return json(await resetStaffCredentials(await body(request), identity)) }
   if (method === 'POST' && path === 'staff/update') { const identity = await authenticate(request); requireAdmin(identity); return json(await updateProvisionedStaff(await body(request), identity)) }
   if (method === 'POST' && path === 'notifications/email') { const identity = await authenticate(request); return json(await sendAuditedEmail(await body(request), identity)) }
-  if (method === 'GET' && path === 'notifications/email-audit') { const identity = await authenticate(request); return json(await listEmailDeliveryAudit(identity, { limit: url.searchParams.get('limit') })) }
+  if (method === 'GET' && path === 'notifications/email-audit') { const identity = await authenticate(request); return json(await listEmailDeliveryAudit(identity, { page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize') })) }
   if (method === 'POST' && path === 'notifications/email/retry') { const identity = await authenticate(request); return json(await retryEmailDelivery(await body(request), identity)) }
   if (method === 'POST' && path === 'notifications/sms') { await authenticate(request); return json(await sendSms(await body(request))) }
   if (method === 'POST' && path === 'ai/generate') { await authenticate(request); return json(await askGemini((await body(request)).prompt)) }

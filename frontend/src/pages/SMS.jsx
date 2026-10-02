@@ -9,9 +9,25 @@ import LoadingButton from "../components/LoadingButton";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { getEmailDeliveryAudit, retryEmail } from "../services/api/notificationApi";
 
+const AUDIT_PAGE_SIZE = 10;
+const NOTIFICATION_TYPE_LABELS = {
+  manual: "Manual email",
+  order_received: "Order received",
+  ready_for_pickup: "Ready for pickup",
+  password_otp: "Password OTP",
+  email_change_otp: "Email-change OTP",
+};
+const RETRYABLE_NOTIFICATION_TYPES = new Set(["manual", "order_received", "ready_for_pickup"]);
+
+function notificationTypeLabel(type) {
+  return NOTIFICATION_TYPE_LABELS[type] || "Email notification";
+}
+
 function garmentLabel(delivery) {
   const garments = Array.isArray(delivery.garment_details) ? delivery.garment_details : [];
-  if (!garments.length) return delivery.order_number ? "Order details unavailable" : "Manual email";
+  if (!garments.length) {
+    return delivery.order_number ? "Order details unavailable" : notificationTypeLabel(delivery.notification_type);
+  }
   return garments.map((item) => `${item.service || "Laundry service"}${Number(item.weight_kg) > 0 ? ` · ${Number(item.weight_kg).toLocaleString()} kg` : ""}`).join(", ");
 }
 
@@ -25,6 +41,8 @@ export default function Notifications() {
   const [deliveryAudit, setDeliveryAudit] = useState([]);
   const [auditLoading, setAuditLoading] = useState(true);
   const [auditError, setAuditError] = useState("");
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditPagination, setAuditPagination] = useState({ page: 1, pageSize: AUDIT_PAGE_SIZE, total: 0, totalPages: 1 });
   const [retrying, setRetrying] = useState({});
 
   const [emailForm, setEmailForm] = useState({
@@ -69,12 +87,19 @@ export default function Notifications() {
     }
   }, []);
 
-  const loadDeliveryAudit = useCallback(async (background = false) => {
+  const loadDeliveryAudit = useCallback(async (page = 1, background = false) => {
     if (!background) setAuditLoading(true);
     setAuditError("");
     try {
-      const result = await getEmailDeliveryAudit(100);
-      setDeliveryAudit(result.data || []);
+      const result = await getEmailDeliveryAudit(page, AUDIT_PAGE_SIZE);
+      setDeliveryAudit(result.items || []);
+      setAuditPage(result.page || page);
+      setAuditPagination({
+        page: result.page || page,
+        pageSize: result.pageSize || AUDIT_PAGE_SIZE,
+        total: result.total || 0,
+        totalPages: result.totalPages || 1,
+      });
     } catch (error) {
       setAuditError(error.message || "Unable to load email delivery history.");
     } finally {
@@ -84,7 +109,7 @@ export default function Notifications() {
 
   useEffect(() => {
     loadData();
-    loadDeliveryAudit();
+    loadDeliveryAudit(1);
   }, [loadData, loadDeliveryAudit]);
 
   // ─────────────────────────────────────
@@ -120,7 +145,7 @@ export default function Notifications() {
       toast.error(error.message || "Failed to send email");
     } finally {
       setSending(false);
-      await loadDeliveryAudit(true);
+      await loadDeliveryAudit(1, true);
     }
   }
 
@@ -169,7 +194,7 @@ I&C Laundry`,
         ...prev,
         [order.id]: false,
       }));
-      await loadDeliveryAudit(true);
+      await loadDeliveryAudit(1, true);
     }
   }
 
@@ -182,7 +207,7 @@ I&C Laundry`,
       toast.error(error.message || "Email retry failed");
     } finally {
       setRetrying((current) => ({ ...current, [delivery.id]: false }));
-      await loadDeliveryAudit(true);
+      await loadDeliveryAudit(1, true);
     }
   }
 
@@ -516,7 +541,7 @@ I&C Laundry`,
               <h3><History size={18} /> Email Delivery Audit</h3>
               <p>Each send and retry is recorded separately. Failed records are never overwritten.</p>
             </div>
-            <button className="btn btn-sm btn-secondary" onClick={() => loadDeliveryAudit()} disabled={auditLoading}>
+            <button className="btn btn-sm btn-secondary" onClick={() => loadDeliveryAudit(auditPage)} disabled={auditLoading}>
               <RotateCcw size={14} className={auditLoading ? "spin" : ""} /> Refresh
             </button>
           </div>
@@ -525,7 +550,7 @@ I&C Laundry`,
             <div className="notification-audit-error" role="alert">
               <AlertCircle size={17} />
               <span>{auditError}</span>
-              <button type="button" onClick={() => loadDeliveryAudit()}>Try again</button>
+              <button type="button" onClick={() => loadDeliveryAudit(auditPage)}>Try again</button>
             </div>
           )}
 
@@ -537,6 +562,7 @@ I&C Laundry`,
                 <thead>
                   <tr>
                     <th>Status</th>
+                    <th>Type</th>
                     <th>Order / Garment</th>
                     <th>Recipient</th>
                     <th>Attempt</th>
@@ -546,7 +572,7 @@ I&C Laundry`,
                 </thead>
                 <tbody>
                   {!deliveryAudit.length ? (
-                    <tr><td colSpan={6} className="empty-state"><p>No email delivery attempts recorded yet</p></td></tr>
+                    <tr><td colSpan={7} className="empty-state"><p>No email delivery attempts recorded yet</p></td></tr>
                   ) : deliveryAudit.map((delivery) => (
                     <tr key={delivery.id}>
                       <td data-label="Status">
@@ -555,9 +581,14 @@ I&C Laundry`,
                           {delivery.status === "sent" ? "Sent" : "Failed"}
                         </span>
                       </td>
+                      <td data-label="Type">
+                        <span className={`notification-type-badge notification-type-${delivery.notification_type || "manual"}`}>
+                          {notificationTypeLabel(delivery.notification_type)}
+                        </span>
+                      </td>
                       <td data-label="Order / Garment" data-card-primary>
                         <div className="notification-garment">
-                          <strong>{delivery.order_number || "Manual email"}</strong>
+                          <strong>{delivery.order_number || (delivery.notification_type?.includes("otp") ? "Security verification" : "Manual email")}</strong>
                           <span>{garmentLabel(delivery)}</span>
                         </div>
                       </td>
@@ -574,7 +605,7 @@ I&C Laundry`,
                           : <span className="notification-provider">Accepted by {delivery.provider === "gmail_smtp" ? "Gmail" : "email service"}</span>}
                       </td>
                       <td data-label="Action" data-card-actions>
-                        {delivery.status === "failed" ? (
+                        {delivery.status === "failed" && RETRYABLE_NOTIFICATION_TYPES.has(delivery.notification_type) ? (
                           <LoadingButton
                             className="btn btn-sm btn-primary"
                             onClick={() => retryFailedEmail(delivery)}
@@ -583,12 +614,30 @@ I&C Laundry`,
                           >
                             <RotateCcw size={14} /> Retry email
                           </LoadingButton>
+                        ) : delivery.status === "failed" ? (
+                          <span className="notification-no-action">Request a new code</span>
                         ) : <span className="notification-no-action">—</span>}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <div className="audit-pagination notification-audit-pagination">
+                <span>
+                  {auditPagination.total
+                    ? `Showing ${(auditPage - 1) * auditPagination.pageSize + 1}–${Math.min(auditPage * auditPagination.pageSize, auditPagination.total)} of ${auditPagination.total}`
+                    : "No delivery attempts"}
+                </span>
+                <div>
+                  <button className="btn btn-sm btn-secondary" type="button" disabled={auditLoading || auditPage <= 1} onClick={() => loadDeliveryAudit(auditPage - 1)}>
+                    Previous
+                  </button>
+                  <span className="notification-audit-page">Page {auditPage} of {auditPagination.totalPages}</span>
+                  <button className="btn btn-sm btn-secondary" type="button" disabled={auditLoading || auditPage >= auditPagination.totalPages} onClick={() => loadDeliveryAudit(auditPage + 1)}>
+                    Next
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </section>

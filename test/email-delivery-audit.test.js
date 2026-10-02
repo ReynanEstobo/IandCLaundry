@@ -35,11 +35,20 @@ test('email delivery audit is append-only and links retries to the failed attemp
     SELECT $1,order_id,branch_id,$2,id,notification_type,recipient_email,subject,message_body,
       order_number,garment_details,'sent','gmail_smtp'
     FROM email_delivery_audit WHERE id=$3`, [retryId, staffId, failedId])
+  const otpId = randomUUID()
+  await db.query(`INSERT INTO email_delivery_audit
+    (id, branch_id, attempted_by_staff_id, notification_type, recipient_email,
+     subject, message_body, garment_details, status, provider)
+    VALUES ($1,$2,$3,'password_otp','staff@example.com','Password verification',
+      '[Security code content is intentionally not stored.]','[]','sent','gmail_smtp')`,
+    [otpId, branchId, staffId])
 
-  const { rows } = await db.query('SELECT id,status,retry_of_id,garment_details FROM email_delivery_audit ORDER BY attempted_at,id')
-  assert.equal(rows.length, 2)
+  const { rows } = await db.query('SELECT id,status,retry_of_id,notification_type,message_body,garment_details FROM email_delivery_audit ORDER BY attempted_at,id')
+  assert.equal(rows.length, 3)
   assert.equal(rows.find(row => row.id === retryId).retry_of_id, failedId)
   assert.equal(rows.find(row => row.id === failedId).garment_details[0].service, 'Wash and Fold')
+  assert.equal(rows.find(row => row.id === otpId).notification_type, 'password_otp')
+  assert.doesNotMatch(rows.find(row => row.id === otpId).message_body, /\d{6}/)
   await assert.rejects(db.query("UPDATE email_delivery_audit SET status='sent' WHERE id=$1", [failedId]), /append-only/)
   await assert.rejects(db.query('DELETE FROM email_delivery_audit WHERE id=$1', [failedId]), /append-only/)
 })

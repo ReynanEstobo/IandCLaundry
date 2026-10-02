@@ -1,7 +1,7 @@
 import { authClient, database, runtimeValue } from '../config/supabase.js'
 import { getStaffProfile } from '../models/databaseModel.js'
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
-import { sendEmail } from '../services/notificationService.js'
+import { sendSecurityEmailWithAudit } from '../services/emailAuditService.js'
 import { assertStrongPassword } from '../utils/validation.js'
 
 async function identityFor(user) {
@@ -14,6 +14,7 @@ async function identityFor(user) {
     role: String(staff?.role || 'unassigned').toLowerCase(),
     staffName: staff?.full_name || null,
     branch: staff?.branch || null,
+    branchId: staff?.branch_id || null,
     mustChangePassword: Boolean(staff?.must_change_password),
   }
 }
@@ -51,7 +52,7 @@ async function findActiveAccount(identifier, includeContactEmail = false) {
     : [/^(?:HC|IC)-(?:STAFF|ADMIN)-/i.test(value) ? 'staff_code' : 'username']
   for (const column of columns) {
     const { data, error } = await database.from('staff')
-      .select('id, auth_id, email, contact_email').is('deleted_at', null)
+      .select('id, auth_id, email, contact_email, branch_id').is('deleted_at', null)
       .ilike(column, literalPattern(value)).maybeSingle()
     if (error) throw new Error('Unable to look up account')
     if (data) return data
@@ -111,7 +112,7 @@ async function passwordVerificationEmail(identity) {
   return email
 }
 
-async function issuePasswordOtp({ userId, staffId, email }) {
+async function issuePasswordOtp({ userId, staffId, email, branchId = null }) {
   const { data: recentChallenge, error: cooldownError } = await database
     .from('password_change_otps').select('requested_at').eq('auth_user_id', userId)
     .order('requested_at', { ascending: false }).limit(1).maybeSingle()
@@ -135,10 +136,13 @@ async function issuePasswordOtp({ userId, staffId, email }) {
   const { error: hashError } = await database.from('password_change_otps').update({ code_hash: hashOtp(challenge.id, code) }).eq('id', challenge.id)
   if (hashError) throw Object.assign(new Error(hashError.message), { status: 400 })
   try {
-    await sendEmail({
+    await sendSecurityEmailWithAudit({
       to: email,
       subject: 'I&C Laundry password verification code',
       body: `Your I&C Laundry password-change code is: ${code}\n\nIt expires in 10 minutes. Do not share this code with anyone. If you did not request a password change, you can ignore this email.`,
+      notificationType: 'password_otp',
+      staffId,
+      branchId,
     })
   } catch (sendError) {
     await database.from('password_change_otps').update({ consumed_at: new Date().toISOString() }).eq('id', challenge.id)
@@ -150,7 +154,7 @@ async function issuePasswordOtp({ userId, staffId, email }) {
 export async function requestPasswordOtp(_body, identity) {
   if (identity.mustChangePassword) throw Object.assign(new Error('Activate your account first using the temporary password.'), { status: 400 })
   const email = await passwordVerificationEmail(identity)
-  return issuePasswordOtp({ userId: identity.user.id, staffId: identity.staffId, email })
+  return issuePasswordOtp({ userId: identity.user.id, staffId: identity.staffId, email, branchId: identity.branchId })
 }
 
 async function verifyPasswordOtp(identity, code) {
@@ -181,7 +185,7 @@ async function findResetAccount(identifier) {
   if (!data?.auth_id) return null
   const email = data.contact_email || (isInternalAccountEmail(data.email) ? null : data.email)
   if (!email) throw contactEmailRequired(true)
-  return { user: { id: data.auth_id }, staffId: data.id, email }
+  return { user: { id: data.auth_id }, staffId: data.id, branchId: data.branch_id || null, email }
 }
 
 // Password recovery is public. Do not reveal whether a staff record exists or
@@ -200,7 +204,7 @@ export async function requestForgotPasswordOtp({ identifier }) {
   const account = await findPublicResetAccount(identifier)
   if (account) {
     try {
-      await issuePasswordOtp({ userId: account.user.id, staffId: account.staffId, email: account.email })
+      await issuePasswordOtp({ userId: account.user.id, staffId: account.staffId, branchId: account.branchId, email: account.email })
     } catch (error) {
       // A cooldown or delivery failure must look identical to an unknown
       // account. The request-rate limit still protects the endpoint itself.
