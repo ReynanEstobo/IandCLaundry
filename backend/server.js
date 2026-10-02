@@ -9,12 +9,13 @@ import { listAuditLog, restoreRecord } from './controllers/auditController.js'
 import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from './controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from './controllers/staffProvisionController.js'
 import { getPublicSettings, sendContactMessage, trackOrder } from './controllers/publicController.js'
-import { sendEmail, sendSms } from './services/notificationService.js'
+import { sendSms } from './services/notificationService.js'
 import { askGemini, generateForecast, generateDecisionSupport } from './services/aiService.js'
 import { events } from './services/realtimeService.js'
 import { resourceRoutes } from './routes/resourceRoutes.js'
 import { requestEmailChange, confirmEmailChange, verifyEmailChangeOtp } from './controllers/emailChangeController.js'
 import { listLoyaltyRewards, revokeLoyaltyReward } from './controllers/loyaltyController.js'
+import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail } from './controllers/notificationController.js'
 
 const port = Number(process.env.PORT || 3001)
 
@@ -64,7 +65,9 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && path === 'staff/provision') { const identity = await authenticate(request); requireAdmin(identity); return write(response, 200, await provisionStaff(await readBody(request), identity)) }
     if (request.method === 'POST' && path === 'staff/reset-credentials') { const identity = await authenticate(request); requireAdmin(identity); return write(response, 200, await resetStaffCredentials(await readBody(request), identity)) }
     if (request.method === 'POST' && path === 'staff/update') { const identity = await authenticate(request); requireAdmin(identity); return write(response, 200, await updateProvisionedStaff(await readBody(request), identity)) }
-    if (request.method === 'POST' && path === 'notifications/email') { await authenticate(request); return write(response, 200, await sendEmail(await readBody(request))) }
+    if (request.method === 'POST' && path === 'notifications/email') { const identity = await authenticate(request); return write(response, 200, await sendAuditedEmail(await readBody(request), identity)) }
+    if (request.method === 'GET' && path === 'notifications/email-audit') { const identity = await authenticate(request); return write(response, 200, await listEmailDeliveryAudit(identity, { limit: url.searchParams.get('limit') })) }
+    if (request.method === 'POST' && path === 'notifications/email/retry') { const identity = await authenticate(request); return write(response, 200, await retryEmailDelivery(await readBody(request), identity)) }
     if (request.method === 'POST' && path === 'notifications/sms') { await authenticate(request); return write(response, 200, await sendSms(await readBody(request))) }
     if (request.method === 'POST' && path === 'ai/generate') { await authenticate(request); return write(response, 200, await askGemini((await readBody(request)).prompt)) }
     if (request.method === 'POST' && path === 'ai/forecast') { requireAdmin(await authenticate(request)); return write(response, 200, await generateForecast(await readBody(request))) }

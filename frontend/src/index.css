@@ -1323,6 +1323,156 @@ textarea.form-control {
     max-width: 400px;
   }
 }
+
+/* Notification delivery history is an append-only operational audit. */
+.notification-audit-card {
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.notification-audit-header {
+  display: flex;
+  padding: 18px 20px;
+  margin: 0 !important;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.notification-audit-header h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notification-audit-header p {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.notification-audit-loading {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.notification-audit-error {
+  display: flex;
+  margin: 14px 18px 0;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 9px;
+  background: #fef2f2;
+  color: #b91c1c;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.notification-audit-error span { flex: 1; }
+.notification-audit-error button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.notification-delivery-status {
+  display: inline-flex;
+  padding: 5px 9px;
+  border-radius: 999px;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.notification-delivery-status.sent {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.notification-delivery-status.failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.notification-garment,
+.notification-attempt {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.notification-garment strong { color: var(--text-primary); }
+.notification-garment span,
+.notification-attempt small,
+.notification-provider,
+.notification-no-action {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.notification-garment span {
+  max-width: 300px;
+  overflow-wrap: anywhere;
+}
+
+.notification-recipient {
+  display: inline-block;
+  max-width: 220px;
+  overflow-wrap: anywhere;
+}
+
+.notification-failure-reason {
+  display: -webkit-box;
+  max-width: 260px;
+  overflow: hidden;
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+[data-theme="dark"] .notification-audit-error {
+  border-color: rgba(248, 113, 113, 0.34);
+  background: rgba(127, 29, 29, 0.22);
+  color: #fca5a5;
+}
+
+[data-theme="dark"] .notification-delivery-status.sent {
+  background: rgba(22, 163, 74, 0.2);
+  color: #86efac;
+}
+
+[data-theme="dark"] .notification-delivery-status.failed {
+  background: rgba(220, 38, 38, 0.2);
+  color: #fca5a5;
+}
+
+[data-theme="dark"] .notification-failure-reason { color: #fca5a5; }
+
+@media (max-width: 640px) {
+  .notification-audit-header {
+    padding: 16px;
+    align-items: flex-start;
+  }
+
+  .notification-audit-header .btn { flex-shrink: 0; }
+  .notification-garment span,
+  .notification-recipient,
+  .notification-failure-reason { max-width: none; }
+}
 @keyframes slideUp {
   from {
     opacity: 0;

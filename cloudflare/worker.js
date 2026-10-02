@@ -6,12 +6,13 @@ import { listAuditLog, restoreRecord } from '../backend/controllers/auditControl
 import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from '../backend/controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from '../backend/controllers/staffProvisionController.js'
 import { getPublicSettings, sendContactMessage, trackOrder } from '../backend/controllers/publicController.js'
-import { sendEmail, sendSms } from '../backend/services/notificationService.js'
+import { sendSms } from '../backend/services/notificationService.js'
 import { askGemini, generateForecast, generateDecisionSupport } from '../backend/services/aiService.js'
 import { resourceRoutes } from '../backend/routes/resourceRoutes.js'
 import { configureRuntimeEnv } from '../backend/config/supabase.js'
 import { requestEmailChange, confirmEmailChange, verifyEmailChangeOtp } from '../backend/controllers/emailChangeController.js'
 import { listLoyaltyRewards, revokeLoyaltyReward } from '../backend/controllers/loyaltyController.js'
+import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail } from '../backend/controllers/notificationController.js'
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests",
@@ -124,7 +125,9 @@ async function api(request, env) {
   if (method === 'POST' && path === 'staff/provision') { const identity = await authenticate(request); requireAdmin(identity); return json(await provisionStaff(await body(request), identity)) }
   if (method === 'POST' && path === 'staff/reset-credentials') { const identity = await authenticate(request); requireAdmin(identity); return json(await resetStaffCredentials(await body(request), identity)) }
   if (method === 'POST' && path === 'staff/update') { const identity = await authenticate(request); requireAdmin(identity); return json(await updateProvisionedStaff(await body(request), identity)) }
-  if (method === 'POST' && path === 'notifications/email') { await authenticate(request); return json(await sendEmail(await body(request))) }
+  if (method === 'POST' && path === 'notifications/email') { const identity = await authenticate(request); return json(await sendAuditedEmail(await body(request), identity)) }
+  if (method === 'GET' && path === 'notifications/email-audit') { const identity = await authenticate(request); return json(await listEmailDeliveryAudit(identity, { limit: url.searchParams.get('limit') })) }
+  if (method === 'POST' && path === 'notifications/email/retry') { const identity = await authenticate(request); return json(await retryEmailDelivery(await body(request), identity)) }
   if (method === 'POST' && path === 'notifications/sms') { await authenticate(request); return json(await sendSms(await body(request))) }
   if (method === 'POST' && path === 'ai/generate') { await authenticate(request); return json(await askGemini((await body(request)).prompt)) }
   if (method === 'POST' && path === 'ai/forecast') { requireAdmin(await authenticate(request)); return json(await generateForecast(await body(request))) }

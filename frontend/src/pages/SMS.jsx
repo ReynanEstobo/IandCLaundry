@@ -1,4 +1,4 @@
-import { CheckCircle, Mail } from "lucide-react";
+import { AlertCircle, CheckCircle, History, Mail, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
@@ -7,6 +7,13 @@ import { useRealtime } from "../lib/useRealtime";
 import { PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from "../components/LoadingButton";
 import { compareOrdersForList } from "../utils/orderListPriority";
+import { getEmailDeliveryAudit, retryEmail } from "../services/api/notificationApi";
+
+function garmentLabel(delivery) {
+  const garments = Array.isArray(delivery.garment_details) ? delivery.garment_details : [];
+  if (!garments.length) return delivery.order_number ? "Order details unavailable" : "Manual email";
+  return garments.map((item) => `${item.service || "Laundry service"}${Number(item.weight_kg) > 0 ? ` · ${Number(item.weight_kg).toLocaleString()} kg` : ""}`).join(", ");
+}
 
 export default function Notifications() {
   const [orders, setOrders] = useState([]);
@@ -15,6 +22,10 @@ export default function Notifications() {
   const [sending, setSending] = useState(false);
   const [tab, setTab] = useState("email");
   const [emailSending, setEmailSending] = useState({});
+  const [deliveryAudit, setDeliveryAudit] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(true);
+  const [auditError, setAuditError] = useState("");
+  const [retrying, setRetrying] = useState({});
 
   const [emailForm, setEmailForm] = useState({
     to: "",
@@ -39,7 +50,8 @@ export default function Notifications() {
           customers(
             name,
             email
-          )
+          ),
+          order_items(id, service_name_snapshot, weight_kg, status)
         `,
       )
       .in("status", ["received", "on_process", "ready"])
@@ -57,9 +69,23 @@ export default function Notifications() {
     }
   }, []);
 
+  const loadDeliveryAudit = useCallback(async (background = false) => {
+    if (!background) setAuditLoading(true);
+    setAuditError("");
+    try {
+      const result = await getEmailDeliveryAudit(100);
+      setDeliveryAudit(result.data || []);
+    } catch (error) {
+      setAuditError(error.message || "Unable to load email delivery history.");
+    } finally {
+      if (!background) setAuditLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadData();
-  }, [loadData]);
+    loadDeliveryAudit();
+  }, [loadData, loadDeliveryAudit]);
 
   // ─────────────────────────────────────
   // REALTIME
@@ -79,21 +105,23 @@ export default function Notifications() {
     setSending(true);
 
     try {
-      await apiFetch("/api/notifications/email", {
+      const result = await apiFetch("/api/notifications/email", {
         method: "POST",
-        body: JSON.stringify(emailForm),
+        body: JSON.stringify({ ...emailForm, notificationType: "manual" }),
       });
       toast.success("Email sent successfully!");
+      if (result.auditRecorded === false) toast.error("Email was sent, but its audit record could not be saved.");
       setEmailForm({
         to: "",
         subject: "",
         body: "",
       });
     } catch (error) {
-      toast.error("Failed to send email — check network");
+      toast.error(error.message || "Failed to send email");
+    } finally {
+      setSending(false);
+      await loadDeliveryAudit(true);
     }
-
-    setSending(false);
   }
 
   // ─────────────────────────────────────
@@ -110,36 +138,52 @@ export default function Notifications() {
     }));
 
     try {
-      await apiFetch("/api/notifications/email", {
+      const result = await apiFetch("/api/notifications/email", {
         method: "POST",
         body: JSON.stringify({
           to: order.customers.email,
+          orderId: order.id,
+          notificationType: "ready_for_pickup",
 
-          subject: `Your Laundry is Ready for Pickup! (Order #${order.order_number})`,
+          subject: `Your I&C Laundry order is ready - ${order.order_number}`,
 
-          body: `Hi ${order.customers.name || "Customer"},
+          body: `Hello ${order.customers.name || "Customer"},
 
-Great news! Your laundry (Order #${
-            order.order_number
-          }) is now ready for pickup at I&C Laundry.
+Your laundry is ready for pickup at I&C Laundry.
 
-Please pick it up at your earliest convenience during our business hours.
+Tracking number: ${order.order_number}
 
-Thank you for choosing I&C Laundry!
+You may collect it during our regular business hours. Please bring your tracking number so our staff can locate your order.
 
-— I&C Laundry Team`,
+Thank you,
+I&C Laundry`,
         }),
       });
 
       toast.success(`Email sent to ${order.customers.email}`);
+      if (result.auditRecorded === false) toast.error("Email was sent, but its audit record could not be saved.");
     } catch (error) {
       toast.error(error.message || "Failed to send email");
+    } finally {
+      setEmailSending((prev) => ({
+        ...prev,
+        [order.id]: false,
+      }));
+      await loadDeliveryAudit(true);
     }
+  }
 
-    setEmailSending((prev) => ({
-      ...prev,
-      [order.id]: false,
-    }));
+  async function retryFailedEmail(delivery) {
+    setRetrying((current) => ({ ...current, [delivery.id]: true }));
+    try {
+      await retryEmail(delivery.id);
+      toast.success(`Email resent to ${delivery.recipient_email}`);
+    } catch (error) {
+      toast.error(error.message || "Email retry failed");
+    } finally {
+      setRetrying((current) => ({ ...current, [delivery.id]: false }));
+      await loadDeliveryAudit(true);
+    }
   }
 
   // ─────────────────────────────────────
@@ -178,6 +222,14 @@ Thank you for choosing I&C Laundry!
           onClick={() => setTab("quick")}
         >
           Quick Notify
+        </button>
+
+        <button
+          className={`tab ${tab === "audit" ? "active" : ""}`}
+          onClick={() => setTab("audit")}
+        >
+          <History size={15} style={{ marginRight: 4 }} />
+          Delivery Audit
         </button>
       </div>
 
@@ -393,6 +445,7 @@ Thank you for choosing I&C Laundry!
                   <tr>
                     <th>Order #</th>
                     <th>Customer</th>
+                    <th>Garment / Service</th>
                     <th>Email</th>
                     <th>Status</th>
                     <th>Actions</th>
@@ -402,7 +455,7 @@ Thank you for choosing I&C Laundry!
                 <tbody>
                   {orders.filter((o) => o.status === "ready").length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="empty-state">
+                      <td colSpan={6} className="empty-state">
                         <p>No orders ready for pickup notification</p>
                       </td>
                     </tr>
@@ -421,6 +474,8 @@ Thank you for choosing I&C Laundry!
                           </td>
 
                           <td>{order.customers?.name || "Walk-in"}</td>
+
+                          <td>{(order.order_items || []).map((item) => item.service_name_snapshot || "Laundry service").join(", ") || "Laundry service"}</td>
 
                           <td>{order.customers?.email || "—"}</td>
 
@@ -452,6 +507,91 @@ Thank you for choosing I&C Laundry!
             </div>
           </div>
         </>
+      )}
+
+      {tab === "audit" && (
+        <section className="card notification-audit-card">
+          <div className="card-header notification-audit-header">
+            <div>
+              <h3><History size={18} /> Email Delivery Audit</h3>
+              <p>Each send and retry is recorded separately. Failed records are never overwritten.</p>
+            </div>
+            <button className="btn btn-sm btn-secondary" onClick={() => loadDeliveryAudit()} disabled={auditLoading}>
+              <RotateCcw size={14} className={auditLoading ? "spin" : ""} /> Refresh
+            </button>
+          </div>
+
+          {auditError && (
+            <div className="notification-audit-error" role="alert">
+              <AlertCircle size={17} />
+              <span>{auditError}</span>
+              <button type="button" onClick={() => loadDeliveryAudit()}>Try again</button>
+            </div>
+          )}
+
+          {auditLoading ? (
+            <div className="notification-audit-loading"><span className="spinner" /> Loading delivery history…</div>
+          ) : (
+            <div className="table-wrapper">
+              <table className="responsive-card-table notification-audit-table">
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Order / Garment</th>
+                    <th>Recipient</th>
+                    <th>Attempt</th>
+                    <th>Result</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {!deliveryAudit.length ? (
+                    <tr><td colSpan={6} className="empty-state"><p>No email delivery attempts recorded yet</p></td></tr>
+                  ) : deliveryAudit.map((delivery) => (
+                    <tr key={delivery.id}>
+                      <td data-label="Status">
+                        <span className={`notification-delivery-status ${delivery.status}`}>
+                          {delivery.status === "sent" ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
+                          {delivery.status === "sent" ? "Sent" : "Failed"}
+                        </span>
+                      </td>
+                      <td data-label="Order / Garment" data-card-primary>
+                        <div className="notification-garment">
+                          <strong>{delivery.order_number || "Manual email"}</strong>
+                          <span>{garmentLabel(delivery)}</span>
+                        </div>
+                      </td>
+                      <td data-label="Recipient"><span className="notification-recipient">{delivery.recipient_email}</span></td>
+                      <td data-label="Attempt">
+                        <div className="notification-attempt">
+                          <span>{new Date(delivery.attempted_at).toLocaleString("en-PH")}</span>
+                          <small>{delivery.staff?.full_name || "System"}{delivery.retry_of_id ? " · Retry" : ""}</small>
+                        </div>
+                      </td>
+                      <td data-label="Result">
+                        {delivery.status === "failed"
+                          ? <span className="notification-failure-reason" title={delivery.error_message || "Delivery failed"}>{delivery.error_message || "Delivery failed"}</span>
+                          : <span className="notification-provider">Accepted by {delivery.provider === "gmail_smtp" ? "Gmail" : "email service"}</span>}
+                      </td>
+                      <td data-label="Action" data-card-actions>
+                        {delivery.status === "failed" ? (
+                          <LoadingButton
+                            className="btn btn-sm btn-primary"
+                            onClick={() => retryFailedEmail(delivery)}
+                            loading={Boolean(retrying[delivery.id])}
+                            loadingLabel="Retrying…"
+                          >
+                            <RotateCcw size={14} /> Retry email
+                          </LoadingButton>
+                        ) : <span className="notification-no-action">—</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       )}
     </>
   );

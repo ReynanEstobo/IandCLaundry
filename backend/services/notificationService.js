@@ -119,7 +119,7 @@ export async function sendEmail({ to, subject, body, replyTo }) {
       relaySecret: requireValue(relaySecret, 'Google Apps Script relay secret'),
       to, subject, body: text, html, replyTo: normalizedReplyTo,
     })
-    return { success: true, message: 'Email sent successfully' }
+    return { success: true, message: 'Email sent successfully', provider: 'google_apps_script' }
   }
 
   // `runtimeValue` reads process.env while developing locally and Cloudflare
@@ -133,7 +133,7 @@ export async function sendEmail({ to, subject, body, replyTo }) {
     auth: { user: from, pass },
   })
   await transporter.sendMail({ from: `"I&C Laundry" <${from}>`, to, subject, text, html, replyTo: normalizedReplyTo || undefined })
-  return { success: true, message: 'Email sent successfully' }
+  return { success: true, message: 'Email sent successfully', provider: 'gmail_smtp' }
 }
 
 export async function sendSms({ phone, message }) {

@@ -118,11 +118,14 @@ async function sendReadyEmail(order, customerName, customerEmail) {
   try {
     const res = await sendEmail({
         to: customerEmail,
+        orderId: order.id,
+        notificationType: "ready_for_pickup",
         subject: `Your I&C Laundry order is ready - ${order.order_number}`,
         body: `Hello ${customerName || "Customer"},\n\nYour laundry is ready for pickup at I&C Laundry.\n\nTracking number: ${order.order_number}\n\nYou may collect it during our regular business hours. Please bring your tracking number so our staff can locate your order.\n\nThank you,\nI&C Laundry`,
     });
     if (res.success) {
       toast.success(`Email notification sent to ${customerEmail}`);
+      if (res.auditRecorded === false) toast.error("Email was sent, but its audit record could not be saved.");
     }
   } catch {
     // Silently fail - email is best-effort (won't work in local dev, only on Netlify)
@@ -164,6 +167,7 @@ async function sendReadySMS(phone, orderNumber, customerName) {
 }
 
 async function sendOrderReceivedEmail(
+  orderId,
   orderNumber,
   customerName,
   customerEmail,
@@ -180,11 +184,14 @@ async function sendOrderReceivedEmail(
 
     const res = await sendEmail({
         to: customerEmail,
+        orderId,
+        notificationType: "order_received",
         subject: `We received your I&C Laundry order - ${orderNumber}`,
         body: `Hello ${customerName || "Customer"},\n\nWe have received your laundry order. Here is a copy of the information recorded by our staff.\n\nOrder summary:\n- Tracking number: ${orderNumber}\n- Service: ${serviceName}\n- Weight: ${weightKg} kg\n- Total: ₱${totalPrice.toLocaleString()}\n\nEstimated pickup time: ${completionText}\n\nYou can check the order status on our website using the tracking number above. We will send another message when the order is ready.\n\nThank you,\nI&C Laundry`,
     });
     if (res.success) {
       toast.success(`Order confirmation email sent to ${customerEmail}`);
+      if (res.auditRecorded === false) toast.error("Email was sent, but its audit record could not be saved.");
     }
   } catch {
     // Silently fail - email is best-effort
@@ -686,6 +693,7 @@ export default function Orders() {
     ) {
       const email = form.customer_email.trim() || phoneMatch?.email;
       sendOrderReceivedEmail(
+        orderData.id,
         orderData.order_number,
         form.customer_name.trim(),
         email,
