@@ -75,13 +75,17 @@ export function rollingDemandForecast(orders = [], paymentsOrNow = [], suppliedN
     ? 'less than 1 order'
     : `${usualOrderCount} ${usualOrderCount === 1 ? 'order' : 'orders'}`
   const workloadSummary = history.length < 7
-    ? `Not enough history to estimate today's workload; ${todayOrderCount} received so far today`
-    : `${expectedOrdersText} expected today; ${todayOrderCount} received so far today (usual: ${usualOrdersText} per day)`
+    ? `Limited history; ${todayOrderCount} received today.`
+    : `${expectedOrdersText} expected; ${todayOrderCount} received today (usual: ${usualOrdersText}/day).`
 
   const byDay = Array(7).fill(0)
   history.forEach(order => { byDay[new Date(order.created_at).getDay()] += 1 })
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-  const peakDay = history.length ? dayNames[byDay.indexOf(Math.max(...byDay))] : 'Not enough data'
+  const peakDayIndex = byDay.indexOf(Math.max(...byDay))
+  const peakDayOrders = byDay[peakDayIndex] || 0
+  const peakDay = history.length >= 14 && peakDayOrders >= 2
+    ? dayNames[peakDayIndex]
+    : 'Not enough data'
 
   const recentStart = subDays(today, 14)
   const previousStart = subDays(today, 29)
@@ -105,6 +109,7 @@ export function rollingDemandForecast(orders = [], paymentsOrNow = [], suppliedN
     workloadPct,
     workloadLevel,
     peakDay,
+    peakDayOrders,
     revenueTrend: previousRevenue > 0 ? Number((((recentRevenue - previousRevenue) / previousRevenue) * 100).toFixed(1)) : 0,
     oldestHistoryDate: history.length ? history.reduce((oldest, order) => new Date(order.created_at) < oldest ? new Date(order.created_at) : oldest, new Date(history[0].created_at)) : null,
   }

@@ -105,6 +105,17 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
+const DemandForecastTooltip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px", color: "var(--text-primary)" }}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>{chartTooltipDate(label, payload)}</div>
+      <div style={{ color: "#0ea5e9", fontSize: 13 }}>Estimated orders: <strong>{Number(payload[0].value).toLocaleString()}</strong></div>
+      <div style={{ color: "var(--text-muted)", fontSize: 11, marginTop: 4 }}>Confidence: {payload[0].payload.confidence || "low"}</div>
+    </div>
+  );
+};
+
 // ─── Sub-filter pill group ─────────────────────────────────────────────────────
 function SubFilter({ value, onChange, options, disabled = false }) {
   return (
@@ -386,16 +397,27 @@ export default function Analytics() {
       // ─────────────────────────────────────
       // COMPUTE MOVING AVERAGE
       // ─────────────────────────────────────
-      const dailyHistory = analyticsDailyHistory(orderData, paymentData);
+      const historyPeriod = analyticsPeriod(range, customRange);
+      const dailyHistory = analyticsDailyHistory(orderData, paymentData, historyPeriod.start, historyPeriod.end);
+      const forecastHistory = range === "yearly"
+        ? [...dailyHistory.reduce((years, day) => {
+            const year = day.date.slice(0, 4);
+            const total = years.get(year) || { date: `${year}-01-01`, revenue: 0, orders: 0 };
+            total.revenue += day.revenue;
+            total.orders += day.orders;
+            years.set(year, total);
+            return years;
+          }, new Map()).values()]
+        : dailyHistory.slice(-365);
       const averageRevenue =
-        dailyHistory.length > 0
-          ? dailyHistory.reduce((sum, day) => sum + day.revenue, 0) /
-            dailyHistory.length
+        forecastHistory.length > 0
+          ? forecastHistory.reduce((sum, day) => sum + day.revenue, 0) /
+            forecastHistory.length
           : 0;
       const averageOrders =
-        dailyHistory.length > 0
-          ? dailyHistory.reduce((sum, day) => sum + day.orders, 0) /
-            dailyHistory.length
+        forecastHistory.length > 0
+          ? forecastHistory.reduce((sum, day) => sum + day.orders, 0) /
+            forecastHistory.length
           : 0;
 
       const today = new Date();
@@ -488,10 +510,10 @@ export default function Analytics() {
       // Reuse a recent result when the branch, range, history, and forecast
       // horizon are unchanged. This avoids charging a Gemini request each time
       // the Analytics page is opened.
-      const forecastVersion = `${dailyHistory.map((day) => `${day.date}:${day.revenue}:${day.orders}`).join("|")}_${futureForecast.map((item) => item.forecastDate).join("|")}`;
+      const forecastVersion = `${forecastHistory.map((day) => `${day.date}:${day.revenue}:${day.orders}`).join("|")}_${futureForecast.map((item) => item.forecastDate).join("|")}`;
       // v2 intentionally ignores prior cached labels from before the
       // resilient forecast response format was introduced.
-      const forecastCacheKey = `ai_forecast_v4_${selectedBranch}_${range}_${forecastVersion}`;
+      const forecastCacheKey = `ai_forecast_v5_${selectedBranch}_${range}_${forecastVersion}`;
       const cachedForecast = localStorage.getItem(forecastCacheKey);
       const cachedForecastTime = localStorage.getItem(`${forecastCacheKey}_time`);
       const SIX_HOURS = 6 * 60 * 60 * 1000;
@@ -522,7 +544,7 @@ export default function Analytics() {
 
       try {
         const aiForecast = await generateAiForecast({
-          history: dailyHistory,
+          history: forecastHistory,
           forecastDates: futureForecast.map((item) => item.forecastDate),
           branch: selectedBranch,
           range,
@@ -572,7 +594,7 @@ export default function Analytics() {
       setAiLoading(true);
 
       const analyticsVersion = `${orderData.length}-${expenseData.length}-${stats.totalRevenue || 0}-${stats.totalExpenses || 0}-${forecastData.map((item) => item.predicted).join(",")}`;
-      const cacheKey = `ai_insights_v2_${selectedBranch}_${range}_${analyticsVersion}`;
+      const cacheKey = `ai_insights_v4_${selectedBranch}_${range}_${analyticsVersion}`;
 
       const cached = localStorage.getItem(cacheKey);
 
@@ -708,18 +730,18 @@ Rules:
       setAiInsights([
         {
           title: "Revenue Trend",
-          description:
-            "Revenue performance remains stable based on the selected analytics range.",
+          description: "AI insight unavailable; actual totals are shown above.",
+          recommendation: "Option: Compare periods before changing prices or spending.",
         },
         {
           title: "Expense Monitoring",
-          description:
-            "Operational expenses should continue to be monitored to maintain profitability.",
+          description: "AI insight unavailable; recorded expenses are shown above.",
+          recommendation: "Option: Check unusual expenses before changing the budget.",
         },
         {
           title: "Forecast Observation",
-          description:
-            "Revenue forecasting indicates steady financial performance in upcoming periods.",
+          description: "AI insight unavailable; treat the forecast as an estimate.",
+          recommendation: "Option: Check live orders before changing staff coverage.",
         },
       ]);
     } finally {
@@ -1050,7 +1072,7 @@ Rules:
               </div>
               <h3 style={{ margin: 0 }}>Operational Performance</h3>
             </div>
-            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Service demand, customer retention, and branch productivity for the selected scope.</p>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Service leaders are ranked by recorded sales, with request counts shown for context; branch sales, staff completions, repeat customers, and turnaround are also summarized for this scope.</p>
           </div>
           <span style={{ fontSize: 12, fontWeight: 700, color: "#38bdf8", background: "color-mix(in srgb, #0ea5e9 14%, var(--bg-card))", borderRadius: 999, padding: "6px 10px" }}>Live operational summary</span>
         </div>
@@ -1206,6 +1228,36 @@ Rules:
           )}
         </div>
 
+        <div className="card analytics-demand-forecast" style={{ gridColumn: "1 / -1" }}>
+          <div className="card-header analytics-demand-forecast-header">
+            <div className="analytics-demand-forecast-title">
+              <span>Demand planning</span>
+              <h3>Forecast Laundry Order Demand</h3>
+            </div>
+            <p className="analytics-demand-forecast-description">
+              Estimated orders per period. Confidence is capped by historical volume and consistency.
+            </p>
+          </div>
+          {forecastLoading ? (
+            <div className="analytics-demand-forecast-loading">
+              <LoadingVisual label="Estimating order demand…" compact />
+            </div>
+          ) : forecastData.length ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={forecastData.map(point => ({ ...point, date: point.forecastDate && range !== 'yearly' ? dailyChartLabel(point.forecastDate) : point.date }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid, #f3f4f6)" vertical={false} />
+                <XAxis dataKey="date" minTickGap={24} tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                <YAxis allowDecimals={false} />
+                <Tooltip content={<DemandForecastTooltip />} />
+                <Legend />
+                <Bar dataKey="predictedOrders" name="Estimated orders" fill="#0ea5e9" radius={[6, 6, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p style={{ color: "var(--text-muted)" }}>No order forecast is available for this filter.</p>
+          )}
+        </div>
+
         {/* AI DSS */}
         <div
           className="card"
@@ -1224,7 +1276,7 @@ Rules:
               }}
             >
               <Lightbulb size={18} style={{ color: "#7c3aed" }} />
-              AI-Based DSS Insights
+              Decision Support Options
             </h3>
 
             <span
@@ -1237,7 +1289,7 @@ Rules:
                 fontWeight: 600,
               }}
             >
-              AI-Based Operational & Financial Recommendations
+              Optional actions with the signals behind them
             </span>
           </div>
 
@@ -1384,11 +1436,23 @@ Rules:
                         <div
                           style={{
                             fontSize: 13.5,
+                            color: "var(--text-primary)",
+                            lineHeight: 1.6,
+                            fontWeight: 600,
+                            marginBottom: 5,
+                          }}
+                        >
+                          {item.recommendation || "Option to consider: review the signal below and verify current records before acting."}
+                        </div>
+
+                        <div
+                          style={{
+                            fontSize: 13.5,
                             color: "var(--text-secondary)",
                             lineHeight: 1.6,
                           }}
                         >
-                          {item.description}
+                          <><strong>Signal:</strong> {item.description}</>
                         </div>
                       </div>
                     </div>

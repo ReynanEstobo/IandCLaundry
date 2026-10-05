@@ -178,30 +178,39 @@ export default function StaffDashboard() {
             <div>
               <span className="staff-dss-eyebrow"><Brain size={15} /> DSS overview</span>
               <h3>Decision Support</h3>
-              <p>Read-only forecast for {branch || 'your branch'}.</p>
+              <p>Planning signals for {branch || 'your branch'}. Check live orders before acting.</p>
             </div>
-            <span className="staff-dss-badge"><Zap size={12} /> AI-assisted</span>
+            <span className="staff-dss-badge"><Zap size={12} /> Planning support</span>
           </div>
 
           <div className="staff-dss-metrics">
             <div className="staff-dss-metric workload">
-              <span>Expected workload today</span>
+              <span>Workload signal</span>
               <strong>{branchForecast.workloadLevel}</strong>
               <small>{branchForecast.workloadSummary}</small>
+              <small className="staff-dss-option"><strong>Option:</strong> {branchForecast.workloadLevel === 'Limited data'
+                ? 'Keep planned coverage and use the live queue to guide today’s assignments.'
+                : 'Check live orders before shifting coverage.'}</small>
             </div>
             <div className="staff-dss-metric peak">
-              <span>Likely peak day</span>
+              <span>Peak-day signal</span>
               <strong>{branchForecast.peakDay}</strong>
-              <small>Plan your shift ahead</small>
+              <small className="staff-dss-evidence"><strong>Signal:</strong> {branchForecast.peakDay === 'Not enough data'
+                ? 'No reliable peak-day pattern in recent orders.'
+                : `${branchForecast.peakDayOrders} orders on this weekday in the last 30 days.`}</small>
+              <small className="staff-dss-option"><strong>Option:</strong> {branchForecast.peakDay === 'Not enough data'
+                ? 'Keep the usual roster; check live demand.'
+                : 'Review coverage for this day.'}</small>
             </div>
           </div>
 
           <div className="staff-dss-revenue">
             <span className="staff-dss-icon"><TrendingUp size={19} /></span>
             <div>
-              <span>Predicted revenue</span>
+              <span>30-day payment baseline</span>
               <strong>₱{branchForecast.nextMonthRevenue.toLocaleString()}</strong>
-              <small>Based on received payments in the last 30 days</small>
+              <small className="staff-dss-option"><strong>Option:</strong> Compare with expenses before budgeting.</small>
+              <small>Historical total, not cash on hand.</small>
             </div>
           </div>
 
@@ -218,14 +227,14 @@ export default function StaffDashboard() {
                     <strong>{item.name}</strong>
                     <span>{Number(item.current_stock)} {item.unit} remaining · Minimum: {Number(item.minimum_stock)} {item.unit}</span>
                     <span className="staff-dss-forecast">{inventoryRunOutLabel(item.forecastDaysLeft)}</span>
-                    <span className="staff-dss-reorder">Suggested reorder: ~{item.suggestedReorder} {item.unit}</span>
+                    <span className="staff-dss-reorder staff-dss-option">Option: Verify stock; ask your supervisor about ~{item.suggestedReorder} {item.unit}.</span>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
             <div className="staff-dss-ok">
-              <CheckCircle2 size={17} /> No low-stock items reported for your branch.
+              <CheckCircle2 size={17} /> No low-stock alert. Keep routine stock checks.
             </div>
           )}
         </aside>

@@ -1,4 +1,4 @@
-import { format } from 'date-fns'
+import { eachDayOfInterval, format, startOfDay } from 'date-fns'
 import { paymentTimestamp, recordedPaymentAmount } from './businessForecast.js'
 
 function uniqueOrders(orders = []) {
@@ -16,8 +16,12 @@ function uniqueOrders(orders = []) {
  * Demand is based on orders created, while revenue is based on every valid
  * payment collection. Installments therefore cannot inflate order volume.
  */
-export function analyticsDailyHistory(orders = [], payments = []) {
+export function analyticsDailyHistory(orders = [], payments = [], periodStart = null, periodEnd = null) {
   const totals = new Map()
+  if (periodStart && periodEnd && +new Date(periodStart) <= +new Date(periodEnd)) {
+    eachDayOfInterval({ start: startOfDay(new Date(periodStart)), end: startOfDay(new Date(periodEnd)) })
+      .forEach(date => totals.set(format(date, 'yyyy-MM-dd'), { date: format(date, 'yyyy-MM-dd'), revenue: 0, orders: 0 }))
+  }
   const dayFor = date => {
     const key = format(new Date(date), 'yyyy-MM-dd')
     const current = totals.get(key) || { date: key, revenue: 0, orders: 0 }

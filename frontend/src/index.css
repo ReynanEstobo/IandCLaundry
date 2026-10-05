@@ -9002,3 +9002,88 @@ input, select, textarea, button { max-width: 100%; }
 [data-theme="dark"] .status-text.status-folding { color: #ddd6fe; }
 [data-theme="dark"] .status-text.status-ready { color: #99f6e4; }
 [data-theme="dark"] .status-text.status-released { color: #e2e8f0; }
+
+/* Forecast and DSS decision cues */
+.analytics-demand-forecast {
+  overflow: hidden;
+  border-color: color-mix(in srgb, #0ea5e9 28%, var(--border));
+  background: linear-gradient(145deg, color-mix(in srgb, #0ea5e9 4%, var(--bg-card)), var(--bg-card) 52%);
+}
+.analytics-demand-forecast-header {
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+.analytics-demand-forecast-title { min-width: 0; }
+.analytics-demand-forecast-title > span {
+  display: block;
+  margin-bottom: 4px;
+  color: #0284c7;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.analytics-demand-forecast-title h3 { margin: 0; color: var(--text-primary); }
+.analytics-demand-forecast-description {
+  max-width: 390px;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, #0ea5e9 20%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, #0ea5e9 7%, var(--bg-card));
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.analytics-demand-forecast-loading { min-height: 260px; display: grid; place-items: center; }
+.analytics-demand-forecast .recharts-cartesian-axis-tick-value { fill: var(--text-muted); }
+.staff-dss-evidence {
+  display: block;
+  margin-top: 3px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, currentColor 16%, transparent);
+  opacity: .9 !important;
+}
+.staff-dss-option {
+  display: block;
+  width: 100%;
+  margin-top: 5px !important;
+  padding: 8px 9px;
+  border: 1px solid color-mix(in srgb, currentColor 17%, transparent);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .56);
+  color: inherit;
+  font-size: 11px !important;
+  font-weight: 550;
+  line-height: 1.45 !important;
+  opacity: 1 !important;
+  overflow-wrap: anywhere;
+}
+.staff-dss-option strong { font-weight: 800; }
+
+[data-theme="dark"] .analytics-demand-forecast {
+  border-color: color-mix(in srgb, #38bdf8 32%, var(--border));
+  background: linear-gradient(145deg, color-mix(in srgb, #0c4a6e 18%, var(--bg-card)), var(--bg-card) 58%);
+}
+[data-theme="dark"] .analytics-demand-forecast-title > span { color: #7dd3fc; }
+[data-theme="dark"] .analytics-demand-forecast-description {
+  border-color: rgba(56, 189, 248, .25);
+  background: rgba(14, 116, 144, .16);
+  color: #cbd5e1;
+}
+[data-theme="dark"] .staff-dss-evidence {
+  border-color: rgba(203, 213, 225, .2);
+  color: #dbeafe;
+}
+[data-theme="dark"] .staff-dss-option {
+  border-color: rgba(203, 213, 225, .2);
+  background: rgba(15, 23, 42, .3);
+  color: #f1f5f9;
+}
+
+@media (max-width: 640px) {
+  .analytics-demand-forecast-header { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .analytics-demand-forecast-description { max-width: none; width: 100%; }
+  .analytics-demand-forecast-loading { min-height: 220px; }
+}

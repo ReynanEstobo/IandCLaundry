@@ -307,15 +307,14 @@ export default function Dashboard() {
           branch: "All branches",
           range,
         });
-        const labels = ["Operational Recommendation", "Inventory Recommendation", "Revenue Improvement Idea"];
         const normalizedInsights = (Array.isArray(dssResult.insights) ? dssResult.insights : [])
-          .map((insight, index) => `${labels[index] || insight.title || "Recommendation"}: ${insight.description || "No recommendation is available."}`)
+          .map((insight) => `${insight.title || "Decision support"}: ${(insight.recommendation || "Review the signal before acting.").replace(/^Option(?:\s+to\s+consider)?:\s*/i, "")} Signal: ${insight.description || "No supporting signal is available."}`)
           .join("\n");
         setAiInsights(normalizedInsights || "Operational Recommendation: No decision-support recommendation is available for the current data.");
         setCurrentAIModel(dssResult.model || "AI decision support");
       } catch (error) {
         console.error("AI error:", error);
-        setAiInsights("Operational Recommendation: The recommendation service could not be reached. Operational dashboard data remains available.");
+        setAiInsights("Operational Recommendation: AI insight unavailable. Check live orders and stock before acting. Signal: dashboard data is still available.");
         setCurrentAIModel("Service unavailable");
       } finally {
         setAiLoading(false);
@@ -374,6 +373,7 @@ export default function Dashboard() {
         type: "critical",
         icon: AlertTriangle,
         title: "Out of Stock!",
+        items: outOfStock.map((i) => i.name),
         message: `Buy ${outOfStock.map((i) => i.name).join(", ")} immediately — you have zero stock remaining.`,
         action: "Go to Inventory",
         link: "/dashboard/inventory",
@@ -388,7 +388,7 @@ export default function Dashboard() {
           icon: ShoppingCart,
           title: "Restock Needed",
           message: `Running low on ${needRestock.map((i) => `${i.name} (${i.current_stock} ${i.unit} left)`).join(", ")}. Consider restocking soon.`,
-          action: "Restock Now",
+          action: "Review Inventory",
           link: "/dashboard/inventory",
         });
       }
@@ -588,6 +588,7 @@ export default function Dashboard() {
               <Lightbulb size={18} style={{ color: "#f59e0b" }} />
               Suggestions & Alerts
             </h3>
+            <span style={{ color: "var(--text-secondary)", fontSize: 12 }}>Suggested next steps — verify current records before acting.</span>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {suggestions.map((tip, idx) => {
@@ -637,7 +638,9 @@ export default function Dashboard() {
                         lineHeight: 1.5,
                       }}
                     >
-                      {tip.message}
+                      {tip.items?.length
+                        ? `Option: verify the physical count for ${tip.items.join(", ")}; if confirmed, consider requesting replenishment before scheduling work that needs these items.`
+                        : tip.message}
                     </div>
                   </div>
                   {tip.action && tip.link && (
@@ -671,23 +674,31 @@ export default function Dashboard() {
             <div>
               <span className="staff-dss-eyebrow"><Brain size={15} /> DSS overview</span>
               <h3>Decision Support</h3>
-              <p>Read-only forecast across all branches.</p>
+              <p>Planning signals only. Check live orders and stock before acting.</p>
             </div>
             <span className="staff-dss-badge">
-              <Zap size={12} /> AI-assisted
+              <Zap size={12} /> Planning support
             </span>
           </div>
           <div className="dashboard-overview-body admin-dss-body">
             <div className="staff-dss-metrics">
               <div className="staff-dss-metric workload">
-                <span>Expected workload today</span>
+                <span>Workload signal</span>
                 <strong>{forecasts.workloadLevel}</strong>
                 <small>{forecasts.workloadSummary}</small>
+                <small className="staff-dss-option"><strong>Option:</strong> {forecasts.workloadLevel === "Limited data"
+                  ? "Keep planned coverage and use the live queue to guide today’s assignments."
+                  : "Check the live queue before shifting coverage."}</small>
               </div>
               <div className="staff-dss-metric peak">
-                <span>Likely peak day</span>
+                <span>Peak-day signal</span>
                 <strong>{forecasts.peakDay}</strong>
-                <small>Plan staffing ahead</small>
+                <small className="staff-dss-evidence"><strong>Signal:</strong> {forecasts.peakDay === "Not enough data"
+                  ? "No reliable peak-day pattern in recent orders."
+                  : `${forecasts.peakDayOrders} orders on this weekday in the last 30 days.`}</small>
+                <small className="staff-dss-option"><strong>Option:</strong> {forecasts.peakDay === "Not enough data"
+                  ? "Keep the usual roster; check live demand."
+                  : "Review coverage for this day."}</small>
               </div>
             </div>
 
@@ -699,11 +710,12 @@ export default function Dashboard() {
                 <TrendingUp size={20} />
               </div>
               <div>
-                <span>Predicted revenue</span>
+                <span>30-day payment baseline</span>
                 <strong>
                   ₱{forecasts.predictedMonthlyRevenue.toLocaleString()}
                 </strong>
-                <small>Based on received payments in the last 30 days</small>
+                <small className="staff-dss-option"><strong>Option:</strong> Compare with expenses before budgeting.</small>
+                <small>Historical total, not cash on hand.</small>
                 {forecasts.revenueTrend !== 0 && (
                   <span
                     className={`forecast-trend ${forecasts.revenueTrend > 0 ? "up" : "down"}`}
@@ -730,8 +742,8 @@ export default function Dashboard() {
                       <span>
                         {inventoryRunOutLabel(activeRestockAlert.daysLeft)}
                       </span>
-                      <span className="staff-dss-forecast">
-                        Suggested reorder: ~{activeRestockAlert.suggestedReorder} {activeRestockAlert.unit}
+                      <span className="staff-dss-forecast staff-dss-option">
+                        Option: Verify stock; consider ~{activeRestockAlert.suggestedReorder} {activeRestockAlert.unit}.
                       </span>
                     </div>
                     <button
@@ -740,7 +752,7 @@ export default function Dashboard() {
                       onClick={() => navigate("/dashboard/inventory")}
                       aria-label={`Restock ${activeRestockAlert.name}`}
                     >
-                      Restock <ArrowRight size={13} />
+                      Review stock <ArrowRight size={13} />
                     </button>
                   </div>
                 </div>
@@ -777,7 +789,7 @@ export default function Dashboard() {
           <header className="dashboard-ai-header">
             <div className="dashboard-ai-heading">
               <span className="dashboard-ai-brain"><Brain size={20} /></span>
-              <div><h3>AI Decision Support</h3><p>Recommendations based on the current operational snapshot</p></div>
+              <div><h3>AI Decision Support</h3><p>Short suggestions from current data</p></div>
             </div>
             <span className="dashboard-ai-model">{currentAIModel || "Preparing analysis"}</span>
           </header>
@@ -801,9 +813,7 @@ export default function Dashboard() {
             // 🔥 YOUR EXISTING AI CONTENT
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {aiInsights
-                .split(
-                  /(?=Operational Recommendation:|Inventory Recommendation:|Revenue Improvement Idea:)/,
-                )
+                .split("\n")
                 .map((line, i) => {
                   if (!line.trim()) return null;
 
@@ -812,15 +822,15 @@ export default function Dashboard() {
                   let icon = Lightbulb;
                   let tone = "general";
 
-                  if (clean.toLowerCase().includes("operational")) {
+                  if (clean.toLowerCase().includes("operational") || clean.toLowerCase().includes("inventory")) {
                     icon = Zap;
                     tone = "operational";
-                  } else if (clean.toLowerCase().includes("inventory")) {
-                    icon = Package;
-                    tone = "inventory";
-                  } else if (clean.toLowerCase().includes("revenue")) {
+                  } else if (clean.toLowerCase().includes("revenue") || clean.toLowerCase().includes("financial") || clean.toLowerCase().includes("payment")) {
                     icon = TrendingUp;
                     tone = "revenue";
+                  } else if (clean.toLowerCase().includes("demand") || clean.toLowerCase().includes("service")) {
+                    icon = Package;
+                    tone = "inventory";
                   }
 
                   const Icon = icon;
@@ -855,7 +865,10 @@ export default function Dashboard() {
                           {clean.split(":")[0]}
                         </div>
                         <div className="dashboard-ai-insight-copy" style={{ fontSize: 13.5 }}>
-                          {clean.split(":").slice(1).join(":")}
+                          <strong>Option:</strong> {clean.split(":").slice(1).join(":").split(" Signal:")[0]}
+                        </div>
+                        <div className="dashboard-ai-insight-copy" style={{ fontSize: 12.5, marginTop: 5 }}>
+                          <strong>Signal:</strong> {clean.includes(" Signal:") ? clean.split(" Signal:").slice(1).join(" Signal:") : "Check the current dashboard data before acting."}
                         </div>
                       </div>
                     </div>
