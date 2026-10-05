@@ -710,10 +710,11 @@ export default function Dashboard() {
                 <TrendingUp size={20} />
               </div>
               <div>
-                <span>30-day payment baseline</span>
+                <span>Revenue forecast · next 30 days</span>
                 <strong>
                   ₱{forecasts.predictedMonthlyRevenue.toLocaleString()}
                 </strong>
+                <small>Simple estimate based on recent 30-day collections; not guaranteed income.</small>
                 <small className="staff-dss-option"><strong>Option:</strong> Compare with expenses before budgeting.</small>
                 <small>Historical total, not cash on hand.</small>
                 {forecasts.revenueTrend !== 0 && (
