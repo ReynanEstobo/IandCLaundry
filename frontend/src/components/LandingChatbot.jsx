@@ -41,7 +41,7 @@ export default function LandingChatbot({ settings, services = [], onServicesChan
   const input = useRef(null);
   const launcher = useRef(null);
   const log = useRef(null);
-  const topicDrag = useRef({ active: false, moved: false, startX: 0, startScrollLeft: 0, suppressClick: false });
+  const topicDrag = useRef({ active: false, moved: false, pointerId: null, startX: 0, startScrollLeft: 0, suppressClick: false });
   useEffect(() => { if (open) input.current?.focus(); }, [open]);
   useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [messages, open]);
   useEffect(() => () => window.clearTimeout(replyTimer.current), []);
@@ -82,14 +82,17 @@ export default function LandingChatbot({ settings, services = [], onServicesChan
     if (event.pointerType !== 'mouse' || event.button !== 0) return;
     const rail = event.currentTarget;
     if (rail.scrollWidth <= rail.clientWidth) return;
-    topicDrag.current = { ...topicDrag.current, active: true, moved: false, startX: event.clientX, startScrollLeft: rail.scrollLeft };
-    rail.setPointerCapture?.(event.pointerId);
+    // Do not capture the pointer yet. Capturing on pointer-down retargets a
+    // normal desktop click from the topic button to this scrolling rail, so
+    // the button's onClick never runs. Capture only after an actual drag.
+    topicDrag.current = { ...topicDrag.current, active: true, moved: false, pointerId: event.pointerId, startX: event.clientX, startScrollLeft: rail.scrollLeft };
   };
   const moveTopicDrag = event => {
     const drag = topicDrag.current;
     if (!drag.active) return;
     const distance = event.clientX - drag.startX;
     if (Math.abs(distance) <= 3 && !drag.moved) return;
+    if (!drag.moved) event.currentTarget.setPointerCapture?.(event.pointerId);
     drag.moved = true;
     event.currentTarget.classList.add('is-mouse-dragging');
     event.currentTarget.scrollLeft = drag.startScrollLeft - distance;
@@ -99,7 +102,10 @@ export default function LandingChatbot({ settings, services = [], onServicesChan
     const drag = topicDrag.current;
     if (!drag.active) return;
     event.currentTarget.classList.remove('is-mouse-dragging');
-    topicDrag.current = { ...drag, active: false, suppressClick: drag.moved };
+    if (event.currentTarget.hasPointerCapture?.(drag.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(drag.pointerId);
+    }
+    topicDrag.current = { ...drag, active: false, pointerId: null, suppressClick: drag.moved };
     if (drag.moved) window.setTimeout(() => { topicDrag.current.suppressClick = false; }, 0);
   };
   return <div className="laundry-chat">

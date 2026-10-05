@@ -42,7 +42,7 @@ test('Recycle Bin accounts cannot log in, recover passwords, or reuse sessions',
     const requestResult = await requestForgotPasswordOtp({ identifier })
     assert.deepEqual(requestResult, {
       success: true,
-      cooldownSeconds: 300,
+      cooldownSeconds: 180,
       message: 'If an active account has a recovery email, a verification code has been sent.',
     })
     await assert.rejects(

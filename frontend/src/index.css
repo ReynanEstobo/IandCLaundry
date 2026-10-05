@@ -550,6 +550,8 @@ textarea {
 .account-security-submit:disabled { cursor: wait; opacity: .7; }
 .login-forgot-password { border: 0; background: transparent; color: #1688be; font-size: 13px; font-weight: 700; cursor: pointer; text-decoration: underline; }
 .login-forgot-password:hover { color: #0b6f9f; }
+.forgot-password-change-identifier { width: fit-content; margin: -2px auto 4px; }
+.forgot-password-change-identifier:disabled { cursor: wait; opacity: .6; }
 @media (max-width: 640px) {
   .account-security-page { padding-top: 0; }
   .account-security-card { padding: 20px; }
