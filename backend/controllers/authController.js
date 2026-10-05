@@ -51,14 +51,22 @@ async function findActiveAccount(identifier, includeContactEmail = false) {
   const columns = value.includes('@')
     ? (includeContactEmail ? ['email', 'contact_email'] : ['email'])
     : [/^(?:HC|IC)-(?:STAFF|ADMIN)-/i.test(value) ? 'staff_code' : 'username']
+  const matches = new Map()
   for (const column of columns) {
     const { data, error } = await database.from('staff')
       .select('id, auth_id, email, contact_email, branch_id').is('deleted_at', null)
-      .ilike(column, literalPattern(value)).maybeSingle()
+      .ilike(column, literalPattern(value)).limit(2)
     if (error) throw new Error('Unable to look up account')
-    if (data) return data
+    for (const account of data || []) matches.set(account.id, account)
+    if (matches.size > 1) {
+      // Never select an arbitrary account when legacy rows share an email.
+      // Public recovery will return its normal generic response, while an
+      // administrator can correct the duplicated staff contact information.
+      console.warn('Account lookup found multiple active matches for one identifier')
+      return null
+    }
   }
-  return null
+  return matches.values().next().value || null
 }
 
 export async function login({ identifier, email, password }) {
