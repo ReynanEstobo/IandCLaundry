@@ -190,7 +190,21 @@ async function verifyPasswordOtp(identity, code) {
 }
 
 async function findResetAccount(identifier) {
-  const data = await findActiveAccount(identifier, true)
+  const username = String(identifier || '').trim()
+  if (!username) return null
+  const { data: matches, error } = await database.from('staff')
+    .select('id, auth_id, email, contact_email, branch_id')
+    .is('deleted_at', null)
+    .ilike('username', literalPattern(username))
+    .limit(2)
+  if (error) throw new Error('Unable to look up account')
+  // Username is the sole public recovery identifier. Do not fall back to a
+  // shared contact email or account ID, and never choose among duplicates.
+  if (matches?.length > 1) {
+    console.warn('Password recovery found multiple active accounts for one username')
+    return null
+  }
+  const data = matches?.[0] || null
   if (!data?.auth_id) return null
   const email = data.contact_email || (isInternalAccountEmail(data.email) ? null : data.email)
   if (!email) throw contactEmailRequired(true)

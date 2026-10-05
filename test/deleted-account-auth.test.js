@@ -71,12 +71,13 @@ test('Recycle Bin accounts cannot log in, recover passwords, or reuse sessions',
   assert.equal(identity.branchId, row.branch_id)
 })
 
-test('forgot-password email lookup does not fail or select an arbitrary duplicate account', async t => {
+test('forgot-password lookup accepts usernames only and safely rejects duplicate usernames', async t => {
   const rows = [
-    { id: 'staff-1', auth_id: 'auth-1', email: 'staff-1@accounts.iclaundry.local', contact_email: 'shared@gmail.com', deleted_at: null },
-    { id: 'staff-2', auth_id: 'auth-2', email: 'staff-2@accounts.iclaundry.local', contact_email: 'shared@gmail.com', deleted_at: null },
+    { id: 'staff-1', auth_id: 'auth-1', username: 'shared.user', email: 'staff-1@accounts.iclaundry.local', contact_email: 'one@gmail.com', deleted_at: null },
+    { id: 'staff-2', auth_id: 'auth-2', username: 'shared.user', email: 'staff-2@accounts.iclaundry.local', contact_email: 'two@gmail.com', deleted_at: null },
   ]
   const originalFrom = database.from
+  const searchedColumns = []
   t.after(() => { database.from = originalFrom })
   database.from = table => {
     assert.equal(table, 'staff', 'Ambiguous recovery must not create an OTP challenge')
@@ -85,6 +86,7 @@ test('forgot-password email lookup does not fail or select an arbitrary duplicat
       select() { return this },
       is(key, value) { selected = selected.filter(row => (row[key] ?? null) === value); return this },
       ilike(key, value) {
+        searchedColumns.push(key)
         const literal = value.replace(/\\([\\%_])/g, '$1').toLowerCase()
         selected = selected.filter(row => String(row[key] || '').toLowerCase() === literal)
         return this
@@ -93,10 +95,11 @@ test('forgot-password email lookup does not fail or select an arbitrary duplicat
     }
   }
 
-  const result = await requestForgotPasswordOtp({ identifier: 'SHARED@gmail.com' })
+  const result = await requestForgotPasswordOtp({ identifier: 'shared.user' })
   assert.deepEqual(result, {
     success: true,
     cooldownSeconds: 180,
     message: 'If an active account has a recovery email, a verification code has been sent.',
   })
+  assert.deepEqual(searchedColumns, ['username'])
 })

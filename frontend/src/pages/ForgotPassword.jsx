@@ -40,7 +40,7 @@ export default function ForgotPassword() {
   const verified = otpStatus === 'valid'
 
   async function requestCode() {
-    if (!identifier.trim()) return toast.error('Enter your Staff ID, username, or email.')
+    if (!identifier.trim()) return toast.error('Enter your username.')
     setLoading(true)
     try {
       const result = await apiFetch('/api/auth/forgot-password/otp', { method: 'POST', body: JSON.stringify({ identifier }) })
@@ -103,14 +103,14 @@ export default function ForgotPassword() {
         <div className="login-card-header"><div className="login-card-icon"><ShieldCheck size={24} /></div><div><h2>Reset your password</h2><p>Verify your contact email before setting a new password.</p></div></div>
         <form onSubmit={submit} className="login-form">
           <div className="login-field">
-            <label>Account ID, username, or email</label>
-            <div className="login-input-wrap"><KeyRound size={15} className="login-input-icon" /><input ref={identifierInput} className="login-input" value={identifier} disabled={codeRequested || loading} onChange={event => setIdentifier(event.target.value)} placeholder="e.g. IC-STAFF-AB12CD34" required /></div>
+            <label htmlFor="forgot-password-identifier">Username</label>
+            <div className="login-input-wrap"><KeyRound size={15} className="login-input-icon" /><input id="forgot-password-identifier" ref={identifierInput} className="login-input" value={identifier} disabled={codeRequested || loading} onChange={event => setIdentifier(event.target.value)} placeholder="Enter your username" required /></div>
           </div>
           <LoadingButton type="button" className="login-submit-btn" disabled={loading || cooldown.remaining > 0} onClick={requestCode} loading={loading} loadingLabel="Sending...">{codeRequested ? cooldown.label : <><MailCheck size={16} /> Send verification code</>}</LoadingButton>
           {cooldown.remaining > 0 && <p className="otp-cooldown-notice" role="status">{cooldown.message}</p>}
           {codeRequested && <>
             <p className="otp-verification-checking" role="status">If this account has a recovery email, check its inbox for the code. Otherwise, contact an administrator.</p>
-            <button type="button" className="login-forgot-password forgot-password-change-identifier" disabled={loading} onClick={changeIdentifier}>Use a different account or email</button>
+            <button type="button" className="login-forgot-password forgot-password-change-identifier" disabled={loading} onClick={changeIdentifier}>Use a different username</button>
             <div className="login-field"><label>Email verification code</label><div className="login-input-wrap"><KeyRound size={15} className="login-input-icon" /><input className={`login-input otp-verification-input ${otpStatus}`} inputMode="numeric" maxLength={6} disabled={loading || verified || otpStatus === 'checking'} value={otp} onChange={event => updateOtp(event.target.value)} placeholder="6-digit code" aria-invalid={otpStatus === 'invalid'} required /></div>{otpStatus === 'checking' && <p className="otp-verification-checking" role="status">Checking OTP…</p>}{otpMessage && <p className="otp-verification-message" role="alert">{otpMessage}</p>}</div>
             {verified && <div className="otp-verification-success" role="status">OTP verified. You can now set a new password.</div>}
             <PasswordInput label="New password" value={password} onChange={setPassword} visible={showPassword} onToggle={() => setShowPassword(value => !value)} disabled={locked} />
