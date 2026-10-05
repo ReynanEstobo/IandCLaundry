@@ -2076,6 +2076,300 @@ textarea.form-control {
   cursor: not-allowed;
 }
 
+/* Keep the password recovery flow inside one viewport. */
+.forgot-password-page {
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  background: #f8fafc;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(6px, 1.8vh, 20px);
+}
+.forgot-password-shell {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.92fr) minmax(440px, 1.08fr);
+  grid-template-rows: minmax(0, 1fr);
+  width: min(100%, 1080px);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid #dbe5ec;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 35, 52, 0.12), 0 2px 8px rgba(15, 35, 52, 0.04);
+}
+.forgot-password-brand {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 32px;
+  padding: clamp(32px, 5vw, 58px);
+  color: #ffffff;
+  background: linear-gradient(150deg, #0c577f 0%, #087eaa 52%, #22a7d4 100%);
+  position: relative;
+  isolation: isolate;
+}
+.forgot-password-brand::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  width: 380px;
+  height: 380px;
+  right: -190px;
+  bottom: -215px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 50%;
+  box-shadow: 0 0 0 42px rgba(255,255,255,.045), 0 0 0 90px rgba(255,255,255,.035);
+}
+.forgot-password-brand-heading {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  font-size: 18px;
+  font-weight: 750;
+  letter-spacing: -.02em;
+}
+.forgot-password-brand-heading img {
+  display: block;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  border-radius: 13px;
+  background: #ffffff;
+  padding: 4px;
+}
+.forgot-password-brand-copy { max-width: 380px; margin: auto 0; }
+.forgot-password-eyebrow {
+  display: inline-block;
+  margin-bottom: 14px;
+  color: #bceeff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .15em;
+}
+.forgot-password-brand-copy h1 {
+  max-width: 340px;
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(30px, 3.4vw, 42px);
+  line-height: 1.12;
+  letter-spacing: -.045em;
+}
+.forgot-password-brand-copy p {
+  max-width: 360px;
+  margin: 16px 0 0;
+  color: rgba(239, 250, 255, .82);
+  font-size: 15px;
+  line-height: 1.65;
+}
+.forgot-password-steps {
+  display: grid;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.forgot-password-steps li {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  color: rgba(235, 248, 255, .7);
+}
+.forgot-password-step-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.24);
+  border-radius: 12px;
+  background: rgba(7, 49, 73, .18);
+}
+.forgot-password-steps li.active .forgot-password-step-icon {
+  color: #075d82;
+  background: #ffffff;
+  border-color: #ffffff;
+}
+.forgot-password-steps strong,
+.forgot-password-steps small { display: block; }
+.forgot-password-steps strong { color: #ffffff; font-size: 14px; font-weight: 700; }
+.forgot-password-steps small { margin-top: 3px; color: rgba(235,248,255,.76); font-size: 12px; line-height: 1.4; }
+.forgot-password-brand-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  color: rgba(239,250,255,.78);
+  font-size: 12px;
+}
+.forgot-password-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  padding: clamp(22px, 3.5vw, 42px);
+  background: #f8fafc;
+}
+.forgot-password-page .login-form-wrapper {
+  width: 100%;
+  max-height: 100%;
+  max-width: 520px;
+}
+.forgot-password-page .login-card-enhanced {
+  width: 100%;
+  max-height: 100%;
+  padding: clamp(24px, 3.2vh, 34px) clamp(24px, 3.2vw, 34px);
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+}
+.forgot-password-page .login-card-header {
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.forgot-password-page .login-card-header h2 {
+  margin-bottom: 5px;
+  font-size: 22px;
+  line-height: 1.25;
+}
+.forgot-password-page .login-card-header p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.forgot-password-page .login-form {
+  gap: 13px;
+}
+.forgot-password-account-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid #dce8ef;
+  border-radius: 10px;
+  background: #f7fafc;
+  color: #64748b;
+  font-size: 13px;
+}
+.forgot-password-account-summary strong {
+  color: #18384a;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.forgot-password-page .login-field label {
+  font-size: 14px;
+}
+.forgot-password-page .login-submit-btn.forgot-password-action {
+  min-height: 48px;
+  margin-top: 3px;
+}
+.forgot-password-page .login-submit-btn.forgot-password-action:disabled {
+  background: #4b8198;
+  color: #ffffff;
+  box-shadow: none;
+  opacity: 1;
+}
+.forgot-password-status {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid #c9e8f5;
+  border-radius: 10px;
+  background: #f0f9fd;
+  color: #315e73;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.forgot-password-page .forgot-password-change-identifier {
+  align-self: center;
+  margin: 0 0 2px;
+  padding: 5px 8px;
+  font-size: 14px;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.forgot-password-page .login-card-footer {
+  margin-top: 22px;
+  padding-top: 18px;
+}
+.forgot-password-verified {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 13px;
+  font-size: 13px;
+}
+.forgot-password-verified strong { overflow-wrap: anywhere; }
+@media (max-width: 820px) {
+  .forgot-password-page { display: block; padding: 0; }
+  .forgot-password-shell {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    border: 0;
+    border-radius: 0;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .forgot-password-brand {
+    gap: 8px;
+    padding: 12px clamp(16px, 5vw, 30px);
+  }
+  .forgot-password-brand-heading img { width: 32px; height: 32px; }
+  .forgot-password-brand-copy { display: none; }
+  .forgot-password-steps { display: none; }
+  .forgot-password-brand-note { display: none; }
+  .forgot-password-panel { min-height: 0; padding: 12px clamp(14px, 4vw, 28px); overflow: hidden; }
+  .forgot-password-page .login-form-wrapper { max-width: 520px; max-height: 100%; }
+  .forgot-password-page .login-card-enhanced { padding: 20px clamp(18px, 5vw, 30px); }
+  .forgot-password-page .login-card-header { margin-bottom: 16px; }
+  .forgot-password-page .login-card-header h2 { font-size: 20px; }
+  .forgot-password-page .login-card-header p { font-size: 13px; }
+  .forgot-password-page .login-form { gap: 9px; }
+  .forgot-password-page .login-card-footer { margin-top: 12px; padding-top: 10px; }
+}
+@media (max-width: 520px) {
+  .forgot-password-brand { padding: 10px 16px; }
+  .forgot-password-brand-heading { font-size: 16px; }
+  .forgot-password-panel { padding: 8px 12px; }
+  .forgot-password-page .login-card-enhanced { padding: 17px 16px; border-radius: 14px; }
+  .forgot-password-page .login-card-icon { width: 40px; height: 40px; }
+  .forgot-password-page .login-card-header { gap: 10px; margin-bottom: 12px; }
+  .forgot-password-page .login-field label { margin-bottom: 4px; font-size: 13px; }
+  .forgot-password-page .login-input { min-height: 42px; padding-top: 9px; padding-bottom: 9px; }
+  .forgot-password-page .login-submit-btn.forgot-password-action { min-height: 42px; padding: 9px 12px; }
+  .forgot-password-status { padding: 8px 10px; font-size: 12px; }
+  .forgot-password-account-summary { padding: 8px 10px; font-size: 12px; }
+  .forgot-password-account-summary strong { font-size: 13px; }
+  .forgot-password-page .forgot-password-change-identifier { padding: 2px; font-size: 12px; }
+  .forgot-password-page .login-card-footer { margin-top: 8px; padding-top: 8px; }
+}
+@media (max-height: 700px) {
+  .forgot-password-page { padding: 4px; }
+  .forgot-password-shell { min-height: 0; }
+  .forgot-password-page .login-card-enhanced { padding-top: 18px; padding-bottom: 18px; }
+  .forgot-password-page .login-card-header { margin-bottom: 12px; }
+  .forgot-password-page .login-form { gap: 8px; }
+  .forgot-password-page .login-card-header p { font-size: 12px; }
+  .forgot-password-account-summary { padding: 8px 10px; }
+  .forgot-password-status { padding: 8px 10px; font-size: 12px; }
+  .forgot-password-page .login-submit-btn.forgot-password-action { min-height: 42px; }
+  .forgot-password-page .login-card-footer { margin-top: 10px; padding-top: 8px; }
+}
+@media (max-width: 820px) and (max-height: 620px) {
+  .forgot-password-brand { padding-top: 7px; padding-bottom: 7px; }
+  .forgot-password-panel { padding-top: 6px; padding-bottom: 6px; }
+  .forgot-password-page .login-card-enhanced { padding-top: 12px; padding-bottom: 12px; }
+  .forgot-password-page .login-card-header { margin-bottom: 8px; }
+  .forgot-password-page .login-card-footer { margin-top: 6px; padding-top: 6px; }
+}
+@media (min-width: 821px) and (max-height: 700px) {
+  .forgot-password-brand { padding-top: 22px; padding-bottom: 22px; }
+}
+
 /* Spinner */
 .login-spinner {
   width: 16px;
