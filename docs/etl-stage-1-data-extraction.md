@@ -24,13 +24,21 @@ Before a run, compare the selected tables and columns in Section 2 with the depl
 
 ### Extraction method
 
-- **Technology:** SQL `SELECT` statements over an authorized PostgreSQL connection. The job runner/client must use a read-only identity; configure and record the deployed runner before scheduling production runs.
 - **Mode:** Full-history extraction of all selected rows on each run. No incremental cursor or watermark is used. This allows a later run to include historical corrections and late-entered payments.
 - **Consistency:** Read all selected tables in one read-only transaction using PostgreSQL `REPEATABLE READ` isolation so the extracts share one database snapshot. Record when the first source read establishes the snapshot. Do not join source transaction tables when producing the raw datasets.
 - **Output:** Produce one raw dataset per selected source table, plus a manifest and validation results. Preserve source values, names, data types, and NULLs. Record the physical serialization format and its NULL/quoting rules in the manifest.
 - **Filtering:** Extract cancelled orders, soft-deleted records, and rows with nullable references or dates. Do not apply business filters or alter source values in this stage.
-- **Schedule:** Run daily at **01:00 Asia/Manila (UTC+08:00)**. If the scheduler uses UTC, the equivalent cron expression is `0 17 * * *`. Confirm the deployed scheduler's timezone and run history; the schedule is not active until configured.
+- **Schedule:** Supabase Cron / `pg_cron` is the selected scheduler. Run daily at **01:00 Asia/Manila (UTC+08:00)**. If configured for UTC, use `0 17 * * *`. Verify the scheduler timezone and job configuration before enabling the schedule.
 - **Extraction range:** Include all available history through the transaction snapshot. Date cutoffs, local business dates, exclusions, and reporting calculations are handled by Transformation.
+
+### Extraction technology
+
+- PostgreSQL / Supabase
+- Supabase Cron / `pg_cron` for scheduled orchestration
+- SQL `SELECT` queries and PostgreSQL transaction-local staging tables
+- Reporting summary table: `analytics.daily_branch_summary` is the planned downstream target; it is outside this extraction stage
+
+The scheduled job is identified as `ic_laundry_daily_reports` and invokes the planned SQL refresh function `analytics.refresh_daily_reports()`. The scheduler, function, staging tables, and reporting target must be verified in the deployed database before the pipeline is treated as operational.
 
 ### Extraction scope
 
