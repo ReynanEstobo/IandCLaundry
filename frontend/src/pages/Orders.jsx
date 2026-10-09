@@ -27,6 +27,7 @@ import { InlineSkeleton, PageError, PageLoader, TableSkeleton } from "../compone
 import LoadingButton from "../components/LoadingButton";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { compareOrdersForList } from "../utils/orderListPriority";
+import { filterOrders } from "../utils/filterOrders";
 import { isValidPhilippineMobile } from "../utils/validation";
 import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
 import useActiveBranches from "../hooks/useActiveBranches";
@@ -960,19 +961,9 @@ export default function Orders() {
     setViewMode(mode);
   }
 
-  const source = searchInput ? allOrders : orders;
-
-  const filtered = source
-    .filter((o) => {
-      if (!searchInput) return true;
-
-      const q = searchInput.toLowerCase();
-
-      return (
-        o.order_number?.toLowerCase().includes(q) ||
-        o.customers?.name?.toLowerCase().includes(q)
-      );
-    })
+  const hasSearch = Boolean(searchInput.trim());
+  const source = hasSearch ? allOrders : orders;
+  const filtered = filterOrders(source, { status: filter, searchTerm: searchInput })
     .sort(compareOrdersForList);
 
   if (loading) return <PageLoader label="Loading orders…" />;
@@ -1385,7 +1376,7 @@ export default function Orders() {
               </div>
             )}
           </div>
-            {!searchInput && (
+            {!hasSearch && (
               <div className="system-pagination" style={{ textAlign: "center" }}>
                 {/* PAGINATION BUTTONS */}
                 <div
@@ -1495,7 +1486,7 @@ export default function Orders() {
 
                 {/* RANGE TEXT */}
                 <div style={{ fontSize: 13, color: "#94a3b8" }}>
-                  {searchInput
+                  {hasSearch
                     ? `${filtered.length} results found`
                     : totalCount === 0
                       ? "0 of 0"
