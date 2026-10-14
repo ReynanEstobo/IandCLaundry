@@ -5,7 +5,7 @@ import { listVisibleCustomers, lookupCustomer } from '../backend/controllers/cus
 import { listAuditLog, restoreRecord } from '../backend/controllers/auditController.js'
 import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from '../backend/controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from '../backend/controllers/staffProvisionController.js'
-import { getPublicServices, getPublicSettings, sendContactMessage, trackOrder } from '../backend/controllers/publicController.js'
+import { getPublicServices, getPublicSettings, getPublicTurnstileConfig, sendContactMessage, trackOrder } from '../backend/controllers/publicController.js'
 import { sendSms } from '../backend/services/notificationService.js'
 import { askGemini, generateForecast, generateDecisionSupport } from '../backend/services/aiService.js'
 import { resourceRoutes } from '../backend/routes/resourceRoutes.js'
@@ -15,7 +15,7 @@ import { listLoyaltyRewards, revokeLoyaltyReward } from '../backend/controllers/
 import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail } from '../backend/controllers/notificationController.js'
 
 const SECURITY_HEADERS = {
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests",
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests",
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Resource-Policy': 'same-origin',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
@@ -32,9 +32,9 @@ function secure(response, isApi = false) {
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
-const json = (payload, status = 200) => secure(new Response(JSON.stringify(payload), {
+const json = (payload, status = 200, headers = {}) => secure(new Response(JSON.stringify(payload), {
   status,
-  headers: { 'Content-Type': 'application/json; charset=utf-8' },
+  headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers },
 }), true)
 
 async function body(request) {
@@ -52,7 +52,9 @@ async function body(request) {
 }
 
 const ratePolicies = {
-  'POST:auth/login': { limit: 10, windowMs: 15 * 60 * 1000 },
+  // Limit password guessing from one source IP. A separate identifier bucket
+  // below also slows distributed attempts against a single account.
+  'POST:auth/login': { limit: 5, windowMs: 15 * 60 * 1000 },
   'POST:auth/refresh': { limit: 30, windowMs: 15 * 60 * 1000 },
   'POST:auth/forgot-password/otp': { limit: 5, windowMs: 15 * 60 * 1000 },
   'POST:auth/forgot-password/otp/verify': { limit: 10, windowMs: 15 * 60 * 1000 },
@@ -89,6 +91,15 @@ async function enforceRateLimit(request, env, path) {
   await consumeRateLimit(env, `api:${ip}`, generalApiPolicy)
   const policy = ratePolicies[`${request.method}:${path}`]
   if (policy) await consumeRateLimit(env, `route:${request.method}:${path}:${ip}`, policy)
+  if (request.method === 'POST' && path === 'auth/login') {
+    const payload = await body(request.clone())
+    const identifier = String(payload.identifier || payload.email || '').trim().toLowerCase()
+    if (identifier) {
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identifier))
+      const identifierKey = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+      await consumeRateLimit(env, `login-identifier:${identifierKey}`, { limit: 10, windowMs: 60 * 60 * 1000 })
+    }
+  }
 }
 
 /**
@@ -135,6 +146,7 @@ async function api(request, env) {
   if (method === 'GET' && path === 'public/orders/track') return json(await trackOrder(url.searchParams.get('q')))
   if (method === 'GET' && path === 'public/settings') return json(await getPublicSettings())
   if (method === 'GET' && path === 'public/services') return json(await getPublicServices())
+  if (method === 'GET' && path === 'public/turnstile-config') return json(getPublicTurnstileConfig())
   if (method === 'POST' && path === 'public/contact') return json(await sendContactMessage(await body(request)))
   if (method === 'POST' && path === 'orders/create') return json(await createOrder(await body(request), await authenticate(request)))
   if (method === 'POST' && path === 'orders/transition') return json(await transitionOrder(await body(request), await authenticate(request)))
@@ -174,7 +186,9 @@ export default {
           error: status >= 500 ? 'Internal server error' : (error?.message || 'Request failed'),
           code: status >= 500 ? undefined : error?.code,
           retryAfterSeconds: status >= 500 ? undefined : error?.retryAfterSeconds,
-        }, status)
+        }, status, status === 429 && error?.retryAfterSeconds
+          ? { 'Retry-After': String(error.retryAfterSeconds) }
+          : {})
       }
   },
 }

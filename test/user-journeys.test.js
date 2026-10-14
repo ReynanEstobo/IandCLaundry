@@ -84,6 +84,38 @@ test('visitor journey: contact form validation rejects incomplete input before e
   assert.equal(result.body.error, 'Name, email, and message are required.')
 })
 
+test('visitor journey: contact honeypot silently drops automated submissions', async () => {
+  const result = await api('public/contact', {
+    method: 'POST',
+    body: { name: 'Bot', email: 'bot@example.com', message: 'Spam', website: 'https://spam.example' },
+  })
+  assert.equal(result.response.status, 200)
+  assert.deepEqual(result.body, { success: true })
+})
+
+test('security journey: login has a hashed account-identifier rate limit in addition to the IP limit', async () => {
+  const keys = []
+  const env = {
+    RATE_LIMITER: {
+      idFromName: key => { keys.push(key); return key },
+      get: () => ({ fetch: async (_url, options) => {
+        const key = keys.at(-1)
+        return Response.json({ allowed: !key.startsWith('login-identifier:'), retryAfterSeconds: 3600 })
+      } }),
+    },
+    ASSETS: { fetch: async () => new Response('not used') },
+  }
+  const response = await worker.fetch(new Request('https://test.iclaundry.local/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.8' },
+    body: JSON.stringify({ identifier: 'Test.User', password: 'wrong-password' }),
+  }), env)
+  assert.equal(response.status, 429)
+  assert.equal(response.headers.get('retry-after'), '3600')
+  assert.ok(keys.some(key => key.startsWith('login-identifier:')))
+  assert.ok(keys.every(key => !key.includes('Test.User')))
+})
+
 test('customer creation is available only through order placement', async () => {
   const result = await api('customers/register', {
     method: 'POST',

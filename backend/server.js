@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import http from 'node:http'
+import { createHash } from 'node:crypto'
 import { URL } from 'node:url'
 import { authenticate, requireAdmin } from './middleware/authenticate.js'
 import { handleData } from './controllers/dataController.js'
@@ -8,7 +9,7 @@ import { listVisibleCustomers, lookupCustomer } from './controllers/customerCont
 import { listAuditLog, restoreRecord } from './controllers/auditController.js'
 import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from './controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from './controllers/staffProvisionController.js'
-import { getPublicServices, getPublicSettings, sendContactMessage, trackOrder } from './controllers/publicController.js'
+import { getPublicServices, getPublicSettings, getPublicTurnstileConfig, sendContactMessage, trackOrder } from './controllers/publicController.js'
 import { sendSms } from './services/notificationService.js'
 import { askGemini, generateForecast, generateDecisionSupport } from './services/aiService.js'
 import { events } from './services/realtimeService.js'
@@ -18,16 +19,71 @@ import { listLoyaltyRewards, revokeLoyaltyReward } from './controllers/loyaltyCo
 import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail } from './controllers/notificationController.js'
 
 const port = Number(process.env.PORT || 3001)
+const localRateWindows = new Map()
+const LOCAL_GENERAL_LIMIT = { limit: 180, windowMs: 60_000 }
+const LOCAL_ROUTE_LIMITS = {
+  'POST:auth/login': { limit: 5, windowMs: 15 * 60_000 },
+  'POST:public/contact': { limit: 3, windowMs: 15 * 60_000 },
+}
+
+function consumeLocalLimit(key, policy) {
+  const now = Date.now()
+  let window = localRateWindows.get(key)
+  if (!window || window.resetAt <= now) window = { count: 0, resetAt: now + policy.windowMs }
+  window.count += 1
+  localRateWindows.set(key, window)
+  if (localRateWindows.size > 10_000) {
+    for (const [entry, value] of localRateWindows) if (value.resetAt <= now) localRateWindows.delete(entry)
+  }
+  const retryAfterSeconds = Math.max(1, Math.ceil((window.resetAt - now) / 1000))
+  if (window.count > policy.limit) {
+    throw Object.assign(new Error(`Too many requests. Try again in ${retryAfterSeconds} seconds.`), {
+      status: 429, retryAfterSeconds,
+    })
+  }
+}
+
+function enforceLocalRateLimit(request, method, path) {
+  if (method === 'OPTIONS' || path === 'health') return
+  const ip = request.socket.remoteAddress || 'unknown'
+  consumeLocalLimit(`api:${ip}`, LOCAL_GENERAL_LIMIT)
+  const policy = LOCAL_ROUTE_LIMITS[`${method}:${path}`]
+  if (policy) consumeLocalLimit(`route:${method}:${path}:${ip}`, policy)
+}
+
+function enforceLocalLoginIdentifierLimit(payload) {
+  const identifier = String(payload?.identifier || payload?.email || '').trim().toLowerCase()
+  if (identifier) {
+    const digest = createHash('sha256').update(identifier).digest('hex')
+    consumeLocalLimit(`login-identifier:${digest}`, { limit: 10, windowMs: 60 * 60_000 })
+  }
+}
 
 function write(response, status, payload) {
-  response.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': process.env.FRONTEND_ORIGIN || 'http://localhost:5173', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS' })
+  response.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': process.env.FRONTEND_ORIGIN || 'http://localhost:5173', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS', ...(payload?.retryAfterSeconds ? { 'Retry-After': String(payload.retryAfterSeconds) } : {}) })
   response.end(JSON.stringify(payload))
 }
 
 function readBody(request) {
   return new Promise((resolve, reject) => {
     let raw = ''
-    request.on('data', chunk => { raw += chunk })
+    let rawBytes = 0
+    let overLimit = false
+    if (Number(request.headers['content-length'] || 0) > 64 * 1024) {
+      request.resume()
+      reject(Object.assign(new Error('Request body is too large.'), { status: 413 }))
+      return
+    }
+    request.on('data', chunk => {
+      rawBytes += chunk.length
+      if (rawBytes > 64 * 1024) {
+        if (overLimit) return
+        overLimit = true
+        reject(Object.assign(new Error('Request body is too large.'), { status: 413 }))
+        return
+      }
+      if (!overLimit) raw += chunk
+    })
     request.on('end', () => { try { resolve(raw ? JSON.parse(raw) : {}) } catch { reject(Object.assign(new Error('Invalid JSON body'), { status: 400 })) } })
     request.on('error', reject)
   })
@@ -47,9 +103,15 @@ const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host}`)
   const path = url.pathname.replace(/^\/api\/?/, '').replace(/\/$/, '')
   try {
+    if (url.pathname.startsWith('/api/')) enforceLocalRateLimit(request, request.method, path)
+    if (request.method === 'POST' && (path === 'auth/login' || path === 'public/contact')) {
+      const payload = await readBody(request)
+      request.rateLimitedBody = payload
+      if (path === 'auth/login') enforceLocalLoginIdentifierLimit(payload)
+    }
     if (request.method === 'GET' && url.pathname === '/api/health') return write(response, 200, { status: 'ok' })
     if (request.method === 'GET' && url.pathname === '/api/events') return streamEvents(request, response)
-    if (request.method === 'POST' && path === 'auth/login') return write(response, 200, await login(await readBody(request)))
+    if (request.method === 'POST' && path === 'auth/login') return write(response, 200, await login(request.rateLimitedBody || await readBody(request)))
     if (request.method === 'POST' && path === 'auth/refresh') return write(response, 200, await refreshLoginSession(await readBody(request)))
     if (request.method === 'POST' && path === 'auth/forgot-password/otp') return write(response, 200, await requestForgotPasswordOtp(await readBody(request)))
     if (request.method === 'POST' && path === 'auth/forgot-password/otp/verify') return write(response, 200, await verifyForgotPasswordOtp(await readBody(request)))
@@ -75,7 +137,8 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && path === 'public/orders/track') return write(response, 200, await trackOrder(url.searchParams.get('q')))
     if (request.method === 'GET' && path === 'public/settings') return write(response, 200, await getPublicSettings())
     if (request.method === 'GET' && path === 'public/services') return write(response, 200, await getPublicServices())
-    if (request.method === 'POST' && path === 'public/contact') return write(response, 200, await sendContactMessage(await readBody(request)))
+    if (request.method === 'GET' && path === 'public/turnstile-config') return write(response, 200, getPublicTurnstileConfig())
+    if (request.method === 'POST' && path === 'public/contact') return write(response, 200, await sendContactMessage(request.rateLimitedBody || await readBody(request)))
     if (request.method === 'POST' && path === 'orders/create') return write(response, 200, await createOrder(await readBody(request), await authenticate(request)))
     if (request.method === 'POST' && path === 'orders/transition') return write(response, 200, await transitionOrder(await readBody(request), await authenticate(request)))
     if (request.method === 'POST' && path === 'orders/items/transition') return write(response, 200, await transitionOrderItem(await readBody(request), await authenticate(request)))

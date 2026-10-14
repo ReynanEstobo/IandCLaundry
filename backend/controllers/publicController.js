@@ -35,7 +35,41 @@ export async function getPublicServices() {
   return { data: data || [] }
 }
 
+export function getPublicTurnstileConfig() {
+  const siteKey = runtimeValue('TURNSTILE_SITE_KEY')
+  if (!siteKey) throw Object.assign(new Error('Contact form verification is not configured.'), { status: 503 })
+  return { siteKey }
+}
+
+async function verifyTurnstileToken(token) {
+  const secret = runtimeValue('TURNSTILE_SECRET_KEY')
+  if (!secret) throw Object.assign(new Error('Contact form verification is not configured.'), { status: 503 })
+  if (typeof token !== 'string' || !token.trim() || token.length > 2048) {
+    throw Object.assign(new Error('Complete the security check and try again.'), { status: 400 })
+  }
+
+  let result
+  try {
+    const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ secret, response: token }),
+    })
+    if (!response.ok) throw new Error('Siteverify request failed')
+    result = await response.json()
+  } catch {
+    throw Object.assign(new Error('Contact form verification is temporarily unavailable. Please try again.'), { status: 503 })
+  }
+
+  if (!result?.success || result.action !== 'contact-form') {
+    throw Object.assign(new Error('Security check expired or failed. Please complete it again.'), { status: 400 })
+  }
+}
+
 export async function sendContactMessage(body) {
+  // Quietly accept automated submissions that fill the off-screen honeypot.
+  // Do not disclose the trap or send an email for these requests.
+  if (String(body?.website || '').trim()) return { success: true }
   const name = String(body?.name || '').trim()
   const email = String(body?.email || '').trim()
   const phone = String(body?.phone || '').trim()
@@ -46,6 +80,7 @@ export async function sendContactMessage(body) {
   if (!name || !email || !message) {
     throw Object.assign(new Error('Name, email, and message are required.'), { status: 400 })
   }
+  await verifyTurnstileToken(body?.turnstileToken)
   const validName = assertText(name, { label: 'Name', min: 2, max: 120 })
   const validEmail = assertEmail(email, { required: true })
   const validPhone = phone ? assertPhilippineMobile(phone) : ''

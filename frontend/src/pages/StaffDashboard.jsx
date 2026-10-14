@@ -178,7 +178,7 @@ export default function StaffDashboard() {
             <div>
               <span className="staff-dss-eyebrow"><Brain size={15} /> DSS overview</span>
               <h3>Decision Support</h3>
-              <p>Planning signals for {branch || 'your branch'}. Check live orders before acting.</p>
+              <p>{branch || 'Your branch'} · key signals at a glance.</p>
             </div>
             <span className="staff-dss-badge"><Zap size={12} /> Planning support</span>
           </div>
@@ -187,6 +187,7 @@ export default function StaffDashboard() {
             <div className="staff-dss-metric workload">
               <span>Workload signal</span>
               <strong>{branchForecast.workloadLevel}</strong>
+              <small className="staff-dss-next">{branchForecast.todayOrderCount} today · {branchForecast.workloadLevel === 'Limited data' ? 'use live queue' : 'check queue before staffing'}</small>
               <small>{branchForecast.workloadSummary}</small>
               <small className="staff-dss-option"><strong>Option:</strong> {branchForecast.workloadLevel === 'Limited data'
                 ? 'Keep planned coverage and use the live queue to guide today’s assignments.'
@@ -195,6 +196,7 @@ export default function StaffDashboard() {
             <div className="staff-dss-metric peak">
               <span>Peak-day signal</span>
               <strong>{branchForecast.peakDay}</strong>
+              <small className="staff-dss-next">{branchForecast.peakDay === 'Not enough data' ? 'More history needed · use live demand' : `${branchForecast.peakDayOrders} orders in 30 days · review staffing`}</small>
               <small className="staff-dss-evidence"><strong>Signal:</strong> {branchForecast.peakDay === 'Not enough data'
                 ? 'No reliable peak-day pattern in recent orders.'
                 : `${branchForecast.peakDayOrders} orders on this weekday in the last 30 days.`}</small>
@@ -209,6 +211,7 @@ export default function StaffDashboard() {
             <div>
               <span>Revenue forecast · next 30 days</span>
               <strong>₱{branchForecast.nextMonthRevenue.toLocaleString()}</strong>
+              <small className="staff-dss-next">Estimate · compare with expenses</small>
               <small>Simple estimate based on recent 30-day collections; not guaranteed income.</small>
               <small className="staff-dss-option"><strong>Option:</strong> Compare with expenses before budgeting.</small>
               <small>Historical total, not cash on hand.</small>
@@ -226,6 +229,7 @@ export default function StaffDashboard() {
                   <span className="staff-dss-alert-dot" aria-hidden="true" />
                   <div>
                     <strong>{item.name}</strong>
+                    <small className="staff-dss-next">{Number(item.current_stock)} {item.unit} left · {item.forecastDaysLeft == null ? 'limited history' : item.forecastDaysLeft <= 0 ? 'may run out today' : `~${item.forecastDaysLeft} days`} · reorder {item.suggestedReorder} {item.unit}</small>
                     <span>{Number(item.current_stock)} {item.unit} remaining · Minimum: {Number(item.minimum_stock)} {item.unit}</span>
                     <span className="staff-dss-forecast">{inventoryRunOutLabel(item.forecastDaysLeft)}</span>
                     <span className="staff-dss-reorder staff-dss-option">Option: Verify stock; ask your supervisor about ~{item.suggestedReorder} {item.unit}.</span>

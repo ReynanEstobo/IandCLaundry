@@ -3354,6 +3354,15 @@ textarea.form-control {
   text-underline-offset: 3px;
 }
 
+.landing-contact-honeypot {
+  position: absolute !important;
+  top: auto !important;
+  left: -10000px !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+}
+
 .landing-contact-form {
   background: white;
   border-radius: 20px;
@@ -3426,6 +3435,8 @@ textarea.form-control {
   box-shadow: 0 2px 8px rgba(46, 167, 224, 0.3);
   animation: none;
 }
+.landing-turnstile { min-height: 82px; margin: 10px 0 14px; }
+.landing-turnstile small { display: block; margin-top: 4px; color: #64748b; font-size: 12px; }
 .landing-contact-form .landing-btn-primary:hover {
   box-shadow: 0 8px 28px rgba(46, 167, 224, 0.4);
 }
@@ -7279,6 +7290,13 @@ input, select, textarea, button { max-width: 100%; }
 .staff-dss-metric span { font-size: 10px; font-weight: 750; text-transform: uppercase; line-height: 1.35; letter-spacing: .04em; }
 .staff-dss-metric strong { overflow-wrap: anywhere; font-size: 17px; line-height: 1.15; letter-spacing: -.02em; }
 .staff-dss-metric small { font-size: 11px; line-height: 1.35; opacity: .85; }
+.staff-dss-overview .staff-dss-metric > small:not(.staff-dss-next),
+.staff-dss-overview .staff-dss-revenue small:not(.staff-dss-next),
+.staff-dss-overview .staff-dss-alert .staff-dss-forecast { display: none; }
+.staff-dss-overview .staff-dss-reorder,
+.staff-dss-overview .staff-dss-alert > div > span { display: none; }
+.admin-dss-revenue .staff-dss-next ~ .staff-dss-next { display: none; }
+.staff-dss-next { display: block; margin-top: 5px; color: var(--text-secondary, #64748b); font-size: 11px; line-height: 1.35; }
 .staff-dss-revenue { margin: 14px; padding: 13px; border-radius: 11px; background: #ecfdf5; display: flex; align-items: center; gap: 11px; color: #047857; }
 .staff-dss-icon { width: 40px; height: 40px; border-radius: 12px; background: #d1fae5; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .staff-dss-revenue div { display: flex; flex-direction: column; min-width: 0; }

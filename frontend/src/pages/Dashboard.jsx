@@ -674,7 +674,7 @@ export default function Dashboard() {
             <div>
               <span className="staff-dss-eyebrow"><Brain size={15} /> DSS overview</span>
               <h3>Decision Support</h3>
-              <p>Planning signals only. Check live orders and stock before acting.</p>
+              <p>Demand, revenue and stock at a glance.</p>
             </div>
             <span className="staff-dss-badge">
               <Zap size={12} /> Planning support
@@ -685,7 +685,10 @@ export default function Dashboard() {
               <div className="staff-dss-metric workload">
                 <span>Workload signal</span>
                 <strong>{forecasts.workloadLevel}</strong>
-                <small>{forecasts.workloadSummary}</small>
+                <small className="staff-dss-next">{forecasts.todayOrderCount} today · {forecasts.workloadLevel === "Limited data" ? "use live queue" : "check queue before staffing"}</small>
+                <small>{forecasts.workloadLevel === "Limited data"
+                  ? `Limited history · ${forecasts.todayOrderCount} today`
+                  : `${forecasts.todayOrderCount} today · ${forecasts.expectedTodayOrders > 0 && forecasts.expectedTodayOrders < 1 ? "<1" : Math.round(forecasts.expectedTodayOrders)} expected`}</small>
                 <small className="staff-dss-option"><strong>Option:</strong> {forecasts.workloadLevel === "Limited data"
                   ? "Keep planned coverage and use the live queue to guide today’s assignments."
                   : "Check the live queue before shifting coverage."}</small>
@@ -693,9 +696,10 @@ export default function Dashboard() {
               <div className="staff-dss-metric peak">
                 <span>Peak-day signal</span>
                 <strong>{forecasts.peakDay}</strong>
-                <small className="staff-dss-evidence"><strong>Signal:</strong> {forecasts.peakDay === "Not enough data"
-                  ? "No reliable peak-day pattern in recent orders."
-                  : `${forecasts.peakDayOrders} orders on this weekday in the last 30 days.`}</small>
+                <small className="staff-dss-next">{forecasts.peakDay === "Not enough data" ? "More history needed · use live demand" : `${forecasts.peakDayOrders} orders in 30 days · review staffing`}</small>
+                <small className="staff-dss-evidence">{forecasts.peakDay === "Not enough data"
+                  ? "More order history needed"
+                  : `${forecasts.peakDayOrders} orders · last 30 days`}</small>
                 <small className="staff-dss-option"><strong>Option:</strong> {forecasts.peakDay === "Not enough data"
                   ? "Keep the usual roster; check live demand."
                   : "Review coverage for this day."}</small>
@@ -714,16 +718,18 @@ export default function Dashboard() {
                 <strong>
                   ₱{forecasts.predictedMonthlyRevenue.toLocaleString()}
                 </strong>
-                <small>Simple estimate based on recent 30-day collections; not guaranteed income.</small>
-                <small className="staff-dss-option"><strong>Option:</strong> Compare with expenses before budgeting.</small>
-                <small>Historical total, not cash on hand.</small>
+                <small>Estimate from recent collections · not guaranteed</small>
+                <small className="staff-dss-option"><strong>Next:</strong> Compare with expenses.</small>
+                <small className="staff-dss-next">Estimate from recent collections · compare with expenses</small>
                 {forecasts.revenueTrend !== 0 && (
+                  <>
                   <span
                     className={`forecast-trend ${forecasts.revenueTrend > 0 ? "up" : "down"}`}
                   >
                     {forecasts.revenueTrend > 0 ? "↑" : "↓"}{" "}
                     {Math.abs(forecasts.revenueTrend)}%
                   </span>
+                  </>
                 )}
               </div>
             </div>
@@ -740,6 +746,7 @@ export default function Dashboard() {
                     <span className="staff-dss-alert-dot" aria-hidden="true" />
                     <div>
                       <strong>{activeRestockAlert.name}</strong>
+                      <small className="staff-dss-next">{activeRestockAlert.currentStock} {activeRestockAlert.unit} left · {activeRestockAlert.daysLeft == null ? "limited history" : activeRestockAlert.daysLeft <= 0 ? "may run out today" : `~${activeRestockAlert.daysLeft} days left`} · reorder {activeRestockAlert.suggestedReorder} {activeRestockAlert.unit}</small>
                       <span>
                         {inventoryRunOutLabel(activeRestockAlert.daysLeft)}
                       </span>

@@ -71,7 +71,7 @@ function AnimatedCounter({ end, suffix = "", duration = 2000 }) {
 }
 
 /* ─── Modern Toast Component ─────────────────────────────────────────── */
-function Toast({ show, type, message, onClose }) {
+function Toast({ show, type, message, title, duration = 3000, onClose }) {
   const isSuccess = type === "success";
 
   const styles = {
@@ -162,7 +162,7 @@ function Toast({ show, type, message, onClose }) {
         ? "linear-gradient(90deg, #34d399, #6ee7b7)"
         : "linear-gradient(90deg, #f87171, #fca5a5)",
       borderRadius: "0 0 14px 14px",
-      animation: show ? "toastProgress 3s linear forwards" : "none",
+      animation: show ? `toastProgress ${duration}ms linear forwards` : "none",
     },
   };
 
@@ -210,7 +210,7 @@ function Toast({ show, type, message, onClose }) {
             )}
           </div>
           <div style={styles.content}>
-            <span style={styles.label}>{isSuccess ? "Success" : "Error"}</span>
+            <span style={styles.label}>{title || (isSuccess ? "Success" : "Error")}</span>
             <span style={styles.message}>{message}</span>
           </div>
           <button
@@ -243,6 +243,13 @@ export default function LandingPage() {
     message: "",
   });
   const [sending, setSending] = useState(false);
+  const [contactCooldown, setContactCooldown] = useState(0);
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileLoaded, setTurnstileLoaded] = useState(false);
+  const [turnstileConfigLoaded, setTurnstileConfigLoaded] = useState(false);
+  const turnstileContainerRef = useRef(null);
+  const turnstileWidgetIdRef = useRef(null);
   const [settings, setSettings] = useState({});
   const [services, setServices] = useState([]);
   const [settingsVersion, setSettingsVersion] = useState(0);
@@ -252,12 +259,70 @@ export default function LandingPage() {
     phone: "",
     address: "",
     message: "",
+    website: "",
   });
   const [scrolled, setScrolled] = useState(false);
   const [heroRef, heroVisible] = useScrollReveal(0.1);
   const [processRef, processVisible] = useScrollReveal(0.1);
   const [trackRef, trackVisible] = useScrollReveal(0.1);
   const [contactRef, contactVisible] = useScrollReveal(0.1);
+
+  useEffect(() => {
+    if (contactCooldown <= 0) return undefined;
+    const timer = window.setTimeout(() => setContactCooldown(seconds => Math.max(0, seconds - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [contactCooldown]);
+
+  useEffect(() => {
+    let active = true;
+    apiFetch("/api/public/turnstile-config")
+      .then(({ siteKey }) => { if (active) { setTurnstileSiteKey(siteKey); setTurnstileConfigLoaded(true); } })
+      .catch(() => { if (active) { setTurnstileSiteKey(""); setTurnstileConfigLoaded(true); } });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!turnstileSiteKey || !turnstileContainerRef.current) return undefined;
+    let active = true;
+    const renderWidget = () => {
+      if (!active || !window.turnstile || !turnstileContainerRef.current || turnstileWidgetIdRef.current !== null) return;
+      turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
+        sitekey: turnstileSiteKey,
+        action: "contact-form",
+        theme: "auto",
+        callback: token => { if (active) setTurnstileToken(token); },
+        "expired-callback": () => { if (active) setTurnstileToken(""); },
+        "error-callback": () => { if (active) setTurnstileToken(""); },
+      });
+      if (active) setTurnstileLoaded(true);
+    };
+
+    let script = document.querySelector("script[data-turnstile-api]");
+    if (window.turnstile) {
+      renderWidget();
+    } else if (!script) {
+      script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.dataset.turnstileApi = "true";
+      script.addEventListener("load", renderWidget, { once: true });
+      document.head.appendChild(script);
+    } else {
+      script.addEventListener("load", renderWidget, { once: true });
+      if (window.turnstile) renderWidget();
+    }
+
+    return () => {
+      active = false;
+      if (turnstileWidgetIdRef.current !== null && window.turnstile) {
+        window.turnstile.remove(turnstileWidgetIdRef.current);
+        turnstileWidgetIdRef.current = null;
+      }
+      setTurnstileLoaded(false);
+      setTurnstileToken("");
+    };
+  }, [turnstileSiteKey]);
 
   // Garment tracking state
   const [trackOrderId, setTrackOrderId] = useState("");
@@ -446,16 +511,22 @@ export default function LandingPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (contactCooldown > 0) return;
+    if (!turnstileToken) {
+      setNotification({ show: true, type: "error", message: "Complete the security check before sending." });
+      return;
+    }
     if (formData.phone && !isValidPhilippineMobile(formData.phone)) {
       setNotification({ show: true, type: "error", message: "Phone number must start with 09 and contain exactly 11 digits." });
       return;
     }
     setSending(true);
+    let notificationDuration = 3000;
 
     try {
       const data = await apiFetch("/api/public/contact", {
         method: "POST",
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, turnstileToken }),
       });
 
       if (data.success) {
@@ -470,6 +541,7 @@ export default function LandingPage() {
           phone: "",
           address: "",
           message: "",
+          website: "",
         });
       } else {
         setNotification({
@@ -479,14 +551,34 @@ export default function LandingPage() {
         });
       }
     } catch (err) {
-      setNotification({
-        show: true,
-        type: "error",
-        message: "Something went wrong. Please try again.",
-      });
+      if (err.response?.status === 429) {
+        const retryAfter = Math.max(1, Number(err.data?.retryAfterSeconds || err.response.headers?.get?.("Retry-After") || 900));
+        const minutes = Math.ceil(retryAfter / 60);
+        const waitText = retryAfter < 60
+          ? `${retryAfter} second${retryAfter === 1 ? "" : "s"}`
+          : `${minutes} minute${minutes === 1 ? "" : "s"}`;
+        setContactCooldown(retryAfter);
+        setNotification({
+          show: true,
+          type: "error",
+          title: "Message limit reached",
+          message: `Please wait ${waitText} before sending another message. Your form is still here.`,
+        });
+        notificationDuration = 8000;
+      } else {
+        setNotification({
+          show: true,
+          type: "error",
+          message: "Something went wrong. Please try again.",
+        });
+      }
     } finally {
+      if (turnstileWidgetIdRef.current !== null && window.turnstile) {
+        window.turnstile.reset(turnstileWidgetIdRef.current);
+        setTurnstileToken("");
+      }
       setSending(false);
-      setTimeout(dismissToast, 3000);
+      setTimeout(dismissToast, notificationDuration);
     }
   };
 
@@ -497,6 +589,8 @@ export default function LandingPage() {
         show={notification.show}
         type={notification.type}
         message={notification.message}
+        title={notification.title}
+        duration={notification.title ? 8000 : 3000}
         onClose={dismissToast}
       />
 
@@ -878,6 +972,18 @@ export default function LandingPage() {
             </div>
 
             <form className="landing-contact-form" onSubmit={handleSubmit}>
+              <div className="landing-contact-honeypot" aria-hidden="true">
+                <label htmlFor="contact-website">Leave this field empty</label>
+                <input
+                  id="contact-website"
+                  type="text"
+                  name="website"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={formData.website}
+                  onChange={handleChange}
+                />
+              </div>
               <div className="landing-form-row">
                 <div className="landing-form-group">
                   <label>Name</label>
@@ -943,15 +1049,25 @@ export default function LandingPage() {
                   disabled={sending}
                 />
               </div>
+              <div className="landing-turnstile" aria-live="polite">
+                <div ref={turnstileContainerRef} />
+                <small>{turnstileToken
+                  ? "Security check complete."
+                  : turnstileConfigLoaded && !turnstileSiteKey
+                    ? "Security check is unavailable. Please try again later."
+                    : turnstileLoaded
+                      ? "Complete the security check to send your message."
+                      : "Loading security check…"}</small>
+              </div>
 
               {/* ── Submit button with loading state ── */}
               <button
                 type="submit"
                 className="landing-btn-primary landing-btn-glow"
-                disabled={sending}
+                disabled={sending || contactCooldown > 0 || !turnstileToken}
                 style={{
-                  opacity: sending ? 0.75 : 1,
-                  cursor: sending ? "not-allowed" : "pointer",
+                  opacity: sending || contactCooldown > 0 || !turnstileToken ? 0.75 : 1,
+                  cursor: sending || contactCooldown > 0 || !turnstileToken ? "not-allowed" : "pointer",
                   transition: "opacity 0.2s",
                 }}
               >
@@ -959,6 +1075,11 @@ export default function LandingPage() {
                   <>
                     <Spinner size={16} />
                     Sending…
+                  </>
+                ) : contactCooldown > 0 ? (
+                  <>
+                    <Clock size={16} />
+                    Try again in {`${Math.floor(contactCooldown / 60)}:${String(contactCooldown % 60).padStart(2, "0")}`}
                   </>
                 ) : (
                   <>
