@@ -222,7 +222,6 @@ export default function Inventory() {
   }
 
   function requestArchive(item) {
-    if (role !== "admin") return toast.error("Only administrators can archive inventory items.");
     const activeRecipes = serviceRecipes.filter(row => row.inventory_item_id === item.id && row.is_active !== false).length;
     const activeAddons = serviceAddonConfigs.filter(row => row.inventory_item_id === item.id && row.is_active !== false).length;
     setItemToDelete({ ...item, activeRecipes, activeAddons });
@@ -473,7 +472,7 @@ export default function Inventory() {
                           >
                             <Edit2 size={16} /><span className="mobile-action-label">Edit</span>
                           </button>
-                          {role === "admin" && <button
+                          <button
                             className="btn-icon"
                             onClick={() => requestArchive(item)}
                             style={{ color: "var(--danger)" }}
@@ -481,7 +480,7 @@ export default function Inventory() {
                             aria-label={`Archive ${item.name}`}
                           >
                             <Trash2 size={16} /><span className="mobile-action-label">Archive</span>
-                          </button>}
+                          </button>
                         </div>
                       </td>
                     </tr>

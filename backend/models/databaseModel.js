@@ -218,9 +218,6 @@ export async function execute(table, request, identity) {
   if (table === 'staff' && request.operation === 'delete' && identity.role !== 'admin') {
     throw Object.assign(new Error('Only administrators can delete accounts.'), { status: 403 })
   }
-  if (table === 'inventory_items' && request.operation === 'delete' && identity.role !== 'admin') {
-    throw Object.assign(new Error('Only administrators can archive inventory items.'), { status: 403 })
-  }
   if (table === 'settings' && request.operation !== 'select' && identity.role !== 'admin') {
     throw Object.assign(new Error('Only administrators can change business settings.'), { status: 403 })
   }

@@ -55,13 +55,17 @@ test('staff cannot alter settings, directly set stages, or delete transaction hi
   assert.equal(calls.length,0)
 })
 
-test('staff cannot archive inventory items through the resource API', async t => {
-  const calls = mockDatabase(t)
-  await assert.rejects(
-    execute('inventory_items', { operation: 'delete', filters: [{ type: 'eq', column: 'id', value: 'inventory-1' }] }, staff),
-    /Only administrators can archive inventory items/,
-  )
-  assert.equal(calls.length, 0)
+test('staff can archive inventory items assigned to their branch only', async t => {
+  const calls = mockDatabase(t, [{ id: 'inventory-1', name: 'Detergent', branch: 'Main', branch_id: 'branch-a' }])
+  await execute('inventory_items', { operation: 'delete', filters: [{ type: 'eq', column: 'id', value: 'inventory-1' }] }, staff)
+  assert.equal(calls.some(call => call.table === 'inventory_items' && call.method === 'update'), true)
+  assert.equal(calls.some(call => call.table === 'audit_logs' && call.method === 'insert'), true)
+  assert.equal(calls.some(call => call.table === 'inventory_items' && call.method === 'eq' && call.args[0] === 'branch' && call.args[1] === staff.branch), true)
+
+  const otherBranchCalls = mockDatabase(t, [{ id: 'inventory-2', name: 'Other stock', branch: 'Calzada', branch_id: 'branch-b' }])
+  await execute('inventory_items', { operation: 'delete', filters: [{ type: 'eq', column: 'id', value: 'inventory-2' }] }, staff)
+  assert.equal(otherBranchCalls.some(call => call.table === 'inventory_items' && call.method === 'update'), false)
+  assert.equal(otherBranchCalls.some(call => call.table === 'audit_logs'), false)
 })
 
 test('placed order pricing, services, inventory selections, and ownership are immutable', async t => {
