@@ -47,7 +47,6 @@ export default function Inventory() {
   const [restockQty, setRestockQty] = useState("");
   const [restockCost, setRestockCost] = useState("");
   const [initialCost, setInitialCost] = useState("");
-  const [initialSupplier, setInitialSupplier] = useState("");
 
   const [form, setForm] = useState({
     name: "",
@@ -111,7 +110,6 @@ export default function Inventory() {
   function openNew() {
     setEditing(null);
     setInitialCost("");
-    setInitialSupplier("");
     setForm({
       name: "",
       branch: role === "staff" ? branch : (branchNames[0] || ""),
@@ -126,7 +124,6 @@ export default function Inventory() {
   function openEdit(item) {
     setEditing(item);
     setInitialCost("");
-    setInitialSupplier("");
     setForm({
       name: item.name,
       branch: item.branch || branchNames[0] || "",
@@ -162,7 +159,6 @@ export default function Inventory() {
           quantity: parseFloat(form.current_stock) || 0,
           minimumStock: parseFloat(form.minimum_stock) || 0,
           costTotal: parseFloat(initialCost) || 0,
-          supplier: initialSupplier.trim(),
         });
       }
     } catch (createError) {
@@ -631,15 +627,6 @@ export default function Inventory() {
                       onChange={(e) => setInitialCost(e.target.value)}
                     />
                     <span className="form-hint">Enter the total amount paid for the starting quantity. Leave blank if there was no purchase cost.</span>
-                  </div>
-                  <div className="form-group">
-                    <label>Supplier</label>
-                    <input
-                      className="form-control"
-                      placeholder="Supplier name"
-                      value={initialSupplier}
-                      onChange={(e) => setInitialSupplier(e.target.value)}
-                    />
                   </div>
                 </div>}
                 <p className="form-hint">

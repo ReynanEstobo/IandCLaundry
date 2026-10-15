@@ -148,7 +148,6 @@ export async function createInventoryItem(body, identity) {
   const quantity = Number(body?.quantity)
   const minimumStock = Number(body?.minimumStock ?? 0)
   const costTotal = Number(body?.costTotal ?? 0)
-  const supplier = String(body?.supplier || '').trim()
   const allowedUnits = new Set(['pcs', 'kg', 'L', 'mL', 'g', 'packs', 'bottles', 'sachets'])
   if (!name || name.length > 120) throw Object.assign(new Error('Enter an inventory item name (up to 120 characters).'), { status: 400 })
   if (!allowedUnits.has(unit)) throw Object.assign(new Error('Choose a valid inventory unit.'), { status: 400 })
@@ -158,7 +157,6 @@ export async function createInventoryItem(body, identity) {
   if (!Number.isFinite(costTotal) || costTotal < 0 || (costTotal > 0 && quantity <= 0)) {
     throw Object.assign(new Error('Enter a valid total cost. Initial stock must be greater than zero when a cost is recorded.'), { status: 400 })
   }
-  if (supplier.length > 160) throw Object.assign(new Error('Supplier name must be 160 characters or fewer.'), { status: 400 })
 
   const selectedBranch = await resolveBranch(identity, requestedBranch)
   const { data, error } = await database.rpc('create_branch_inventory_item', {
@@ -169,7 +167,7 @@ export async function createInventoryItem(body, identity) {
     p_quantity: quantity,
     p_minimum_stock: minimumStock,
     p_cost_total: costTotal,
-    p_supplier: supplier,
+    p_supplier: '',
   })
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
   return { data }

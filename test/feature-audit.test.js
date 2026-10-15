@@ -146,7 +146,7 @@ test('initial inventory creation validates its total cost and records it through
   await assert.rejects(createInventoryItem({ name: 'Soap', unit: 'invalid', quantity: 2, costTotal: 25 }, staff), /valid inventory unit/i)
   assert.equal(calls.length, 0)
 
-  await createInventoryItem({ name: ' Soap ', unit: 'pcs', quantity: 10, minimumStock: 2, costTotal: 250, branch: 'Other', supplier: 'Supplier' }, staff)
+  await createInventoryItem({ name: ' Soap ', unit: 'pcs', quantity: 10, minimumStock: 2, costTotal: 250, branch: 'Other', supplier: 'ignored supplier' }, staff)
   const rpcCall = calls.find(call => call.rpc === 'create_branch_inventory_item')
   assert.ok(rpcCall)
   assert.equal(rpcCall.args.p_branch_id, 'branch-a')
@@ -154,7 +154,7 @@ test('initial inventory creation validates its total cost and records it through
   assert.equal(rpcCall.args.p_name, 'Soap')
   assert.equal(rpcCall.args.p_quantity, 10)
   assert.equal(rpcCall.args.p_cost_total, 250)
-  assert.equal(rpcCall.args.p_supplier, 'Supplier')
+  assert.equal(rpcCall.args.p_supplier, '')
 })
 
 test('global admin must choose a branch for a new order', async t => {
