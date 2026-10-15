@@ -217,6 +217,14 @@ test('multi-service migration applies and duplicate order requests deduct stock 
 
   // Removing a service add-on config detaches the FK but preserves the order's
   // historical item, quantity, and price snapshots.
+  const historicalAddonId = (await db.query(
+    'SELECT id FROM order_item_addons WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=$1)',
+    [first.rows[0].id],
+  )).rows[0].id
+  await assert.rejects(
+    db.query('UPDATE order_item_addons SET service_addon_item_id=NULL, quantity=6 WHERE id=$1', [historicalAddonId]),
+    /selected add-on configuration or inventory item is unavailable/,
+  )
   await db.query('DELETE FROM service_addon_items WHERE id=$1', [addonId])
   const historicalAddon = (await db.query(
     'SELECT service_addon_item_id, inventory_item_id, item_name_snapshot, quantity, unit_price_snapshot, subtotal FROM order_item_addons WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=$1)',

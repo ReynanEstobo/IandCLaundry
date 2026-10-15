@@ -11,10 +11,13 @@ SET search_path = public
 AS $$
 BEGIN
   -- Allow the FK's ON DELETE SET NULL action to detach historical order rows
-  -- from a deleted configuration. The order's item/price snapshots remain.
+  -- only when no other order add-on field is changed. Snapshots remain intact.
   IF TG_OP = 'UPDATE'
      AND OLD.service_addon_item_id IS NOT NULL
-     AND NEW.service_addon_item_id IS NULL THEN
+     AND NEW.service_addon_item_id IS NULL
+     AND (to_jsonb(NEW) - 'service_addon_item_id')
+         IS NOT DISTINCT FROM
+         (to_jsonb(OLD) - 'service_addon_item_id') THEN
     RETURN NEW;
   END IF;
 
