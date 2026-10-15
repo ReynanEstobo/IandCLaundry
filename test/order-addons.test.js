@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getAvailableOrderAddons, resolveBranchId } from '../frontend/src/utils/orderAddons.js'
+import { getAvailableOrderAddons, resolveBranchId, retainAvailableOrderAddons } from '../frontend/src/utils/orderAddons.js'
 
 const branches = [
   { id: 'branch-a', name: 'Main - Brgy 7' },
@@ -30,4 +30,11 @@ test('does not expose add-ons when the selected branch cannot be resolved', () =
   assert.deepEqual(getAvailableOrderAddons([
     { id: 'addon', branch_id: 'branch-a', inventory_branch_id: 'branch-a', service_type_id: 'service-1' },
   ], null, ['service-1']), [])
+})
+
+test('removes archived or otherwise unavailable add-ons from an in-progress new order', () => {
+  assert.deepEqual(
+    retainAvailableOrderAddons({ valid: 2, archived: 1, zero: 0 }, ['valid']),
+    { valid: 2 },
+  )
 })

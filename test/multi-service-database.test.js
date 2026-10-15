@@ -60,6 +60,7 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   const inventoryIntegrityMigration = await readFile(new URL('../supabase_migrations/20261003_service_inventory_integrity.sql', import.meta.url), 'utf8')
   const delinkArchivedInventoryMigration = await readFile(new URL('../supabase_migrations/20261004_delink_archived_service_inventory.sql', import.meta.url), 'utf8')
   const preserveOrderAddonHistoryMigration = await readFile(new URL('../supabase_migrations/20261005_preserve_order_addon_history.sql', import.meta.url), 'utf8')
+  const repairOrderAddonHistoryForeignKeyMigration = await readFile(new URL('../supabase_migrations/20261006_preserve_archived_order_addon_history.sql', import.meta.url), 'utf8')
   assert.equal((await db.query("SELECT has_function_privilege('authenticated', 'public.cancel_branch_order(uuid,uuid,text)', 'EXECUTE') AS allowed")).rows[0].allowed, false)
   assert.equal((await db.query("SELECT has_function_privilege('service_role', 'public.cancel_branch_order(uuid,uuid,text)', 'EXECUTE') AS allowed")).rows[0].allowed, true)
   await db.exec(`
@@ -94,6 +95,7 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   await db.exec(inventoryIntegrityMigration)
   await db.exec(delinkArchivedInventoryMigration)
   await db.exec(preserveOrderAddonHistoryMigration)
+  await db.exec(repairOrderAddonHistoryForeignKeyMigration)
   for (const table of ['customers', 'orders', 'order_items', 'payments']) {
     const result = await db.query(`SELECT COUNT(*)::int AS count FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='notes'`, [table])
     assert.equal(result.rows[0].count, 0)
@@ -110,8 +112,8 @@ test('multi-service migration applies and duplicate order requests deduct stock 
     { service_type_id: serviceId, weight_kg: 5 },
     { service_type_id: gownServiceId, weight_kg: 9 },
   ] }
-  const call = (requestedOrder = order, requestedBranchId = branchId, requestedStaffId = staffId) => db.query('SELECT (create_branch_order($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,1,NULL)).id AS id',
-    [requestedBranchId, requestedStaffId, JSON.stringify(customer), JSON.stringify(requestedOrder), JSON.stringify({ [addonId]: 5 })])
+  const call = (requestedOrder = order, requestedBranchId = branchId, requestedStaffId = staffId, requestedAddons = { [addonId]: 5 }) => db.query('SELECT (create_branch_order($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,1,NULL)).id AS id',
+    [requestedBranchId, requestedStaffId, JSON.stringify(customer), JSON.stringify(requestedOrder), JSON.stringify(requestedAddons)])
   await assert.rejects(
     call({ ...order, client_request_id: randomUUID(), payment_method: 'gcash' }),
     /Cash is the only accepted payment method/,
@@ -215,12 +217,43 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   assert.equal(Number((await db.query('SELECT current_stock FROM inventory_items WHERE id=$1', [inventoryId])).rows[0].current_stock), 12)
   assert.equal((await db.query('SELECT count(*)::int AS count FROM orders')).rows[0].count, 2)
 
-  // Removing a service add-on config detaches the FK but preserves the order's
-  // historical item, quantity, and price snapshots.
+  // Archiving and then restoring inventory must leave both kinds of service
+  // links inactive. Existing order add-on snapshots remain readable, and a
+  // new order without that add-on does not consume the restored stock.
   const historicalAddonId = (await db.query(
     'SELECT id FROM order_item_addons WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=$1)',
     [first.rows[0].id],
   )).rows[0].id
+  const historicalBeforeArchive = (await db.query(
+    'SELECT item_name_snapshot, quantity, unit_price_snapshot, subtotal FROM order_item_addons WHERE id=$1',
+    [historicalAddonId],
+  )).rows[0]
+  await db.query('UPDATE inventory_items SET deleted_at=now() WHERE id=$1', [inventoryId])
+  assert.equal((await db.query(
+    'SELECT (SELECT count(*) FROM service_inventory_requirements WHERE inventory_item_id=$1 AND is_active IS TRUE) + (SELECT count(*) FROM service_addon_items WHERE inventory_item_id=$1 AND is_active IS TRUE) AS active_count',
+    [inventoryId],
+  )).rows[0].active_count, 0)
+  await db.query('UPDATE inventory_items SET deleted_at=NULL WHERE id=$1', [inventoryId])
+  assert.equal((await db.query(
+    'SELECT (SELECT count(*) FROM service_inventory_requirements WHERE inventory_item_id=$1 AND is_active IS TRUE) + (SELECT count(*) FROM service_addon_items WHERE inventory_item_id=$1 AND is_active IS TRUE) AS active_count',
+    [inventoryId],
+  )).rows[0].active_count, 0)
+  await assert.rejects(
+    call({ ...order, client_request_id: randomUUID() }),
+    /selected add-ons are unavailable for this branch/,
+  )
+  const orderAfterRestore = await call({ ...order, client_request_id: randomUUID() }, branchId, staffId, {})
+  assert.ok(orderAfterRestore.rows[0].id)
+  assert.equal(Number((await db.query('SELECT current_stock FROM inventory_items WHERE id=$1', [inventoryId])).rows[0].current_stock), 12)
+  const historicalAfterArchive = (await db.query(
+    'SELECT item_name_snapshot, quantity, unit_price_snapshot, subtotal FROM order_item_addons WHERE id=$1',
+    [historicalAddonId],
+  )).rows[0]
+  assert.deepEqual(historicalAfterArchive, historicalBeforeArchive)
+  await db.query("SELECT cancel_branch_order($1,$2,'Test cleanup after restore')", [orderAfterRestore.rows[0].id, staffId])
+
+  // Removing a service add-on config detaches the FK but preserves the order's
+  // historical item, quantity, and price snapshots.
   await assert.rejects(
     db.query('UPDATE order_item_addons SET service_addon_item_id=NULL, quantity=6 WHERE id=$1', [historicalAddonId]),
     /selected add-on configuration or inventory item is unavailable/,

@@ -26,3 +26,10 @@ export function getAvailableOrderAddons(addons, branchId, serviceIds) {
     && !addon.inventory_deleted_at,
   )
 }
+
+export function retainAvailableOrderAddons(selectedAddons, availableIds) {
+  const available = new Set(Array.from(availableIds || [], id => String(id)))
+  return Object.fromEntries(Object.entries(selectedAddons || {}).filter(([id, quantity]) =>
+    Number(quantity) > 0 && available.has(String(id)),
+  ))
+}

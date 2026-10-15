@@ -30,7 +30,7 @@ import { compareOrdersForList } from "../utils/orderListPriority";
 import { filterOrders } from "../utils/filterOrders";
 import { isValidPhilippineMobile } from "../utils/validation";
 import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
-import { getAvailableOrderAddons, resolveBranchId } from "../utils/orderAddons";
+import { getAvailableOrderAddons, resolveBranchId, retainAvailableOrderAddons } from "../utils/orderAddons";
 import useActiveBranches from "../hooks/useActiveBranches";
 
 const PROCESS_FLOW = [
@@ -295,6 +295,31 @@ export default function Orders() {
     selectedAddOnBranchId,
     selectedServiceIds,
   );
+  const availableAddonKey = branchInventoryItems.map(item => String(item.id)).sort().join("\n");
+  const selectedAddonKey = Object.entries(form.addons || {}).filter(([, quantity]) => Number(quantity) > 0)
+    .map(([id]) => String(id)).sort().join("\n");
+  const unavailableAddonNotice = useRef("");
+
+  useEffect(() => {
+    // If inventory is archived or a service/branch changes while the create
+    // dialog is open, remove stale selections before recalculating price or
+    // submitting. Editing an existing order keeps its historical add-on data.
+    if (!showModal || editing || !selectedAddonKey) return;
+    const availableIds = availableAddonKey ? availableAddonKey.split("\n") : [];
+    const available = new Set(availableIds);
+    const staleIds = selectedAddonKey.split("\n").filter(id => !available.has(id));
+    if (!staleIds.length) return;
+
+    setForm(current => ({
+      ...current,
+      addons: retainAvailableOrderAddons(current.addons, availableIds),
+    }));
+    const noticeKey = `${selectedAddonKey}=>${availableAddonKey}`;
+    if (unavailableAddonNotice.current !== noticeKey) {
+      unavailableAddonNotice.current = noticeKey;
+      toast("An archived or unavailable add-on was removed from this new order.");
+    }
+  }, [availableAddonKey, editing, selectedAddonKey, showModal]);
 
   const [phoneMatch, setPhoneMatch] = useState(null); // null = not searched, object = found, false = not found
   const [phoneLookupStatus, setPhoneLookupStatus] = useState("idle");
