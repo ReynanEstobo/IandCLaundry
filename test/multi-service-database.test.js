@@ -61,6 +61,7 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   const delinkArchivedInventoryMigration = await readFile(new URL('../supabase_migrations/20261004_delink_archived_service_inventory.sql', import.meta.url), 'utf8')
   const preserveOrderAddonHistoryMigration = await readFile(new URL('../supabase_migrations/20261005_preserve_order_addon_history.sql', import.meta.url), 'utf8')
   const repairOrderAddonHistoryForeignKeyMigration = await readFile(new URL('../supabase_migrations/20261006_preserve_archived_order_addon_history.sql', import.meta.url), 'utf8')
+  const rejectOrderOverpaymentMigration = await readFile(new URL('../supabase_migrations/20261008_reject_order_overpayment.sql', import.meta.url), 'utf8')
   assert.equal((await db.query("SELECT has_function_privilege('authenticated', 'public.cancel_branch_order(uuid,uuid,text)', 'EXECUTE') AS allowed")).rows[0].allowed, false)
   assert.equal((await db.query("SELECT has_function_privilege('service_role', 'public.cancel_branch_order(uuid,uuid,text)', 'EXECUTE') AS allowed")).rows[0].allowed, true)
   await db.exec(`
@@ -96,6 +97,7 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   await db.exec(delinkArchivedInventoryMigration)
   await db.exec(preserveOrderAddonHistoryMigration)
   await db.exec(repairOrderAddonHistoryForeignKeyMigration)
+  await db.exec(rejectOrderOverpaymentMigration)
   for (const table of ['customers', 'orders', 'order_items', 'payments']) {
     const result = await db.query(`SELECT COUNT(*)::int AS count FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='notes'`, [table])
     assert.equal(result.rows[0].count, 0)
@@ -117,6 +119,10 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   await assert.rejects(
     call({ ...order, client_request_id: randomUUID(), payment_method: 'gcash' }),
     /Cash is the only accepted payment method/,
+  )
+  await assert.rejects(
+    call({ ...order, client_request_id: randomUUID(), amount_paid: 826 }),
+    /Payment cannot be greater than the full order total/,
   )
   const first = await call(), second = await call()
   assert.equal(first.rows[0].id, second.rows[0].id)

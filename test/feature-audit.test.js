@@ -190,7 +190,7 @@ test('staff must not be allowed to delete another staff account via generic data
 
 test('new orders must reject nonnumeric payments before calling the database', async t => {
   const calls = mockDatabase(t)
-  for (const amount_paid of ['invalid', 'Infinity', Infinity, NaN, -1, null, true, [], '', undefined, 99]) {
+  for (const amount_paid of ['invalid', 'Infinity', Infinity, NaN, -1, null, true, [], '', undefined, 99, 201]) {
     await assert.rejects(createOrder({order:{weight_kg:8,total_price:200,amount_paid}},staff))
   }
   assert.equal(calls.some(call => call.rpc),false)

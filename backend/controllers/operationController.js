@@ -47,6 +47,9 @@ export async function createOrder(body, identity) {
   if (!['number', 'string'].includes(typeof order.amount_paid) || !String(order.amount_paid).trim() || !Number.isFinite(amountPaid) || amountPaid < 0) {
     throw Object.assign(new Error('A valid non-negative payment amount is required.'), { status: 400 })
   }
+  if (Number.isFinite(previewTotal) && previewTotal >= 0 && amountPaid > previewTotal) {
+    throw Object.assign(new Error('Payment cannot be greater than the full order total.'), { status: 400 })
+  }
   // Fast feedback for legacy/browser callers; the SQL RPC independently
   // recalculates the real total and repeats this rule transactionally.
   if (Number.isFinite(previewTotal) && previewTotal > 0 && amountPaid < previewTotal * 0.5) {

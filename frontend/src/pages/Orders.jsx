@@ -664,6 +664,10 @@ export default function Orders() {
     const amountPaid = parseFloat(form.amount_paid) || 0;
     const minRequired = total_price * 0.5;
 
+    if (!editing && amountPaid > total_price) {
+      return toast.error("Payment cannot be greater than the full order total.");
+    }
+
     // The 50% minimum applies when the order is first placed. Existing
     // records may have older payment terms and can still have their non-payment
     // details corrected without rewriting payment history.
@@ -1970,6 +1974,7 @@ export default function Orders() {
                         type="number"
                         step="0.01"
                         min="0"
+                        max={loyaltyPrice(calcPrice(form.items, form.addons), loyaltyPreview)}
                         placeholder="0.00"
                         value={form.amount_paid}
                         disabled={Boolean(editing)}
