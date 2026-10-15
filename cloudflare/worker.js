@@ -54,7 +54,7 @@ async function body(request) {
 const ratePolicies = {
   // Limit password guessing from one source IP. A separate identifier bucket
   // below also slows distributed attempts against a single account.
-  'POST:auth/login': { limit: 5, windowMs: 15 * 60 * 1000 },
+  'POST:auth/login': { limit: 5, windowMs: 3 * 60 * 1000 },
   'POST:auth/refresh': { limit: 30, windowMs: 15 * 60 * 1000 },
   'POST:auth/forgot-password/otp': { limit: 5, windowMs: 15 * 60 * 1000 },
   'POST:auth/forgot-password/otp/verify': { limit: 10, windowMs: 15 * 60 * 1000 },
@@ -97,7 +97,7 @@ async function enforceRateLimit(request, env, path) {
     if (identifier) {
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identifier))
       const identifierKey = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
-      await consumeRateLimit(env, `login-identifier:${identifierKey}`, { limit: 10, windowMs: 60 * 60 * 1000 })
+      await consumeRateLimit(env, `login-identifier:${identifierKey}`, { limit: 10, windowMs: 3 * 60 * 1000 })
     }
   }
 }
@@ -202,7 +202,10 @@ export class RateLimiter {
     const { limit, windowMs } = await request.json()
     const now = Date.now()
     const current = await this.state.storage.get('window')
-    const active = current && current.resetAt > now ? current : { count: 0, resetAt: now + windowMs }
+    let active = current && current.resetAt > now ? current : { count: 0, resetAt: now + windowMs }
+    // If a deployed policy shortens a window, cap an already persisted longer
+    // window so users are not kept blocked under the old duration.
+    if (active.resetAt - now > windowMs) active = { ...active, resetAt: now + windowMs }
     active.count += 1
     await this.state.storage.put('window', active)
     const retryAfterSeconds = Math.max(1, Math.ceil((active.resetAt - now) / 1000))

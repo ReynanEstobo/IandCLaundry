@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const output = path.join(dir, 'ic-laundry-functional-testing-uat.docx');
+const output = path.join(dir, 'ic-laundry-functional-testing-uat-revised.docx');
 const esc = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const paragraph = (text, style = 'Normal', pageBreak = false) => `<w:p><w:pPr><w:pStyle w:val="${style}"/>${pageBreak ? '<w:pageBreakBefore/>' : ''}</w:pPr><w:r><w:rPr><w:sz w:val="20"/></w:rPr><w:t xml:space="preserve">${esc(text)}</w:t></w:r></w:p>`;
 const headings = [];
@@ -35,10 +35,11 @@ const groups = [
     ['TC-ADM-06', 'Update permitted customer contact information.', 'The permitted change is saved while existing orders and payment history remain linked.'],
     ['TC-ADM-07', 'Configure a service with branch-specific automatic inventory requirements and optional add-ons.', 'Only valid inventory items for the selected branch and service can be saved in that service configuration.'],
     ['TC-ADM-08', 'Archive an inventory item linked to an active service configuration.', 'A confirmation prompt explains that active links will be disabled. On confirmation, the item is archived and its active service links are deactivated; existing order history remains.'],
-    ['TC-ADM-09', 'Attempt to archive inventory while signed in as Staff.', 'Staff has no usable archive action; a direct unauthorized request is rejected and the inventory item remains active.'],
-    ['TC-ADM-10', 'Review orders and analytics using a selected branch and date range.', 'The displayed results reflect the chosen reporting scope and distinguish branch records.'],
-    ['TC-ADM-11', 'Review demand forecasts and decision-support recommendations.', 'Estimates are labeled as estimates/advisory information; when Gemini is unavailable, the system provides a local fallback or a clear unavailable state without blocking routine transactions.'],
-    ['TC-ADM-12', 'Generate or export an operational report.', 'The report reflects the selected scope and its totals agree with the underlying displayed records.'],
+    ['TC-ADM-09', 'Restore an archived inventory item that had service links.', 'The item returns to active inventory, but its deduction and add-on service links remain inactive until an Administrator reconfigures them.'],
+    ['TC-ADM-10', 'Attempt to archive inventory while signed in as Staff.', 'Staff has no usable archive action; a direct unauthorized request is rejected and the inventory item remains active.'],
+    ['TC-ADM-11', 'Review orders and analytics using a selected branch and date range.', 'The displayed results reflect the chosen reporting scope and distinguish branch records.'],
+    ['TC-ADM-12', 'Review demand forecasts and decision-support recommendations.', 'Estimates are labeled as estimates/advisory information; when Gemini is unavailable, the system provides a local fallback or a clear unavailable state without blocking routine transactions.'],
+    ['TC-ADM-13', 'Generate or export an operational report.', 'The report reflects the selected scope and its totals agree with the underlying displayed records.'],
   ]},
   { title: 'Table 2. Functional Test Cases for Staff Modules', cases: [
     ['TC-STF-01', 'Sign in with valid Staff credentials.', 'The Staff dashboard opens with functions limited to the assigned role and branch.'],
@@ -57,6 +58,7 @@ const groups = [
     ['TC-STF-14', 'Use order search while a status filter is selected.', 'Search results match both the search term and selected status.'],
     ['TC-STF-15', 'Review a qualifying loyalty reward during checkout.', 'Eligible reward information and the applied benefit are clear; Staff cannot access Administrator reward controls.'],
     ['TC-STF-16', 'Trigger the ready-for-pickup customer email using a test recipient.', 'The intended recipient receives the status email, or a delivery failure is reported and recorded for review.'],
+    ['TC-STF-17', 'Create a new order after an inventory item linked to a service was archived.', 'The archived item is not offered as an add-on and is not deducted; only currently active, valid service configurations are applied.'],
   ]},
   { title: 'Table 3. Functional Test Cases for Public Pages and Order Tracking', cases: [
     ['TC-PUB-01', 'Open the landing page and navigate to services, process, contact, and tracking information.', 'Public sections load and show the current public-facing information without exposing protected dashboard data.'],
@@ -112,6 +114,7 @@ evaluationForm('PART III — OWNER / ADMINISTRATOR EVALUATION FORM', 'Owner/Admi
   'Service Configuration makes it clear which inventory items are used by each service.',
   'The inventory information helps me identify stock that needs attention.',
   'Archiving inventory clearly explains how its active service links will be affected.',
+  'Restoring an archived inventory item does not unexpectedly reactivate its old service links.',
   'Order history retains useful add-on details after inventory or service configuration changes.',
   'The service-demand and branch summaries are understandable.',
   'Forecasts clearly identify estimates and their limitations.',
@@ -131,6 +134,7 @@ evaluationForm('PART IV — STAFF EVALUATION FORM', 'Staff', [
   'The release confirmation helps prevent releasing the wrong order.',
   'Inventory availability and restocking information are useful for my branch tasks.',
   'Archived inventory is not offered for new orders, while old order details remain available.',
+  'An inventory item restored from archive is not used by new orders until its service configuration is enabled again.',
   'Ready-for-pickup notifications provide useful customer updates.',
   'Order search works together with the selected status filter.',
   'The interface and validation messages are understandable on the device I used.',

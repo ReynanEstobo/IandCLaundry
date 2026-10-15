@@ -44,7 +44,7 @@ test('workload estimates today using its weekday rather than tomorrow', () => {
   assert.equal(forecast.averageDailyOrders, 20 / 30)
   assert.ok(Math.abs(forecast.expectedTodayOrders - 14 / 9) < 1e-12)
   assert.equal(Object.hasOwn(forecast, 'expectedTomorrowOrders'), false)
-  assert.match(forecast.workloadSummary, /expected today/i)
+  assert.match(forecast.workloadSummary, /orders expected/i)
   assert.doesNotMatch(forecast.workloadSummary, /tomorrow/i)
 })
 
@@ -122,7 +122,7 @@ test('empty or fewer than seven historical orders retain the limited-data guard'
   assert.match(limited.workloadSummary, /\b20\b/)
 })
 
-test('a positive forecast below one order is not displayed as zero expected today', () => {
+test('a positive forecast below one order is not displayed as zero expected', () => {
   const now = new Date('2026-09-25T12:00:00')
   const forecast = rollingDemandForecast(
     Array.from({ length: 8 }, () => ({ created_at: '2026-09-19T09:00:00', status: 'released' })),
@@ -131,8 +131,8 @@ test('a positive forecast below one order is not displayed as zero expected toda
 
   assert.ok(forecast.expectedTodayOrders > 0 && forecast.expectedTodayOrders < 1)
   assert.equal(forecast.workloadLevel, 'Lighter than usual')
-  assert.match(forecast.workloadSummary, /Less than 1 order expected today/)
-  assert.doesNotMatch(forecast.workloadSummary, /\b0 orders expected today/)
+  assert.match(forecast.workloadSummary, /Less than 1 order expected;/)
+  assert.doesNotMatch(forecast.workloadSummary, /\b0 orders expected;/)
 })
 
 test('the payment revenue window still includes today and starts 29 days before today', () => {

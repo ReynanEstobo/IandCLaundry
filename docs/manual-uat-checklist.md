@@ -324,8 +324,8 @@ a **FAIL / release blocker** and fix this before production sign-off.
   internal database details.
 - [ ] Verify security headers on an API response: CSP, HSTS, frame denial,
   `nosniff`, referrer policy, and API `Cache-Control: no-store`.
-- [ ] Trigger rate-limit limits only on staging: login (10/15 min), password
-  OTP (5/15 min), forgot OTP (5/15 min), contact (3/15 min), and public
+- [ ] Trigger rate-limit limits only on staging: login (5 attempts per IP or
+  10 per account in 3 min), password OTP (5/15 min), forgot OTP (5/15 min), contact (3/15 min), and public
   tracking (30/min). Confirm 429 with a retry time, then normal recovery after
   the window.
 

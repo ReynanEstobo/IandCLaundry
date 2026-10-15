@@ -95,12 +95,14 @@ test('visitor journey: contact honeypot silently drops automated submissions', a
 
 test('security journey: login has a hashed account-identifier rate limit in addition to the IP limit', async () => {
   const keys = []
+  const policies = new Map()
   const env = {
     RATE_LIMITER: {
       idFromName: key => { keys.push(key); return key },
       get: () => ({ fetch: async (_url, options) => {
         const key = keys.at(-1)
-        return Response.json({ allowed: !key.startsWith('login-identifier:'), retryAfterSeconds: 3600 })
+        policies.set(key, JSON.parse(options.body))
+        return Response.json({ allowed: !key.startsWith('login-identifier:'), retryAfterSeconds: 180 })
       } }),
     },
     ASSETS: { fetch: async () => new Response('not used') },
@@ -111,8 +113,11 @@ test('security journey: login has a hashed account-identifier rate limit in addi
     body: JSON.stringify({ identifier: 'Test.User', password: 'wrong-password' }),
   }), env)
   assert.equal(response.status, 429)
-  assert.equal(response.headers.get('retry-after'), '3600')
-  assert.ok(keys.some(key => key.startsWith('login-identifier:')))
+  assert.equal(response.headers.get('retry-after'), '180')
+  const ipPolicy = [...policies].find(([key]) => key.startsWith('route:POST:auth/login:'))?.[1]
+  const accountPolicy = [...policies].find(([key]) => key.startsWith('login-identifier:'))?.[1]
+  assert.deepEqual(ipPolicy, { limit: 5, windowMs: 3 * 60 * 1000 })
+  assert.deepEqual(accountPolicy, { limit: 10, windowMs: 3 * 60 * 1000 })
   assert.ok(keys.every(key => !key.includes('Test.User')))
 })
 
@@ -165,6 +170,22 @@ test('security journey: rate limiter blocks requests after the configured limit'
   assert.equal(first.allowed, true)
   assert.equal(second.allowed, true)
   assert.equal(third.allowed, false)
+})
+
+test('rate limiter shortens an existing persisted window when policy is reduced', async () => {
+  const storage = new Map([['window', { count: 5, resetAt: Date.now() + 60 * 60_000 }]])
+  const limiter = new RateLimiter({
+    storage: {
+      get: async key => storage.get(key),
+      put: async (key, value) => storage.set(key, value),
+    },
+  })
+  const response = await limiter.fetch(new Request('https://rate-limiter/check', {
+    method: 'POST', body: JSON.stringify({ limit: 5, windowMs: 3 * 60_000 }),
+  }))
+  const result = await response.json()
+  assert.equal(result.allowed, false)
+  assert.ok(result.retryAfterSeconds <= 180)
 })
 
 test('security journey: the general API limiter protects every non-health endpoint', async () => {

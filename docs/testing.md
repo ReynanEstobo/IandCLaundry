@@ -1,33 +1,51 @@
-# Automated test suite
+# System testing guide
 
-Run the safe automated scenarios with:
+## Run the local automated system check
 
-```bash
-npm test
+From the project root, use PowerShell's `.cmd` shim if script execution policy
+blocks `npm.ps1`:
+
+```powershell
+npm.cmd run test:system
 ```
 
-The suite never connects to the production database and never sends an email,
-SMS, password-reset code, or creates an order. It uses mocked database and
-Cloudflare boundaries to cover these representative user journeys:
+The command runs three checks in sequence:
 
-- public pages, tracking validation, contact-form validation, response headers,
-  unknown endpoints, and oversized request rejection;
-- anonymous access attempts to protected staff and operational endpoints;
-- rate-limit behavior;
-- branch isolation for order-stage changes and inventory restocks;
-- order validation, load calculation, payment state, and secure RPC usage.
+1. `npm test` runs the automated Node test suite.
+2. `npm run build` verifies the frontend production build.
+3. `npx wrangler deploy --dry-run` checks Worker packaging without deploying.
 
-## What requires a separate staging database
+The automated tests exercise representative behavior across authentication and
+sessions, role and branch authorization, customers, orders and payments,
+inventory and service/add-on configuration, analytics and exports, forecasts,
+notifications, public pages, and request security. Database-dependent cases
+use test databases or mocks; this command does not mutate the live Supabase
+project or send real messages.
 
-Real end-to-end testing of staff provisioning, Supabase sign-in, OTP delivery,
-database triggers, inventory stock deduction, cancellation/restore, and order
-history must run against a dedicated Supabase staging project. Do not point
-automated mutation tests at the live I&C Laundry database.
+All three checks must finish successfully for the local smoke check to pass.
+Fix failures and rerun the command. A successful run is not proof of 100%
+coverage or correctness: it does not deploy the app or fully exercise the live
+browser, production database, Cloudflare environment, email/SMS providers, or
+every role/branch and failure combination.
 
-Before a release, run:
+## Run browser UAT in staging
 
-```bash
-npm test
-npm run build
-npx wrangler deploy --dry-run
-```
+Use a dedicated Supabase staging project and follow
+[`manual-uat-checklist.md`](manual-uat-checklist.md). Cover public visitor,
+administrator, and staff workflows, including one staff account per branch.
+Use disposable UAT records, test inboxes, and test phone numbers. Do not run
+mutating tests against production data.
+
+Record the build/commit, environment, tester, account/role/branch, test case,
+expected result, actual result, status, and evidence. Leave results unclaimed
+until each test has actually been executed. Stage destructive, rate-limit,
+OTP-expiry, and brute-force scenarios only in staging.
+
+## Before release
+
+- Automated system check passes.
+- Browser UAT applicable cases pass with evidence.
+- Any failures have a corrective action and a passing retest.
+- Database migrations and required secrets are verified in staging.
+- A production smoke check is performed after deployment without using
+  destructive test data.

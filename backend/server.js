@@ -22,7 +22,7 @@ const port = Number(process.env.PORT || 3001)
 const localRateWindows = new Map()
 const LOCAL_GENERAL_LIMIT = { limit: 180, windowMs: 60_000 }
 const LOCAL_ROUTE_LIMITS = {
-  'POST:auth/login': { limit: 5, windowMs: 15 * 60_000 },
+  'POST:auth/login': { limit: 5, windowMs: 3 * 60_000 },
   'POST:public/contact': { limit: 3, windowMs: 15 * 60_000 },
 }
 
@@ -55,7 +55,7 @@ function enforceLocalLoginIdentifierLimit(payload) {
   const identifier = String(payload?.identifier || payload?.email || '').trim().toLowerCase()
   if (identifier) {
     const digest = createHash('sha256').update(identifier).digest('hex')
-    consumeLocalLimit(`login-identifier:${digest}`, { limit: 10, windowMs: 60 * 60_000 })
+    consumeLocalLimit(`login-identifier:${digest}`, { limit: 10, windowMs: 3 * 60_000 })
   }
 }
 

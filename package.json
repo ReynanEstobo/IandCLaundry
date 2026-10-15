@@ -8,6 +8,7 @@
     "dev:frontend": "vite --config frontend/vite.config.js",
     "dev:backend": "node backend/server.js",
     "test": "node --test test/*.test.js",
+    "test:system": "npm test && npm run build && npx wrangler deploy --dry-run",
     "test:watch": "node --test --watch test/*.test.js",
     "build": "vite build --config frontend/vite.config.js",
     "preview": "vite preview --config frontend/vite.config.js"
