@@ -46,7 +46,6 @@ export default function Inventory() {
   );
   const [restockQty, setRestockQty] = useState("");
   const [restockCost, setRestockCost] = useState("");
-  const [restockSupplier, setRestockSupplier] = useState("");
   const [initialCost, setInitialCost] = useState("");
   const [initialSupplier, setInitialSupplier] = useState("");
 
@@ -192,7 +191,6 @@ export default function Inventory() {
         itemId: showRestock.id,
         quantity: qty,
         costTotal: parseFloat(restockCost) || null,
-        supplier: restockSupplier || null,
       });
     } catch (error) {
       toast.error(error.message);
@@ -204,7 +202,6 @@ export default function Inventory() {
     setShowRestock(null);
     setRestockQty("");
     setRestockCost("");
-    setRestockSupplier("");
     await loadData(true);
     setRestocking(false);
   }
@@ -468,7 +465,6 @@ export default function Inventory() {
                               setShowRestock(item);
                               setRestockQty("");
                               setRestockCost("");
-                              setRestockSupplier("");
                             }}
                           >
                             <RefreshCw size={16} /><span className="mobile-action-label">Restock</span>
@@ -721,15 +717,6 @@ export default function Inventory() {
                     placeholder="0.00"
                     value={restockCost}
                     onChange={(e) => setRestockCost(e.target.value)}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Supplier</label>
-                  <input
-                    className="form-control"
-                    placeholder="Supplier name"
-                    value={restockSupplier}
-                    onChange={(e) => setRestockSupplier(e.target.value)}
                   />
                 </div>
               </div>

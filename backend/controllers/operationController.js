@@ -124,7 +124,7 @@ export async function transitionAllOrderItems(body, identity) {
 }
 
 export async function restockInventory(body, identity) {
-  const { itemId, quantity, costTotal, supplier } = body || {}
+  const { itemId, quantity, costTotal } = body || {}
   const added = Number(quantity)
   if (!itemId || !Number.isFinite(added) || added <= 0) throw Object.assign(new Error('A valid inventory item and restock quantity are required.'), { status: 400 })
   requireBranch(identity)
@@ -135,7 +135,7 @@ export async function restockInventory(body, identity) {
     p_item_id: item.id,
     p_quantity: added,
     p_cost_total: Number(costTotal) || 0,
-    p_supplier: supplier || '',
+    p_supplier: '',
   })
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
   return { data }

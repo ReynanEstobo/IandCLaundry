@@ -132,6 +132,14 @@ test('cancellation and restock reject other branches and invalid quantities', as
   assert.equal(calls.some(call => call.rpc),false)
 })
 
+test('restock no longer accepts or forwards a supplier name', async t => {
+  const calls = mockDatabase(t, [{ id: 'item-a', branch_id: staff.branchId }])
+  await restockInventory({ itemId: 'item-a', quantity: 2, costTotal: 40, supplier: 'ignored supplier' }, staff)
+  const rpcCall = calls.find(call => call.rpc === 'restock_branch_inventory')
+  assert.ok(rpcCall)
+  assert.equal(rpcCall.args.p_supplier, '')
+})
+
 test('initial inventory creation validates its total cost and records it through the atomic branch RPC', async t => {
   const calls = mockDatabase(t, [{ id: 'branch-a', name: 'Main' }])
   await assert.rejects(createInventoryItem({ name: 'Soap', unit: 'pcs', quantity: 0, costTotal: 25 }, staff), /stock must be greater than zero/i)

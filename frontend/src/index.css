@@ -8138,7 +8138,6 @@ input, select, textarea, button { max-width: 100%; }
 .section-fetch-state + .data-table-card,
 .section-fetch-state + .card {
   opacity: .82;
-  pointer-events: none;
   transition: opacity 160ms ease;
 }
 
