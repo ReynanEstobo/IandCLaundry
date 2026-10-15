@@ -57,6 +57,7 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   await db.exec(migration)
   const removeNotesMigration = await readFile(new URL('../supabase_migrations/20261001_remove_note_fields.sql', import.meta.url), 'utf8')
   const cashOnlyMigration = await readFile(new URL('../supabase_migrations/20261001_z_cash_only_payments.sql', import.meta.url), 'utf8')
+  const inventoryIntegrityMigration = await readFile(new URL('../supabase_migrations/20261003_service_inventory_integrity.sql', import.meta.url), 'utf8')
   assert.equal((await db.query("SELECT has_function_privilege('authenticated', 'public.cancel_branch_order(uuid,uuid,text)', 'EXECUTE') AS allowed")).rows[0].allowed, false)
   assert.equal((await db.query("SELECT has_function_privilege('service_role', 'public.cancel_branch_order(uuid,uuid,text)', 'EXECUTE') AS allowed")).rows[0].allowed, true)
   await db.exec(`
@@ -88,6 +89,7 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   await db.exec(migration) // Safe to rerun without replacing an intentional zero price.
   await db.exec(removeNotesMigration)
   await db.exec(cashOnlyMigration)
+  await db.exec(inventoryIntegrityMigration)
   for (const table of ['customers', 'orders', 'order_items', 'payments']) {
     const result = await db.query(`SELECT COUNT(*)::int AS count FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='notes'`, [table])
     assert.equal(result.rows[0].count, 0)
@@ -180,9 +182,38 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   assert.equal((await db.query("SELECT count(*)::int AS count FROM audit_logs WHERE action='cancel' AND record_id=$1", [first.rows[0].id])).rows[0].count, 1)
   assert.equal((await db.query('SELECT count(*)::int AS count FROM inventory_adjustments WHERE order_id=$1', [first.rows[0].id])).rows[0].count, 3)
 
+  await assert.rejects(
+    db.query('UPDATE inventory_items SET deleted_at=now() WHERE id=$1', [hangerId]),
+    /Remove this item from active service inventory configurations/,
+  )
+  await assert.rejects(
+    db.query('UPDATE inventory_items SET branch_id=$1 WHERE id=$2', [otherBranchId, hangerId]),
+    /Remove this item from active service inventory configurations/,
+  )
+
+  // Simulate a legacy stale row that was archived before the lifecycle guard
+  // existed; order creation must still reject it safely.
+  await db.exec('ALTER TABLE inventory_items DISABLE TRIGGER tr_prevent_configured_inventory_archive_or_move')
   await db.query('UPDATE inventory_items SET deleted_at=now() WHERE id=$1', [hangerId])
   await assert.rejects(call({ ...order, client_request_id: randomUUID() }), /automatic deduction items are unavailable/)
   await db.query('UPDATE inventory_items SET deleted_at=NULL WHERE id=$1', [hangerId])
+  await db.exec('ALTER TABLE inventory_items ENABLE TRIGGER tr_prevent_configured_inventory_archive_or_move')
+
+  // Simulate a legacy/corrupt add-on config whose item belongs to another
+  // branch. The final row trigger rejects it and the RPC transaction rolls
+  // back before stock can be taken from that branch.
+  const foreignInventoryId = randomUUID()
+  await db.query("INSERT INTO inventory_items(id,name,unit,current_stock,branch_id) VALUES ($1,'Foreign detergent','ml',40,$2)", [foreignInventoryId, otherBranchId])
+  await db.exec('ALTER TABLE service_addon_items DISABLE TRIGGER tr_validate_service_addon_item')
+  await db.query('UPDATE service_addon_items SET inventory_item_id=$1 WHERE id=$2', [foreignInventoryId, addonId])
+  await assert.rejects(
+    call({ ...order, client_request_id: randomUUID() }),
+    /add-on configuration or inventory item is unavailable for this order branch and service/,
+  )
+  assert.equal(Number((await db.query('SELECT current_stock FROM inventory_items WHERE id=$1', [foreignInventoryId])).rows[0].current_stock), 40)
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM orders')).rows[0].count, 1)
+  await db.query('UPDATE service_addon_items SET inventory_item_id=$1 WHERE id=$2', [inventoryId, addonId])
+  await db.exec('ALTER TABLE service_addon_items ENABLE TRIGGER tr_validate_service_addon_item')
 
   await db.query('UPDATE inventory_items SET current_stock=12 WHERE id=$1', [inventoryId])
   await assert.rejects(call({ ...order, client_request_id: randomUUID() }), /only 12 ml remaining; 15(?:\.0+)? ml is required/)

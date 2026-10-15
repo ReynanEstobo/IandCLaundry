@@ -1,10 +1,11 @@
-import { Edit2, PackageCheck, Plus, Save, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Edit2, PackageCheck, Plus, Save, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { InlineSkeleton, PageError, PageLoader } from '../components/AsyncState'
 import LoadingButton from '../components/LoadingButton'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { runQuery } from '../services/api/client'
+import { findInvalidServiceInventoryConfigs } from '../utils/serviceInventoryConfig'
 
 const blankService = { name: '', description: '', bundle_kg: 8, bundle_price: '', excess_kg_price: '', processing_type: 'full_service', is_active: true }
 
@@ -16,6 +17,7 @@ export default function ServiceManagement() {
   const [form, setForm] = useState(blankService), [editing, setEditing] = useState(null), [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(true), [refreshing, setRefreshing] = useState(false), [saving, setSaving] = useState(false), [savingConfig, setSavingConfig] = useState(false), [error, setError] = useState('')
   const [serviceToArchive, setServiceToArchive] = useState(null), [archiving, setArchiving] = useState(false)
+  const [removingConfigId, setRemovingConfigId] = useState('')
 
   const load = useCallback(async (background = false) => {
     if (!background) { setLoading(true); setError('') }
@@ -24,7 +26,7 @@ export default function ServiceManagement() {
       const results = await Promise.all([
         runQuery('service_types', { operation: 'select', selection: '*', orders: [{ column: 'name', options: { ascending: true } }] }),
         runQuery('branches', { operation: 'select', selection: 'id, name', orders: [{ column: 'name', options: { ascending: true } }] }),
-        runQuery('inventory_items', { operation: 'select', selection: 'id, name, unit, current_stock, branch_id', orders: [{ column: 'name', options: { ascending: true } }] }),
+        runQuery('inventory_items', { operation: 'select', selection: 'id, name, unit, current_stock, branch_id, deleted_at', orders: [{ column: 'name', options: { ascending: true } }] }),
         runQuery('service_inventory_requirements', { operation: 'select', selection: '*' }),
         runQuery('service_addon_items', { operation: 'select', selection: '*' }),
       ])
@@ -48,13 +50,21 @@ export default function ServiceManagement() {
   }, [])
   useEffect(() => { load() }, [load])
   useEffect(() => {
-    const recipes = requirements.filter(row => row.branch_id === branchId && row.service_type_id === serviceId)
-    const options = addons.filter(row => row.branch_id === branchId && row.service_type_id === serviceId)
+    const recipes = requirements.filter(row => row.branch_id === branchId && row.service_type_id === serviceId && row.is_active !== false)
+    const options = addons.filter(row => row.branch_id === branchId && row.service_type_id === serviceId && row.is_active !== false)
     setRecipeDraft(Object.fromEntries(recipes.map(row => [row.inventory_item_id, String(row.quantity_per_load)])))
     setAddonDraft(Object.fromEntries(options.map(row => [row.inventory_item_id, String(row.unit_price)])))
   }, [branchId, serviceId, requirements, addons])
 
-  const branchItems = useMemo(() => inventory.filter(item => item.branch_id === branchId), [inventory, branchId])
+  const branchItems = useMemo(() => inventory.filter(item => item.branch_id === branchId && !item.deleted_at), [inventory, branchId])
+  const invalidRequirements = useMemo(
+    () => findInvalidServiceInventoryConfigs(requirements.filter(row => row.branch_id === branchId && row.service_type_id === serviceId), inventory),
+    [requirements, inventory, branchId, serviceId],
+  )
+  const invalidAddons = useMemo(
+    () => findInvalidServiceInventoryConfigs(addons.filter(row => row.branch_id === branchId && row.service_type_id === serviceId), inventory),
+    [addons, inventory, branchId, serviceId],
+  )
   const selectedService = services.find(service => service.id === serviceId)
   function openService(service = null) {
     setEditing(service)
@@ -102,6 +112,15 @@ export default function ServiceManagement() {
     } catch (saveError) { toast.error(saveError.message || 'Unable to save configuration.') }
     finally { setSavingConfig(false) }
   }
+  async function removeInvalidConfiguration(table, row) {
+    if (removingConfigId) return
+    setRemovingConfigId(row.id)
+    const result = await runQuery(table, { operation: 'delete', filters: [{ type: 'eq', column: 'id', value: row.id }] })
+    setRemovingConfigId('')
+    if (result.error) return toast.error(result.error.message || 'Unable to remove the invalid checklist entry.')
+    toast.success(`Removed invalid ${table === 'service_inventory_requirements' ? 'automatic deduction' : 'add-on'} configuration.`)
+    await load(true)
+  }
   function toggleDraft(setter, id, checked, initial) { setter(current => { const next = { ...current }; if (checked) next[id] = next[id] || initial; else delete next[id]; return next }) }
 
   if (loading) return <PageLoader label="Loading service configuration…" />
@@ -121,6 +140,13 @@ export default function ServiceManagement() {
       <div className="settings-card-header"><div><h3>Branch inventory checklist</h3><p>Choose stock consumed per load and which inventory items staff may add to orders for this service.</p></div></div>
       <div className="form-row"><div className="form-group"><label>Branch</label><select className="form-control" value={branchId} onChange={event => setBranchId(event.target.value)}>{branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</select></div><div className="form-group"><label>Service</label><select className="form-control" value={serviceId} onChange={event => setServiceId(event.target.value)}>{services.map(service => <option key={service.id} value={service.id}>{service.name}</option>)}</select></div></div>
       {selectedService && <div className="pricing-card" style={{ marginBottom: 16 }}><PackageCheck size={18} /> <strong>{selectedService.name}</strong> · item quantities are multiplied by the calculated loads.</div>}
+      {(invalidRequirements.length > 0 || invalidAddons.length > 0) && <div role="alert" style={{ marginBottom: 16, padding: 14, border: '1px solid #d99b2b', borderRadius: 10, background: 'rgba(217, 155, 43, 0.12)', color: 'var(--text-primary, inherit)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, marginBottom: 8 }}><AlertTriangle size={17} /> Invalid inventory configuration must be removed before affected orders can be created.</div>
+        {[...invalidRequirements.map(row => ({ ...row, table: 'service_inventory_requirements', kind: 'Automatic deduction' })), ...invalidAddons.map(row => ({ ...row, table: 'service_addon_items', kind: 'Optional add-on' }))].map(row => <div key={`${row.table}:${row.id}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '6px 0' }}>
+          <span>{row.kind}: <strong>{row.inventory_name}</strong> — {row.invalid_reason}</span>
+          <button type="button" className="btn btn-danger btn-sm" disabled={Boolean(removingConfigId)} onClick={() => removeInvalidConfiguration(row.table, row)}>{removingConfigId === row.id ? 'Removing…' : 'Remove invalid entry'}</button>
+        </div>)}
+      </div>}
       <p className="form-hint" style={{ margin: '0 0 14px' }}>Checking <strong>Offer as add-on</strong> only controls availability. Staff choose the quantity on the order form, up to the branch's available stock.</p>
       <div className="table-wrapper"><table><thead><tr><th>Inventory item</th><th>Available</th><th>Automatic deduction (unit/load)</th><th>Order add-on price</th></tr></thead><tbody>{branchItems.map(item => {
         const recipeOn = Object.hasOwn(recipeDraft, item.id), addonOn = Object.hasOwn(addonDraft, item.id)
