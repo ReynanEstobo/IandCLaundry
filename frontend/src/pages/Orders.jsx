@@ -30,6 +30,7 @@ import { compareOrdersForList } from "../utils/orderListPriority";
 import { filterOrders } from "../utils/filterOrders";
 import { isValidPhilippineMobile } from "../utils/validation";
 import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
+import { getAvailableOrderAddons, resolveBranchId } from "../utils/orderAddons";
 import useActiveBranches from "../hooks/useActiveBranches";
 
 const PROCESS_FLOW = [
@@ -222,6 +223,7 @@ export default function Orders() {
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const [customers, setCustomers] = useState([]);
   const [serviceTypes, setServiceTypes] = useState([]);
+  const [branchRecords, setBranchRecords] = useState([]);
   const [soapItems, setSoapItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -272,13 +274,15 @@ export default function Orders() {
     branch: branchNames[0] || "",
     addons: {},
   });
-  // Add-ons are always taken from the selected order branch. The database
-  // repeats this check and refuses cross-branch item IDs before any stock is
-  // deducted; this filter prevents a staff member from seeing them in the UI.
+  // Match the same branch UUID and service association that the database
+  // validates. Inventory-item branch labels are display data, not authority.
   const selectedAddOnBranch = isAdmin ? form.branch : branch;
+  const selectedAddOnBranchId = resolveBranchId(branchRecords, selectedAddOnBranch);
   const selectedServiceIds = new Set(form.items.map(item => String(item.service_type_id)).filter(Boolean));
-  const branchInventoryItems = soapItems.filter(
-    item => item.branch === selectedAddOnBranch && selectedServiceIds.has(String(item.service_type_id)),
+  const branchInventoryItems = getAvailableOrderAddons(
+    soapItems,
+    selectedAddOnBranchId,
+    selectedServiceIds,
   );
 
   const [phoneMatch, setPhoneMatch] = useState(null); // null = not searched, object = found, false = not found
@@ -357,13 +361,14 @@ export default function Orders() {
 
     // 👇 KEEP THIS (but replace first item)
     try {
-    const [ordersRes, custRes, soapRes, servicesRes] = await Promise.all([
+    const [ordersRes, custRes, soapRes, servicesRes, branchesRes] = await Promise.all([
       ordersQuery,
       getVisibleCustomers(),
       supabase.from("service_addon_items")
-        .select("id, branch_id, service_type_id, unit_price, inventory_items(id, name, unit, current_stock, branch, branch_id)")
+        .select("id, branch_id, service_type_id, unit_price, inventory_items(id, name, unit, current_stock, branch, branch_id, deleted_at)")
         .eq("is_active", true),
       supabase.from("service_types").select("*").eq("is_active", true).order("name"),
+      supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     ]);
 
     // 🔥 fetch ALL orders for search (no pagination)
@@ -372,7 +377,7 @@ export default function Orders() {
       .select("*, customers(name, phone, email), order_items(*)")
       .order("created_at", { ascending: false });
 
-    const error = ordersRes.error || custRes.error || soapRes.error || servicesRes.error;
+    const error = ordersRes.error || custRes.error || soapRes.error || servicesRes.error || branchesRes.error;
     if (error) throw error;
 
     const sortedVisible = [...(ordersRes.data || [])].sort(compareOrdersForList);
@@ -381,11 +386,13 @@ export default function Orders() {
     setOrders(sortedVisible.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE));
     setTotalCount(sortedVisible.length);
     setCustomers(custRes.data || []);
+    setBranchRecords(branchesRes.data || []);
     setSoapItems((soapRes.data || []).map(option => ({
-      id: option.id, service_type_id: option.service_type_id, unit_price: option.unit_price,
+      id: option.id, branch_id: option.branch_id, service_type_id: option.service_type_id, unit_price: option.unit_price,
       inventory_item_id: option.inventory_items?.id, name: option.inventory_items?.name,
       unit: option.inventory_items?.unit, current_stock: option.inventory_items?.current_stock,
-      branch: option.inventory_items?.branch, branch_id: option.inventory_items?.branch_id,
+      inventory_branch_id: option.inventory_items?.branch_id,
+      inventory_deleted_at: option.inventory_items?.deleted_at,
     })).filter(option => option.inventory_item_id));
     setServiceTypes(servicesRes.data || []);
     } catch (error) {
@@ -448,11 +455,9 @@ export default function Orders() {
     setForm((current) => {
       const items = current.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...changes } : item);
       const selectedIds = new Set(items.map((item) => String(item.service_type_id)).filter(Boolean));
-      const selectedBranch = isAdmin ? current.branch : branch;
-      const addons = Object.fromEntries(Object.entries(current.addons).filter(([configurationId]) => {
-        const option = soapItems.find((candidate) => String(candidate.id) === String(configurationId));
-        return option?.branch === selectedBranch && selectedIds.has(String(option.service_type_id));
-      }));
+      const selectedBranchId = resolveBranchId(branchRecords, isAdmin ? current.branch : branch);
+      const availableIds = new Set(getAvailableOrderAddons(soapItems, selectedBranchId, selectedIds).map(option => String(option.id)));
+      const addons = Object.fromEntries(Object.entries(current.addons).filter(([id]) => availableIds.has(String(id))));
       return { ...current, items, addons };
     });
   }
@@ -466,11 +471,9 @@ export default function Orders() {
       if (current.items.length === 1) return current;
       const items = current.items.filter((_, itemIndex) => itemIndex !== index);
       const selectedIds = new Set(items.map((item) => String(item.service_type_id)).filter(Boolean));
-      const selectedBranch = isAdmin ? current.branch : branch;
-      const addons = Object.fromEntries(Object.entries(current.addons).filter(([configurationId]) => {
-        const option = soapItems.find((candidate) => String(candidate.id) === String(configurationId));
-        return option?.branch === selectedBranch && selectedIds.has(String(option.service_type_id));
-      }));
+      const selectedBranchId = resolveBranchId(branchRecords, isAdmin ? current.branch : branch);
+      const availableIds = new Set(getAvailableOrderAddons(soapItems, selectedBranchId, selectedIds).map(option => String(option.id)));
+      const addons = Object.fromEntries(Object.entries(current.addons).filter(([id]) => availableIds.has(String(id))));
       return { ...current, items, addons };
     });
   }
@@ -602,12 +605,17 @@ export default function Orders() {
       ([, qty]) => qty > 0,
     );
 
+    const availableAddOnIds = new Set(branchInventoryItems.map(item => String(item.id)));
+    if (addonEntries.some(([id]) => !availableAddOnIds.has(String(id)))) {
+      return toast.error("A selected add-on is no longer available for this branch or service. Refresh the order form or remove it, then try again.");
+    }
+
     // Check stock for all add-ons
     if (!editing) {
       for (const [itemId, qty] of addonEntries) {
         const item = branchInventoryItems.find((i) => i.id === itemId);
-        if (!item) return toast.error("Selected item not found");
-        if (item.current_stock < qty) {
+        if (!item) return toast.error("A selected add-on is no longer available for this branch or service. Refresh the order form or remove it, then try again.");
+        if (Number(item.current_stock) < Number(qty)) {
           return toast.error(
             `${item.name} only has ${item.current_stock} in stock!`,
           );
