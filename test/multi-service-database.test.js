@@ -58,6 +58,8 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   const removeNotesMigration = await readFile(new URL('../supabase_migrations/20261001_remove_note_fields.sql', import.meta.url), 'utf8')
   const cashOnlyMigration = await readFile(new URL('../supabase_migrations/20261001_z_cash_only_payments.sql', import.meta.url), 'utf8')
   const inventoryIntegrityMigration = await readFile(new URL('../supabase_migrations/20261003_service_inventory_integrity.sql', import.meta.url), 'utf8')
+  const delinkArchivedInventoryMigration = await readFile(new URL('../supabase_migrations/20261004_delink_archived_service_inventory.sql', import.meta.url), 'utf8')
+  const preserveOrderAddonHistoryMigration = await readFile(new URL('../supabase_migrations/20261005_preserve_order_addon_history.sql', import.meta.url), 'utf8')
   assert.equal((await db.query("SELECT has_function_privilege('authenticated', 'public.cancel_branch_order(uuid,uuid,text)', 'EXECUTE') AS allowed")).rows[0].allowed, false)
   assert.equal((await db.query("SELECT has_function_privilege('service_role', 'public.cancel_branch_order(uuid,uuid,text)', 'EXECUTE') AS allowed")).rows[0].allowed, true)
   await db.exec(`
@@ -90,6 +92,8 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   await db.exec(removeNotesMigration)
   await db.exec(cashOnlyMigration)
   await db.exec(inventoryIntegrityMigration)
+  await db.exec(delinkArchivedInventoryMigration)
+  await db.exec(preserveOrderAddonHistoryMigration)
   for (const table of ['customers', 'orders', 'order_items', 'payments']) {
     const result = await db.query(`SELECT COUNT(*)::int AS count FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='notes'`, [table])
     assert.equal(result.rows[0].count, 0)
@@ -182,22 +186,13 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   assert.equal((await db.query("SELECT count(*)::int AS count FROM audit_logs WHERE action='cancel' AND record_id=$1", [first.rows[0].id])).rows[0].count, 1)
   assert.equal((await db.query('SELECT count(*)::int AS count FROM inventory_adjustments WHERE order_id=$1', [first.rows[0].id])).rows[0].count, 3)
 
-  await assert.rejects(
-    db.query('UPDATE inventory_items SET deleted_at=now() WHERE id=$1', [hangerId]),
-    /Remove this item from active service inventory configurations/,
-  )
-  await assert.rejects(
-    db.query('UPDATE inventory_items SET branch_id=$1 WHERE id=$2', [otherBranchId, hangerId]),
-    /Remove this item from active service inventory configurations/,
-  )
-
-  // Simulate a legacy stale row that was archived before the lifecycle guard
-  // existed; order creation must still reject it safely.
-  await db.exec('ALTER TABLE inventory_items DISABLE TRIGGER tr_prevent_configured_inventory_archive_or_move')
+  // Archiving an item automatically disables its service link, so affected
+  // orders continue without consuming the archived item.
   await db.query('UPDATE inventory_items SET deleted_at=now() WHERE id=$1', [hangerId])
-  await assert.rejects(call({ ...order, client_request_id: randomUUID() }), /automatic deduction items are unavailable/)
-  await db.query('UPDATE inventory_items SET deleted_at=NULL WHERE id=$1', [hangerId])
-  await db.exec('ALTER TABLE inventory_items ENABLE TRIGGER tr_prevent_configured_inventory_archive_or_move')
+  assert.equal((await db.query('SELECT is_active FROM service_inventory_requirements WHERE inventory_item_id=$1', [hangerId])).rows[0].is_active, false)
+  const orderAfterArchive = await call({ ...order, client_request_id: randomUUID() })
+  assert.ok(orderAfterArchive.rows[0].id)
+  await db.query("SELECT cancel_branch_order($1,$2,'Test cleanup after archive')", [orderAfterArchive.rows[0].id, staffId])
 
   // Simulate a legacy/corrupt add-on config whose item belongs to another
   // branch. The final row trigger rejects it and the RPC transaction rolls
@@ -211,12 +206,26 @@ test('multi-service migration applies and duplicate order requests deduct stock 
     /add-on configuration or inventory item is unavailable for this order branch and service/,
   )
   assert.equal(Number((await db.query('SELECT current_stock FROM inventory_items WHERE id=$1', [foreignInventoryId])).rows[0].current_stock), 40)
-  assert.equal((await db.query('SELECT count(*)::int AS count FROM orders')).rows[0].count, 1)
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM orders')).rows[0].count, 2)
   await db.query('UPDATE service_addon_items SET inventory_item_id=$1 WHERE id=$2', [inventoryId, addonId])
   await db.exec('ALTER TABLE service_addon_items ENABLE TRIGGER tr_validate_service_addon_item')
 
   await db.query('UPDATE inventory_items SET current_stock=12 WHERE id=$1', [inventoryId])
   await assert.rejects(call({ ...order, client_request_id: randomUUID() }), /only 12 ml remaining; 15(?:\.0+)? ml is required/)
   assert.equal(Number((await db.query('SELECT current_stock FROM inventory_items WHERE id=$1', [inventoryId])).rows[0].current_stock), 12)
-  assert.equal((await db.query('SELECT count(*)::int AS count FROM orders')).rows[0].count, 1)
+  assert.equal((await db.query('SELECT count(*)::int AS count FROM orders')).rows[0].count, 2)
+
+  // Removing a service add-on config detaches the FK but preserves the order's
+  // historical item, quantity, and price snapshots.
+  await db.query('DELETE FROM service_addon_items WHERE id=$1', [addonId])
+  const historicalAddon = (await db.query(
+    'SELECT service_addon_item_id, inventory_item_id, item_name_snapshot, quantity, unit_price_snapshot, subtotal FROM order_item_addons WHERE order_item_id IN (SELECT id FROM order_items WHERE order_id=$1)',
+    [first.rows[0].id],
+  )).rows[0]
+  assert.equal(historicalAddon.service_addon_item_id, null)
+  assert.equal(historicalAddon.inventory_item_id, inventoryId)
+  assert.equal(historicalAddon.item_name_snapshot, 'Detergent')
+  assert.equal(Number(historicalAddon.quantity), 5)
+  assert.equal(Number(historicalAddon.unit_price_snapshot), 25)
+  assert.equal(Number(historicalAddon.subtotal), 125)
 })

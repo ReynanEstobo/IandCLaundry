@@ -96,6 +96,17 @@ function OrderServicesDetail({ order, id }) {
               <span><small>Loads</small><b>{Number(item.loads || 1).toLocaleString()}</b></span>
               <span><small>Subtotal</small><b>₱{Number(item.subtotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></span>
             </div>
+            {item.order_item_addons?.length > 0 && (
+              <div className="order-service-addons" aria-label={`Add-ons for ${item.service_name_snapshot || "service"}`}>
+                <strong className="order-service-addons-title">Add-ons</strong>
+                {item.order_item_addons.map((addon) => (
+                  <div className="order-service-addon-row" key={addon.id}>
+                    <span>{addon.item_name_snapshot} {"\u00D7"} {Number(addon.quantity).toLocaleString()}</span>
+                    <span>{"\u20B1"}{Number(addon.subtotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </article>
         ))}
       </div>
@@ -348,7 +359,7 @@ export default function Orders() {
 
     let ordersQuery = supabase
       .from("orders")
-      .select("*, customers(name, phone, email), order_items(*)", { count: "exact" });
+      .select("*, customers(name, phone, email), order_items(*, order_item_addons(*))", { count: "exact" });
 
     if (filter !== "all") {
       ordersQuery = ordersQuery.eq("status", filter);
@@ -374,7 +385,7 @@ export default function Orders() {
     // 🔥 fetch ALL orders for search (no pagination)
     const { data: allData } = await supabase
       .from("orders")
-      .select("*, customers(name, phone, email), order_items(*)")
+      .select("*, customers(name, phone, email), order_items(*, order_item_addons(*))")
       .order("created_at", { ascending: false });
 
     const error = ordersRes.error || custRes.error || soapRes.error || servicesRes.error || branchesRes.error;

@@ -55,6 +55,15 @@ test('staff cannot alter settings, directly set stages, or delete transaction hi
   assert.equal(calls.length,0)
 })
 
+test('staff cannot archive inventory items through the resource API', async t => {
+  const calls = mockDatabase(t)
+  await assert.rejects(
+    execute('inventory_items', { operation: 'delete', filters: [{ type: 'eq', column: 'id', value: 'inventory-1' }] }, staff),
+    /Only administrators can archive inventory items/,
+  )
+  assert.equal(calls.length, 0)
+})
+
 test('placed order pricing, services, inventory selections, and ownership are immutable', async t => {
   const calls = mockDatabase(t)
   for (const payload of [

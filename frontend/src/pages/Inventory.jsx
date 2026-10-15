@@ -29,6 +29,7 @@ export default function Inventory() {
   const [items, setItems] = useState([]);
   const [usageLogs, setUsageLogs] = useState([]);
   const [serviceRecipes, setServiceRecipes] = useState([]);
+  const [serviceAddonConfigs, setServiceAddonConfigs] = useState([]);
   const [serviceOrderItems, setServiceOrderItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -63,17 +64,19 @@ export default function Inventory() {
       setLoadError("");
     } else setRefreshing(true);
     try {
-      const [itemsRes, usageRes, recipesRes, orderItemsRes] = await Promise.all([
+      const [itemsRes, usageRes, recipesRes, addonsRes, orderItemsRes] = await Promise.all([
         supabase.from("inventory_items").select("*").order("name"),
         supabase.from("inventory_usage_log").select("*").order("logged_at", { ascending: false }).limit(500),
         supabase.from("service_inventory_requirements").select("inventory_item_id, service_type_id, branch_id, quantity_per_load, is_active").eq("is_active", true),
+        supabase.from("service_addon_items").select("inventory_item_id, service_type_id, branch_id, is_active").eq("is_active", true),
         supabase.from("order_items").select("service_type_id, branch_id, loads, status, created_at").not("status", "eq", "cancelled").order("created_at", { ascending: false }).limit(1000),
       ]);
-      const error = itemsRes.error || usageRes.error || recipesRes.error || orderItemsRes.error;
+      const error = itemsRes.error || usageRes.error || recipesRes.error || addonsRes.error || orderItemsRes.error;
       if (error) throw error;
       setItems(itemsRes.data || []);
       setUsageLogs(usageRes.data || []);
       setServiceRecipes(recipesRes.data || []);
+      setServiceAddonConfigs(addonsRes.data || []);
       setServiceOrderItems(orderItemsRes.data || []);
     } catch (error) {
       if (!background) setLoadError(error.message || "Unable to load inventory data.");
@@ -224,6 +227,13 @@ export default function Inventory() {
     } finally {
       setDeleting(false);
     }
+  }
+
+  function requestArchive(item) {
+    if (role !== "admin") return toast.error("Only administrators can archive inventory items.");
+    const activeRecipes = serviceRecipes.filter(row => row.inventory_item_id === item.id && row.is_active !== false).length;
+    const activeAddons = serviceAddonConfigs.filter(row => row.inventory_item_id === item.id && row.is_active !== false).length;
+    setItemToDelete({ ...item, activeRecipes, activeAddons });
   }
 
   const filtered = items.filter((i) => {
@@ -472,15 +482,15 @@ export default function Inventory() {
                           >
                             <Edit2 size={16} /><span className="mobile-action-label">Edit</span>
                           </button>
-                          <button
+                          {role === "admin" && <button
                             className="btn-icon"
-                            onClick={() => setItemToDelete(item)}
+                            onClick={() => requestArchive(item)}
                             style={{ color: "var(--danger)" }}
                             title="Archive item"
                             aria-label={`Archive ${item.name}`}
                           >
                             <Trash2 size={16} /><span className="mobile-action-label">Archive</span>
-                          </button>
+                          </button>}
                         </div>
                       </td>
                     </tr>
@@ -718,7 +728,11 @@ export default function Inventory() {
       <ConfirmDialog
         open={Boolean(itemToDelete)}
         title="Archive inventory item?"
-        message={<> <strong>{itemToDelete?.name}</strong> will no longer be available for branch stock checks or new orders. An administrator can restore it later.</>}
+        message={itemToDelete ? <>
+          <strong>{itemToDelete.name}</strong> will no longer be available for branch stock checks or new orders.
+          {(itemToDelete.activeRecipes > 0 || itemToDelete.activeAddons > 0) && <> Archiving will automatically disable {itemToDelete.activeRecipes + itemToDelete.activeAddons} active service link{itemToDelete.activeRecipes + itemToDelete.activeAddons === 1 ? "" : "s"} ({itemToDelete.activeRecipes} automatic deduction and {itemToDelete.activeAddons} optional add-on). Those services will stop consuming or offering this item. </>}
+          An administrator can restore the item later, but its service links must be re-enabled in Service Configuration.
+        </> : ""}
         confirmLabel="Archive Item"
         cancelLabel="Keep Item"
         loading={deleting}
