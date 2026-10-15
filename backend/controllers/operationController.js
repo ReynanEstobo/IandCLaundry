@@ -138,6 +138,40 @@ export async function restockInventory(body, identity) {
   return { data }
 }
 
+export async function createInventoryItem(body, identity) {
+  const name = String(body?.name || '').trim()
+  const unit = String(body?.unit || '').trim()
+  const requestedBranch = body?.branch
+  const quantity = Number(body?.quantity)
+  const minimumStock = Number(body?.minimumStock ?? 0)
+  const costTotal = Number(body?.costTotal ?? 0)
+  const supplier = String(body?.supplier || '').trim()
+  const allowedUnits = new Set(['pcs', 'kg', 'L', 'mL', 'g', 'packs', 'bottles', 'sachets'])
+  if (!name || name.length > 120) throw Object.assign(new Error('Enter an inventory item name (up to 120 characters).'), { status: 400 })
+  if (!allowedUnits.has(unit)) throw Object.assign(new Error('Choose a valid inventory unit.'), { status: 400 })
+  if (!Number.isFinite(quantity) || quantity < 0 || !Number.isFinite(minimumStock) || minimumStock < 0) {
+    throw Object.assign(new Error('Stock quantities must be valid non-negative numbers.'), { status: 400 })
+  }
+  if (!Number.isFinite(costTotal) || costTotal < 0 || (costTotal > 0 && quantity <= 0)) {
+    throw Object.assign(new Error('Enter a valid total cost. Initial stock must be greater than zero when a cost is recorded.'), { status: 400 })
+  }
+  if (supplier.length > 160) throw Object.assign(new Error('Supplier name must be 160 characters or fewer.'), { status: 400 })
+
+  const selectedBranch = await resolveBranch(identity, requestedBranch)
+  const { data, error } = await database.rpc('create_branch_inventory_item', {
+    p_branch_id: selectedBranch.id,
+    p_staff_id: identity.staffId,
+    p_name: name,
+    p_unit: unit,
+    p_quantity: quantity,
+    p_minimum_stock: minimumStock,
+    p_cost_total: costTotal,
+    p_supplier: supplier,
+  })
+  if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
+  return { data }
+}
+
 export async function cancelOrder(body, identity) {
   const orderId = body?.orderId
   const reason = String(body?.reason || '').trim()

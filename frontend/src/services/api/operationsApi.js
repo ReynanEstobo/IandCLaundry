@@ -32,6 +32,10 @@ export async function restockBranchInventory(payload) {
   return apiFetch('/api/inventory/restock', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+export async function createBranchInventoryItem(payload) {
+  return apiFetch('/api/inventory/create', { method: 'POST', body: JSON.stringify(payload) })
+}
+
 export async function getVisibleCustomers() {
   return apiFetch('/api/customers/visible')
 }

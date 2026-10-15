@@ -1,6 +1,6 @@
 import { authenticate, requireAdmin } from '../backend/middleware/authenticate.js'
 import { handleData } from '../backend/controllers/dataController.js'
-import { cancelOrder, collectOrderPayment, createOrder, restockInventory, settleAndReleaseOrder, transitionAllOrderItems, transitionOrder, transitionOrderItem } from '../backend/controllers/operationController.js'
+import { cancelOrder, collectOrderPayment, createInventoryItem, createOrder, restockInventory, settleAndReleaseOrder, transitionAllOrderItems, transitionOrder, transitionOrderItem } from '../backend/controllers/operationController.js'
 import { listVisibleCustomers, lookupCustomer } from '../backend/controllers/customerController.js'
 import { listAuditLog, restoreRecord } from '../backend/controllers/auditController.js'
 import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from '../backend/controllers/authController.js'
@@ -156,6 +156,7 @@ async function api(request, env) {
   if (method === 'POST' && path === 'orders/settle-and-release') return json(await settleAndReleaseOrder(await body(request), await authenticate(request)))
   if (method === 'POST' && path === 'orders/cancel') return json(await cancelOrder(await body(request), await authenticate(request)))
   if (method === 'POST' && path === 'inventory/restock') return json(await restockInventory(await body(request), await authenticate(request)))
+  if (method === 'POST' && path === 'inventory/create') return json(await createInventoryItem(await body(request), await authenticate(request)))
   if (method === 'GET' && path === 'loyalty/rewards') return json(await listLoyaltyRewards(await authenticate(request)))
   if (method === 'POST' && path === 'loyalty/revoke') return json(await revokeLoyaltyReward(await body(request), await authenticate(request)))
   if (method === 'GET' && path === 'customers/visible') return json(await listVisibleCustomers(await authenticate(request)))

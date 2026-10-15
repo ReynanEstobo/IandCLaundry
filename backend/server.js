@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { URL } from 'node:url'
 import { authenticate, requireAdmin } from './middleware/authenticate.js'
 import { handleData } from './controllers/dataController.js'
-import { cancelOrder, collectOrderPayment, createOrder, restockInventory, settleAndReleaseOrder, transitionAllOrderItems, transitionOrder, transitionOrderItem } from './controllers/operationController.js'
+import { cancelOrder, collectOrderPayment, createInventoryItem, createOrder, restockInventory, settleAndReleaseOrder, transitionAllOrderItems, transitionOrder, transitionOrderItem } from './controllers/operationController.js'
 import { listVisibleCustomers, lookupCustomer } from './controllers/customerController.js'
 import { listAuditLog, restoreRecord } from './controllers/auditController.js'
 import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from './controllers/authController.js'
@@ -147,6 +147,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && path === 'orders/settle-and-release') return write(response, 200, await settleAndReleaseOrder(await readBody(request), await authenticate(request)))
     if (request.method === 'POST' && path === 'orders/cancel') return write(response, 200, await cancelOrder(await readBody(request), await authenticate(request)))
     if (request.method === 'POST' && path === 'inventory/restock') return write(response, 200, await restockInventory(await readBody(request), await authenticate(request)))
+    if (request.method === 'POST' && path === 'inventory/create') return write(response, 200, await createInventoryItem(await readBody(request), await authenticate(request)))
     if (request.method === 'GET' && path === 'loyalty/rewards') return write(response, 200, await listLoyaltyRewards(await authenticate(request)))
     if (request.method === 'POST' && path === 'loyalty/revoke') return write(response, 200, await revokeLoyaltyReward(await readBody(request), await authenticate(request)))
     if (request.method === 'GET' && path === 'customers/visible') return write(response, 200, await listVisibleCustomers(await authenticate(request)))

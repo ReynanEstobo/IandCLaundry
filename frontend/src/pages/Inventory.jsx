@@ -1,4 +1,3 @@
-import { format } from "date-fns";
 import {
   AlertTriangle,
   Edit2,
@@ -16,7 +15,7 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { predictInventoryDaysLeft } from "../utils/inventoryForecast";
-import { restockBranchInventory } from "../services/api/operationsApi";
+import { createBranchInventoryItem, restockBranchInventory } from "../services/api/operationsApi";
 import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
@@ -48,6 +47,8 @@ export default function Inventory() {
   const [restockQty, setRestockQty] = useState("");
   const [restockCost, setRestockCost] = useState("");
   const [restockSupplier, setRestockSupplier] = useState("");
+  const [initialCost, setInitialCost] = useState("");
+  const [initialSupplier, setInitialSupplier] = useState("");
 
   const [form, setForm] = useState({
     name: "",
@@ -110,6 +111,8 @@ export default function Inventory() {
 
   function openNew() {
     setEditing(null);
+    setInitialCost("");
+    setInitialSupplier("");
     setForm({
       name: "",
       branch: role === "staff" ? branch : (branchNames[0] || ""),
@@ -123,6 +126,8 @@ export default function Inventory() {
 
   function openEdit(item) {
     setEditing(item);
+    setInitialCost("");
+    setInitialSupplier("");
     setForm({
       name: item.name,
       branch: item.branch || branchNames[0] || "",
@@ -137,39 +142,33 @@ export default function Inventory() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (savingItem) return;
-    const payload = {
-      ...form,
-      current_stock: parseFloat(form.current_stock) || 0,
-      minimum_stock: parseFloat(form.minimum_stock) || 0,
-      cost_per_unit: parseFloat(form.cost_per_unit) || 0,
-    };
-
     setSavingItem(true);
-    let error;
-    if (editing) {
-      delete payload.current_stock;
-      delete payload.branch;
-      delete payload.branch_id;
-      delete payload.unit;
-      ({ error } = await supabase
-        .from("inventory_items")
-        .update(payload)
-        .eq("id", editing.id));
-    } else {
-      ({ error } = await supabase.from("inventory_items").insert(payload));
-
-      // Auto-create expense for initial stock cost
-      const stock = parseFloat(form.current_stock) || 0;
-      const costPerUnit = parseFloat(form.cost_per_unit) || 0;
-      if (!error && stock > 0 && costPerUnit > 0) {
-        await supabase.from("expenses").insert({
-          category: "inventory",
-          description: `New item: ${form.name} (${stock} ${form.unit} × ₱${costPerUnit})`,
-          amount: stock * costPerUnit,
-          expense_date: format(new Date(), "yyyy-MM-dd"),
-          ...(role === "admin" ? { branch: form.branch } : {}),
+    let error = null;
+    try {
+      if (editing) {
+        const payload = {
+          name: form.name.trim(),
+          minimum_stock: parseFloat(form.minimum_stock) || 0,
+          cost_per_unit: parseFloat(form.cost_per_unit) || 0,
+        };
+        ({ error } = await supabase
+          .from("inventory_items")
+          .update(payload)
+          .eq("id", editing.id));
+      } else {
+        await createBranchInventoryItem({
+          name: form.name.trim(),
+          branch: form.branch,
+          unit: form.unit,
+          quantity: parseFloat(form.current_stock) || 0,
+          minimumStock: parseFloat(form.minimum_stock) || 0,
+          costTotal: parseFloat(initialCost) || 0,
+          supplier: initialSupplier.trim(),
         });
       }
+    } catch (createError) {
+      setSavingItem(false);
+      return toast.error(createError.message || "Unable to save inventory item.");
     }
     if (error) {
       setSavingItem(false);
@@ -590,6 +589,7 @@ export default function Inventory() {
                     <input
                       className={`form-control ${editing ? "is-readonly" : ""}`}
                       type="number"
+                      min="0"
                       step="0.01"
                       placeholder="0"
                       value={form.current_stock}
@@ -609,6 +609,7 @@ export default function Inventory() {
                     <input
                       className="form-control"
                       type="number"
+                      min="0"
                       step="0.01"
                       placeholder="0"
                       value={form.minimum_stock}
@@ -621,6 +622,30 @@ export default function Inventory() {
                     />
                   </div>
                 </div>
+                {!editing && <div className="form-row">
+                  <div className="form-group">
+                    <label>Total Initial Stock Cost (₱)</label>
+                    <input
+                      className="form-control"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={initialCost}
+                      onChange={(e) => setInitialCost(e.target.value)}
+                    />
+                    <span className="form-hint">Enter the total amount paid for the starting quantity. Leave blank if there was no purchase cost.</span>
+                  </div>
+                  <div className="form-group">
+                    <label>Supplier</label>
+                    <input
+                      className="form-control"
+                      placeholder="Supplier name"
+                      value={initialSupplier}
+                      onChange={(e) => setInitialSupplier(e.target.value)}
+                    />
+                  </div>
+                </div>}
                 <p className="form-hint">
                   Automatic deductions are configured per service and branch from the Services page. Inventory forecasts use those configured items together with recorded usage.
                 </p>

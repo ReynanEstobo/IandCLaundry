@@ -4,7 +4,7 @@ import { database } from '../backend/config/supabase.js'
 import { execute } from '../backend/models/databaseModel.js'
 import { getPublicServices, trackOrder } from '../backend/controllers/publicController.js'
 import { listVisibleCustomers } from '../backend/controllers/customerController.js'
-import { cancelOrder, createOrder, restockInventory } from '../backend/controllers/operationController.js'
+import { cancelOrder, createInventoryItem, createOrder, restockInventory } from '../backend/controllers/operationController.js'
 import { describeAuditEvent, listRecycleBin, restoreRecord } from '../backend/controllers/auditController.js'
 
 const staff = {role:'staff', staffId:'staff-a', branchId:'branch-a', branch:'Main'}
@@ -130,6 +130,23 @@ test('cancellation and restock reject other branches and invalid quantities', as
   await assert.rejects(cancelOrder({orderId:'other',reason:'Mistake'},staff), /branch/)
   await assert.rejects(restockInventory({itemId:'other',quantity:-1},staff), /quantity/)
   assert.equal(calls.some(call => call.rpc),false)
+})
+
+test('initial inventory creation validates its total cost and records it through the atomic branch RPC', async t => {
+  const calls = mockDatabase(t, [{ id: 'branch-a', name: 'Main' }])
+  await assert.rejects(createInventoryItem({ name: 'Soap', unit: 'pcs', quantity: 0, costTotal: 25 }, staff), /stock must be greater than zero/i)
+  await assert.rejects(createInventoryItem({ name: 'Soap', unit: 'invalid', quantity: 2, costTotal: 25 }, staff), /valid inventory unit/i)
+  assert.equal(calls.length, 0)
+
+  await createInventoryItem({ name: ' Soap ', unit: 'pcs', quantity: 10, minimumStock: 2, costTotal: 250, branch: 'Other', supplier: 'Supplier' }, staff)
+  const rpcCall = calls.find(call => call.rpc === 'create_branch_inventory_item')
+  assert.ok(rpcCall)
+  assert.equal(rpcCall.args.p_branch_id, 'branch-a')
+  assert.equal(rpcCall.args.p_staff_id, staff.staffId)
+  assert.equal(rpcCall.args.p_name, 'Soap')
+  assert.equal(rpcCall.args.p_quantity, 10)
+  assert.equal(rpcCall.args.p_cost_total, 250)
+  assert.equal(rpcCall.args.p_supplier, 'Supplier')
 })
 
 test('global admin must choose a branch for a new order', async t => {
