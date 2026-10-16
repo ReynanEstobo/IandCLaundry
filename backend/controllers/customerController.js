@@ -57,15 +57,42 @@ export async function lookupCustomer(phone, identity) {
   if (settingsError) throw Object.assign(new Error(settingsError.message), { status: 400, details: settingsError })
   let nextReward = null
   if (loyaltySettings?.loyalty_enabled) {
-    const { data: completed, error: completedError } = await database.from('orders').select('id')
-      .eq('customer_id', customer.id).eq('status', 'released').eq('payment_status', 'paid')
-      .gte('picked_up_at', loyaltySettings.loyalty_program_started_at)
-    if (completedError) throw Object.assign(new Error(completedError.message), { status: 400, details: completedError })
-    const position = ((completed?.length || 0) % loyaltySettings.loyalty_free_load_milestone) + 1
-    if (position === loyaltySettings.loyalty_discount_milestone) {
-      nextReward = { reward_type: 'percentage_discount', discount_percent: loyaltySettings.loyalty_discount_percent }
-    } else if (position === loyaltySettings.loyalty_free_load_milestone) {
-      nextReward = { reward_type: 'free_load', free_load_kg: 8 }
+    // Match create_branch_order: an already-redeemed reward on an order that
+    // is not yet released/cancelled blocks another reward. Without this check,
+    // the form can show a discount that the database will not apply, causing
+    // the downpayment message to be based on the undiscounted total.
+    const { data: redeemedRewards, error: rewardsError } = await database.from('loyalty_rewards')
+      .select('earned_order_id')
+      .eq('customer_id', customer.id)
+      .eq('status', 'redeemed')
+      .not('earned_order_id', 'is', null)
+    if (rewardsError) throw Object.assign(new Error(rewardsError.message), { status: 400, details: rewardsError })
+    const earnedOrderIds = [...new Set((redeemedRewards || []).map(reward => reward.earned_order_id).filter(Boolean))]
+    let hasPendingReward = false
+    if (earnedOrderIds.length) {
+      const { data: rewardOrders, error: rewardOrdersError } = await database.from('orders')
+        .select('id, status')
+        .in('id', earnedOrderIds)
+      if (rewardOrdersError) throw Object.assign(new Error(rewardOrdersError.message), { status: 400, details: rewardOrdersError })
+      hasPendingReward = (rewardOrders || []).some(order => !['released', 'cancelled'].includes(order.status))
+    }
+
+    if (!hasPendingReward) {
+      let completedQuery = database.from('orders').select('id')
+        .eq('customer_id', customer.id).eq('status', 'released').eq('payment_status', 'paid')
+        .not('picked_up_at', 'is', null)
+      if (loyaltySettings.loyalty_program_started_at) {
+        completedQuery = completedQuery.gte('picked_up_at', loyaltySettings.loyalty_program_started_at)
+      }
+      const { data: completed, error: completedError } = await completedQuery
+      if (completedError) throw Object.assign(new Error(completedError.message), { status: 400, details: completedError })
+      const freeLoadMilestone = Math.max(Number(loyaltySettings.loyalty_free_load_milestone) || 10, 2)
+      const position = ((completed?.length || 0) % freeLoadMilestone) + 1
+      if (position === Number(loyaltySettings.loyalty_discount_milestone)) {
+        nextReward = { reward_type: 'percentage_discount', discount_percent: loyaltySettings.loyalty_discount_percent }
+      } else if (position === freeLoadMilestone) {
+        nextReward = { reward_type: 'free_load', free_load_kg: 8 }
+      }
     }
   }
   const loyalty = { nextReward }
