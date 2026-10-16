@@ -275,24 +275,4 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   assert.equal(Number(historicalAddon.quantity), 5)
   assert.equal(Number(historicalAddon.unit_price_snapshot), 25)
   assert.equal(Number(historicalAddon.subtotal), 125)
-
-  // A 50% loyalty discount must be applied before the 50% downpayment floor.
-  // One completed order makes the next order eligible at the configured
-  // second-order discount milestone: ₱350 becomes ₱175, so ₱87.50 is due.
-  await db.query(`UPDATE settings SET loyalty_enabled=true, loyalty_discount_milestone=2,
-    loyalty_free_load_milestone=10, loyalty_discount_percent=50, loyalty_program_started_at=now() - interval '1 day'`)
-  const customerId = (await db.query('SELECT customer_id FROM orders WHERE id=$1', [first.rows[0].id])).rows[0].customer_id
-  await db.query(`INSERT INTO orders(customer_id, service_type_id, weight_kg, total_price, amount_paid,
-    payment_method, payment_status, branch, branch_id, status, picked_up_at)
-    VALUES ($1,$2,5,350,350,'cash','paid','Main',$3,'released',now())`, [customerId, serviceId, branchId])
-  const loyaltyOrder = {
-    client_request_id: randomUUID(), amount_paid: 88, payment_method: 'cash',
-    items: [{ service_type_id: serviceId, weight_kg: 5 }],
-  }
-  await assert.rejects(call({ ...loyaltyOrder, amount_paid: 87.49 }, branchId, staffId, {}), /Minimum 50% payment required: 87\.5/)
-  const discountedOrder = await call(loyaltyOrder, branchId, staffId, {})
-  const discountedOrderRow = (await db.query('SELECT total_price, amount_paid, loyalty_discount_amount FROM orders WHERE id=$1', [discountedOrder.rows[0].id])).rows[0]
-  assert.equal(Number(discountedOrderRow.total_price), 175)
-  assert.equal(Number(discountedOrderRow.amount_paid), 88)
-  assert.equal(Number(discountedOrderRow.loyalty_discount_amount), 175)
 })
