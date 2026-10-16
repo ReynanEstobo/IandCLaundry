@@ -4,6 +4,13 @@ export async function createBranchOrder(payload) {
   return apiFetch('/api/orders/create', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+export async function getOrdersPage({ page = 0, pageSize = 10, status = '', search = '' } = {}) {
+  const parameters = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  if (status) parameters.set('status', status)
+  if (search) parameters.set('search', search)
+  return apiFetch(`/api/orders/page?${parameters.toString()}`)
+}
+
 export async function cancelBranchOrder(orderId, reason) {
   return apiFetch('/api/orders/cancel', { method: 'POST', body: JSON.stringify({ orderId, reason }) })
 }

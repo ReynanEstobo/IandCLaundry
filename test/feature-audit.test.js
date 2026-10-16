@@ -4,6 +4,7 @@ import { database } from '../backend/config/supabase.js'
 import { execute } from '../backend/models/databaseModel.js'
 import { getPublicServices, trackOrder } from '../backend/controllers/publicController.js'
 import { listVisibleCustomers } from '../backend/controllers/customerController.js'
+import { listOrdersPage } from '../backend/controllers/orderListController.js'
 import { cancelOrder, createInventoryItem, createOrder, restockInventory } from '../backend/controllers/operationController.js'
 import { describeAuditEvent, listRecycleBin, restoreRecord } from '../backend/controllers/auditController.js'
 
@@ -16,6 +17,30 @@ test('cancelled orders are described with their reason in the Audit Log', () => 
     after_data: { order_number: 'ORD-1001', branch: 'Main', cancellation_reason: 'Customer request' },
   })
   assert.equal(description, 'order ORD-1001 was cancelled: Customer request at Main.')
+})
+
+test('paginated order listing keeps staff branch-scoped and bounds client paging', async t => {
+  const calls = mockDatabase(t)
+  database.rpc = async (name, args) => {
+    calls.push({ rpc: name, args })
+    return { data: { data: [{ id: 'order-1' }], count: 71 }, error: null }
+  }
+
+  const staffResult = await listOrdersPage(
+    { page: '2', pageSize: '500', status: 'received', search: ' customer ' },
+    staff,
+  )
+  assert.deepEqual(staffResult, { data: [{ id: 'order-1' }], count: 71 })
+  assert.deepEqual(calls.at(-1), {
+    rpc: 'list_orders_page',
+    args: { p_branch_id: 'branch-a', p_status: 'received', p_search: 'customer', p_limit: 50, p_offset: 100 },
+  })
+
+  await listOrdersPage({ page: '-1', pageSize: '0' }, admin)
+  assert.equal(calls.at(-1).args.p_branch_id, null)
+  assert.equal(calls.at(-1).args.p_limit, 1)
+  assert.equal(calls.at(-1).args.p_offset, 0)
+  await assert.rejects(listOrdersPage({ status: 'unknown' }, staff), /invalid/i)
 })
 
 function mockDatabase(t, rows = []) {

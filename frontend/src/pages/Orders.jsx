@@ -21,13 +21,11 @@ import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { sendEmail, sendSms } from "../services/api/notificationApi";
-import { cancelBranchOrder, collectBranchOrderPayment, createBranchOrder, getVisibleCustomers, lookupCustomerByPhone, settleAndReleaseBranchOrder, transitionAllOrderServiceItems, transitionBranchOrder } from "../services/api/operationsApi";
+import { cancelBranchOrder, collectBranchOrderPayment, createBranchOrder, getOrdersPage, lookupCustomerByPhone, settleAndReleaseBranchOrder, transitionAllOrderServiceItems, transitionBranchOrder } from "../services/api/operationsApi";
 import { useAuth } from "../context/AuthContext";
 import { InlineSkeleton, PageError, PageLoader, TableSkeleton } from "../components/AsyncState";
 import LoadingButton from "../components/LoadingButton";
 import ConfirmDialog from "../components/ConfirmDialog";
-import { compareOrdersForList } from "../utils/orderListPriority";
-import { filterOrders } from "../utils/filterOrders";
 import { isValidPhilippineMobile } from "../utils/validation";
 import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
 import { getAvailableOrderAddons, resolveBranchId, retainAvailableOrderAddons } from "../utils/orderAddons";
@@ -226,13 +224,11 @@ export default function Orders() {
   const [isCancelling, setIsCancelling] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [orders, setOrders] = useState([]);
-  const [allOrders, setAllOrders] = useState([]);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 10;
   const [totalCount, setTotalCount] = useState(0);
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-  const [customers, setCustomers] = useState([]);
   const [serviceTypes, setServiceTypes] = useState([]);
   const [branchRecords, setBranchRecords] = useState([]);
   const [soapItems, setSoapItems] = useState([]);
@@ -243,6 +239,7 @@ export default function Orders() {
   const [filter, setFilter] = useState("all");
 
   const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [settings, setSettings] = useState({});
   const [viewMode, setViewMode] = useState("table");
   const [expandedServicesOrderId, setExpandedServicesOrderId] = useState(null);
@@ -257,6 +254,14 @@ export default function Orders() {
   const hasLoadedOrders = useRef(false);
   const paginationRefresh = useRef(false);
   const filterRefresh = useRef(false);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+      setPage(0);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
 
   useEffect(() => {
     if (settings?.defaultview) {
@@ -379,27 +384,18 @@ export default function Orders() {
       setLoadError("");
     }
 
-    // 👇 ADD THIS BLOCK
     if (tableOnly) setTableLoading(true);
 
-    let ordersQuery = supabase
-      .from("orders")
-      .select("*, customers(name, phone, email), order_items(*, order_item_addons(*))", { count: "exact" });
+    const ordersQuery = getOrdersPage({
+      page,
+      pageSize: PAGE_SIZE,
+      status: filter === "all" ? "" : filter,
+      search: searchQuery,
+    });
 
-    if (filter !== "all") {
-      ordersQuery = ordersQuery.eq("status", filter);
-    }
-
-    // Fetch the filtered queue before slicing it. Sorting only a database page
-    // caused older records to fill page one and pushed today's new order behind
-    // released/cancelled entries.
-    ordersQuery = ordersQuery.order("created_at", { ascending: false });
-
-    // 👇 KEEP THIS (but replace first item)
     try {
-    const [ordersRes, custRes, soapRes, servicesRes, branchesRes] = await Promise.all([
+    const [ordersRes, soapRes, servicesRes, branchesRes] = await Promise.all([
       ordersQuery,
-      getVisibleCustomers(),
       supabase.from("service_addon_items")
         .select("id, branch_id, service_type_id, unit_price, inventory_items(id, name, unit, current_stock, branch, branch_id, deleted_at)")
         .eq("is_active", true),
@@ -407,21 +403,11 @@ export default function Orders() {
       supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
     ]);
 
-    // 🔥 fetch ALL orders for search (no pagination)
-    const { data: allData } = await supabase
-      .from("orders")
-      .select("*, customers(name, phone, email), order_items(*, order_item_addons(*))")
-      .order("created_at", { ascending: false });
-
-    const error = ordersRes.error || custRes.error || soapRes.error || servicesRes.error || branchesRes.error;
+    const error = soapRes.error || servicesRes.error || branchesRes.error;
     if (error) throw error;
 
-    const sortedVisible = [...(ordersRes.data || [])].sort(compareOrdersForList);
-    const sortedAll = [...(allData || [])].sort(compareOrdersForList);
-    setAllOrders(sortedAll);
-    setOrders(sortedVisible.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE));
-    setTotalCount(sortedVisible.length);
-    setCustomers(custRes.data || []);
+    setOrders(ordersRes.data || []);
+    setTotalCount(Number(ordersRes.count || 0));
     setBranchRecords(branchesRes.data || []);
     setSoapItems((soapRes.data || []).map(option => ({
       id: option.id, branch_id: option.branch_id, service_type_id: option.service_type_id, unit_price: option.unit_price,
@@ -438,7 +424,7 @@ export default function Orders() {
       if (!background) setLoading(false);
       if (tableOnly) setTableLoading(false);
     }
-  }, [page, filter]); // ✅ ADD THIS
+  }, [page, filter, searchQuery]);
 
   useEffect(() => {
     const isInitialLoad = !hasLoadedOrders.current;
@@ -587,7 +573,7 @@ export default function Orders() {
       return;
     }
     if (requestId !== phoneLookupRequest.current) return;
-    const data = result.customer || customers.find((customer) => customer.phone === phone) || null;
+    const data = result.customer || null;
     setLoyaltyPreview(result.loyalty?.nextReward || null);
     if (data) {
       setPhoneMatch(data);
@@ -1009,10 +995,7 @@ export default function Orders() {
     setViewMode(mode);
   }
 
-  const hasSearch = Boolean(searchInput.trim());
-  const source = hasSearch ? allOrders : orders;
-  const filtered = filterOrders(source, { status: filter, searchTerm: searchInput })
-    .sort(compareOrdersForList);
+  const filtered = orders;
 
   if (loading) return <PageLoader label="Loading orders…" />;
   if (loadError) return <PageError message={loadError} onRetry={loadData} />;
@@ -1424,8 +1407,7 @@ export default function Orders() {
               </div>
             )}
           </div>
-            {!hasSearch && (
-              <div className="system-pagination" style={{ textAlign: "center" }}>
+            <div className="system-pagination" style={{ textAlign: "center" }}>
                 {/* PAGINATION BUTTONS */}
                 <div
                   className="system-pagination-controls"
@@ -1534,17 +1516,14 @@ export default function Orders() {
 
                 {/* RANGE TEXT */}
                 <div style={{ fontSize: 13, color: "#94a3b8" }}>
-                  {hasSearch
-                    ? `${filtered.length} results found`
-                    : totalCount === 0
+                  {totalCount === 0
                       ? "0 of 0"
                       : `${page * PAGE_SIZE + 1}–${Math.min(
                           (page + 1) * PAGE_SIZE,
                           totalCount,
                         )} out of ${totalCount}`}
                 </div>
-              </div>
-            )}
+            </div>
         </div>
       )}
 
