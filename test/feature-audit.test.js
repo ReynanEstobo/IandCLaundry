@@ -194,6 +194,19 @@ test('customer directory must exclude records in the recycle bin', async t => {
   assert.deepEqual((await listVisibleCustomers(admin)).data,[])
 })
 
+test('customer loyalty lookups are batched so a large directory does not exceed the database URL limit', async t => {
+  const customers = Array.from({ length: 205 }, (_, index) => ({
+    id: `customer-${index + 1}`,
+    deleted_at: null,
+  }))
+  const calls = mockDatabase(t, customers)
+  const result = await listVisibleCustomers(admin)
+  const rewardLookups = calls.filter(call => call.table === 'loyalty_rewards' && call.method === 'in')
+  assert.equal(result.data.length, 205)
+  assert.equal(rewardLookups.length, 3)
+  assert.deepEqual(rewardLookups.map(call => call.args[1].length), [100, 100, 5])
+})
+
 test('staff must not be allowed to delete another staff account via generic data API', async t => {
   const calls = mockDatabase(t, [{id:'other-account'}])
   await assert.rejects(execute('staff',{operation:'delete',filters:[{type:'eq',column:'id',value:'other-account'}]},staff))

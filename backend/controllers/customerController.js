@@ -1,20 +1,29 @@
 import { database } from '../config/supabase.js'
 import { assertPhilippineMobile } from '../utils/validation.js'
 
+const LOYALTY_CUSTOMER_BATCH_SIZE = 100
+
 async function attachIssuedRewards(customers) {
   const customerIds = customers.map(customer => customer?.id).filter(Boolean)
   if (!customerIds.length) return customers
-  const { data: rewards, error } = await database
-    .from('loyalty_rewards')
-    .select('id, customer_id, reward_type, status, discount_percent, free_load_kg, earned_at, expires_at, redeemed_at, revoked_at, revoke_reason')
-    .in('customer_id', customerIds)
-    .order('earned_at', { ascending: false })
-  // Keep the Client directory available when opening an environment that has
-  // not yet run the loyalty migration.
-  if (error?.code === '42P01') return customers.map(customer => ({ ...customer, loyaltyRewards: [] }))
-  if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
+  // PostgREST sends an `in` filter in the request URL. A large client list
+  // can exceed the URL limit and make the entire Orders page fail with 400.
+  // Query in small batches and merge the results for the same response shape.
+  const rewards = []
+  for (let index = 0; index < customerIds.length; index += LOYALTY_CUSTOMER_BATCH_SIZE) {
+    const { data, error } = await database
+      .from('loyalty_rewards')
+      .select('id, customer_id, reward_type, status, discount_percent, free_load_kg, earned_at, expires_at, redeemed_at, revoked_at, revoke_reason')
+      .in('customer_id', customerIds.slice(index, index + LOYALTY_CUSTOMER_BATCH_SIZE))
+      .order('earned_at', { ascending: false })
+    // Keep the Client directory available when opening an environment that has
+    // not yet run the loyalty migration.
+    if (error?.code === '42P01') return customers.map(customer => ({ ...customer, loyaltyRewards: [] }))
+    if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
+    rewards.push(...(data || []))
+  }
   const byCustomer = new Map()
-  for (const reward of rewards || []) {
+  for (const reward of rewards) {
     const list = byCustomer.get(reward.customer_id) || []
     list.push(reward)
     byCustomer.set(reward.customer_id, list)
