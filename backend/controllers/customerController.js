@@ -57,41 +57,14 @@ export async function lookupCustomer(phone, identity) {
   if (settingsError) throw Object.assign(new Error(settingsError.message), { status: 400, details: settingsError })
   let nextReward = null
   if (loyaltySettings?.loyalty_enabled) {
-    // Match create_branch_order's eligibility guard. The order RPC will not
-    // apply a new reward while a previously redeemed reward's earning order is
-    // still active; the preview must not promise that discount in that case.
-    const { data: redeemedRewards, error: rewardsError } = await database.from('loyalty_rewards')
-      .select('earned_order_id')
-      .eq('customer_id', customer.id)
-      .eq('status', 'redeemed')
-      .not('earned_order_id', 'is', null)
-    if (rewardsError) throw Object.assign(new Error(rewardsError.message), { status: 400, details: rewardsError })
-
-    let hasUnsettledRedeemedReward = false
-    const earningOrderIds = (redeemedRewards || []).map(reward => reward.earned_order_id).filter(Boolean)
-    if (earningOrderIds.length) {
-      const { data: unsettledOrders, error: unsettledError } = await database.from('orders')
-        .select('id')
-        .in('id', earningOrderIds)
-        .not('status', 'in', '(released,cancelled)')
-      if (unsettledError) throw Object.assign(new Error(unsettledError.message), { status: 400, details: unsettledError })
-      hasUnsettledRedeemedReward = Boolean(unsettledOrders?.length)
-    }
-
-    let completedQuery = database.from('orders').select('id', { count: 'exact', head: true })
+    const { data: completed, error: completedError } = await database.from('orders').select('id')
       .eq('customer_id', customer.id).eq('status', 'released').eq('payment_status', 'paid')
-    if (loyaltySettings.loyalty_program_started_at) {
-      completedQuery = completedQuery.gte('picked_up_at', loyaltySettings.loyalty_program_started_at)
-    }
-    const { count: completedCount, error: completedError } = await completedQuery
+      .gte('picked_up_at', loyaltySettings.loyalty_program_started_at)
     if (completedError) throw Object.assign(new Error(completedError.message), { status: 400, details: completedError })
-    const freeLoadMilestone = Math.max(Number(loyaltySettings.loyalty_free_load_milestone) || 10, 2)
-    const discountMilestone = Number(loyaltySettings.loyalty_discount_milestone) || 0
-    const position = ((completedCount || 0) % freeLoadMilestone) + 1
-    if (!hasUnsettledRedeemedReward && position === discountMilestone) {
-      const discountPercent = Math.min(Math.max(Number(loyaltySettings.loyalty_discount_percent) || 50, 1), 100)
-      nextReward = { reward_type: 'percentage_discount', discount_percent: discountPercent }
-    } else if (!hasUnsettledRedeemedReward && position === freeLoadMilestone) {
+    const position = ((completed?.length || 0) % loyaltySettings.loyalty_free_load_milestone) + 1
+    if (position === loyaltySettings.loyalty_discount_milestone) {
+      nextReward = { reward_type: 'percentage_discount', discount_percent: loyaltySettings.loyalty_discount_percent }
+    } else if (position === loyaltySettings.loyalty_free_load_milestone) {
       nextReward = { reward_type: 'free_load', free_load_kg: 8 }
     }
   }
