@@ -38,36 +38,39 @@ AS $$
         OR lower(c.name) LIKE '%' || lower(btrim(p_search)) || '%'
       )
   ),
+  ranked AS (
+    SELECT *, row_number() OVER (
+      ORDER BY
+        CASE WHEN status = 'cancelled' THEN 2 WHEN status = 'released' THEN 1 ELSE 0 END,
+        CASE
+          WHEN status NOT IN ('released', 'cancelled')
+           AND (created_at AT TIME ZONE 'Asia/Manila')::DATE = (now() AT TIME ZONE 'Asia/Manila')::DATE
+          THEN 0
+          ELSE 1
+        END,
+        COALESCE(priority_order, 0),
+        CASE
+          WHEN (created_at AT TIME ZONE 'Asia/Manila')::DATE = (now() AT TIME ZONE 'Asia/Manila')::DATE
+          THEN created_at
+        END DESC NULLS LAST,
+        CASE
+          WHEN (created_at AT TIME ZONE 'Asia/Manila')::DATE <> (now() AT TIME ZONE 'Asia/Manila')::DATE
+          THEN created_at
+        END ASC NULLS LAST,
+        id DESC
+    ) AS list_position
+    FROM filtered
+  ),
   paged AS (
     SELECT *
-    FROM filtered
-    ORDER BY
-      CASE WHEN status = 'cancelled' THEN 2 WHEN status = 'released' THEN 1 ELSE 0 END,
-      CASE
-        WHEN status NOT IN ('released', 'cancelled')
-         AND (created_at AT TIME ZONE 'Asia/Manila')::DATE = (now() AT TIME ZONE 'Asia/Manila')::DATE
-        THEN 0
-        ELSE 1
-      END,
-      COALESCE(priority_order, 0),
-      CASE
-        WHEN status NOT IN ('released', 'cancelled')
-         AND (created_at AT TIME ZONE 'Asia/Manila')::DATE = (now() AT TIME ZONE 'Asia/Manila')::DATE
-        THEN created_at
-      END DESC NULLS LAST,
-      CASE
-        WHEN status NOT IN ('released', 'cancelled')
-         AND (created_at AT TIME ZONE 'Asia/Manila')::DATE <> (now() AT TIME ZONE 'Asia/Manila')::DATE
-        THEN created_at
-      END ASC NULLS LAST,
-      CASE WHEN status IN ('released', 'cancelled') THEN created_at END DESC NULLS LAST,
-      id DESC
+    FROM ranked
+    ORDER BY list_position
     LIMIT LEAST(GREATEST(COALESCE(p_limit, 10), 1), 50)
     OFFSET GREATEST(COALESCE(p_offset, 0), 0)
   )
   SELECT jsonb_build_object(
     'data', COALESCE(jsonb_agg(
-      (to_jsonb(p) - 'customer_id' - 'customer_name' - 'customer_phone' - 'customer_email')
+      (to_jsonb(p) - 'customer_name' - 'customer_phone' - 'customer_email' - 'list_position')
       || jsonb_build_object(
         'customers', CASE WHEN p.customer_id IS NULL THEN NULL ELSE jsonb_build_object(
           'name', p.customer_name, 'phone', p.customer_phone, 'email', p.customer_email
@@ -84,7 +87,7 @@ AS $$
           FROM public.order_items oi
           WHERE oi.order_id = p.id
         ), '[]'::jsonb)
-      )
+      ) ORDER BY p.list_position
     ), '[]'::jsonb),
     'count', (SELECT count(*) FROM filtered)
   )
