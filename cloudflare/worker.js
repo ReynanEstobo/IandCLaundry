@@ -13,6 +13,7 @@ import { configureRuntimeEnv } from '../backend/config/supabase.js'
 import { requestEmailChange, confirmEmailChange, verifyEmailChangeOtp } from '../backend/controllers/emailChangeController.js'
 import { listLoyaltyRewards, revokeLoyaltyReward } from '../backend/controllers/loyaltyController.js'
 import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail } from '../backend/controllers/notificationController.js'
+import { listOrdersPage } from '../backend/controllers/orderListController.js'
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests",
@@ -144,6 +145,7 @@ async function api(request, env) {
   if (method === 'POST' && path === 'ai/forecast') { requireAdmin(await authenticate(request)); return json(await generateForecast(await body(request))) }
   if (method === 'POST' && path === 'ai/dss') { requireAdmin(await authenticate(request)); return json(await generateDecisionSupport(await body(request))) }
   if (method === 'GET' && path === 'public/orders/track') return json(await trackOrder(url.searchParams.get('q')))
+  if (method === 'GET' && path === 'orders/page') return json(await listOrdersPage(Object.fromEntries(url.searchParams), await authenticate(request)))
   if (method === 'GET' && path === 'public/settings') return json(await getPublicSettings())
   if (method === 'GET' && path === 'public/services') return json(await getPublicServices())
   if (method === 'GET' && path === 'public/turnstile-config') return json(getPublicTurnstileConfig())
