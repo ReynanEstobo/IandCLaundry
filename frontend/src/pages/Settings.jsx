@@ -7,7 +7,6 @@ import {
   KeyRound,
   Lock,
   MailCheck,
-  Moon,
   Palette,
   Save,
   Shield,
@@ -20,6 +19,7 @@ import { supabase } from "../lib/supabase";
 import { apiFetch } from "../services/api/client";
 import LoadingButton from "../components/LoadingButton";
 import ChangeEmail from "../components/ChangeEmail";
+import InfoNote from "../components/InfoNote";
 import useOtpCooldown from "../hooks/useOtpCooldown";
 import { clearOtpSession, readOtpSession, writeOtpSession } from "../utils/otpSession";
 import { passwordPolicyError } from "../utils/validation";
@@ -368,10 +368,9 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="settings-theme-note">
-            <Moon size={17} aria-hidden="true" />
-            <span>Use the moon or sun button in the page header to change the theme for only your account on this browser.</span>
-          </div>
+          <InfoNote compact title="Display preference">
+            Use the moon or sun button in the page header to change the theme for only your account on this browser.
+          </InfoNote>
 
           <div className="settings-toggle-row">
             <div className="settings-toggle-info">
@@ -480,6 +479,10 @@ export default function Settings() {
             </div>
           </div>
 
+          <InfoNote compact title="How estimates work">
+            The system uses completed-order history when enough comparable orders exist; otherwise, it shows the branch fallback estimate plus the safety buffer.
+          </InfoNote>
+
           <div className="settings-pricing-preview" style={{ marginTop: 12 }}>
             <span>
               Fallback estimate for new orders:{" "}
@@ -520,6 +523,9 @@ export default function Settings() {
               <div className="settings-toggle-knob" />
             </button>
           </div>
+          <InfoNote compact title="When rewards are earned">
+            A customer earns progress only after a fully paid order is released. Restoring or editing an inventory item does not change reward history.
+          </InfoNote>
           <div className="form-row" style={{ marginTop: 18 }}>
             <div className="form-group">
               <label>Discount reward after orders</label>

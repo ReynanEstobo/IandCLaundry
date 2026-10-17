@@ -25,6 +25,7 @@ import { cancelBranchOrder, collectBranchOrderPayment, createBranchOrder, getOrd
 import { useAuth } from "../context/AuthContext";
 import { InlineSkeleton, PageError, PageLoader, TableSkeleton } from "../components/AsyncState";
 import LoadingButton from "../components/LoadingButton";
+import InfoNote from "../components/InfoNote";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { isValidPhilippineMobile } from "../utils/validation";
 import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
@@ -1760,7 +1761,7 @@ export default function Orders() {
                         {service && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{service.processing_type === 'air_dry_only' ? 'Air-dry only' : 'Full service'} · Subtotal: ₱{subtotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>}
                       </div>;
                     })}
-                    {!editing || editing.status === 'received' ? <button type="button" className="btn btn-secondary btn-sm" onClick={addServiceItem}><Plus size={15} /> Add another service</button> : <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: 13 }}>Service details are locked after processing starts so inventory remains accurate.</p>}
+                    {!editing || editing.status === 'received' ? <button type="button" className="btn btn-secondary btn-sm" onClick={addServiceItem}><Plus size={15} /> Add another service</button> : <InfoNote compact title="Service details are locked">Service details are locked after processing starts so inventory remains accurate.</InfoNote>}
                 </div>
 
                 {/* Section: Add-ons */}
@@ -1922,8 +1923,8 @@ export default function Orders() {
                       Min. 50% required
                     </span>
                   </div>
-                  {editing && <div style={{ margin: "0 0 12px", color: "var(--text-muted)", fontSize: 13 }}>
-                    <p style={{ margin: "0 0 8px" }}>The original payment is kept for accountability. Record an additional payment instead of changing it.</p>
+                  {editing && <div style={{ margin: "0 0 12px" }}>
+                    <InfoNote compact title="Payment record">The original payment is kept for accountability. Record an additional payment instead of changing it.</InfoNote>
                     {Number(editing.total_price || 0) > Number(editing.amount_paid || 0) && (
                       <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
                         setShowModal(false);
@@ -2064,7 +2065,7 @@ export default function Orders() {
                   <input className="form-control" type="number" min="0.01" step="0.01" inputMode="decimal" autoFocus value={additionalPayment.amount} disabled={recordingPayment} onChange={(event) => setAdditionalPayment((current) => ({ ...current, amount: event.target.value }))} placeholder="0.00" />
                 </div>
               </div>
-              <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 13 }}>This adds a separate, auditable payment entry. The original payment will not be changed.</p>
+              <InfoNote compact title="Auditable payment entry">This adds a separate, auditable payment entry. The original payment will not be changed.</InfoNote>
             </div>
             <div className="order-modal-footer">
               <button className="btn btn-secondary" disabled={recordingPayment} onClick={() => setShowAdditionalPaymentModal(false)}>Cancel</button>
@@ -2117,7 +2118,7 @@ export default function Orders() {
                   ₱{Math.max(0, Number(selectedOrder?.total_price || 0) - Number(selectedOrder?.amount_paid || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
               </div>
-              <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 13 }}>The payment recorded when this order was placed cannot be edited. Confirming will collect this exact remaining balance and release the order.</p>
+              <InfoNote compact title="Release payment">The payment recorded when this order was placed cannot be edited. Confirming will collect this exact remaining balance and release the order.</InfoNote>
             </div>
 
             <div className="order-modal-footer">

@@ -11,6 +11,7 @@ import { useRealtime } from "../lib/useRealtime";
 import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
+import InfoNote from "../components/InfoNote";
 import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
 import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
 import useActiveBranches from "../hooks/useActiveBranches";
@@ -649,9 +650,9 @@ export default function Staff() {
                     ))}
                   </select>
                   {form.role === "admin" && !editing && (
-                    <p style={{ margin: "8px 0 0", color: "var(--text-muted)", fontSize: 12, lineHeight: 1.45 }}>
+                    <InfoNote compact tone="warning" title="Administrator access">
                       Administrators are global accounts with no branch assignment. They can access all branches, reports, settings, staff accounts, and the Audit Log. Only create this role for a trusted owner or manager.
-                    </p>
+                    </InfoNote>
                   )}
                 </div>
 

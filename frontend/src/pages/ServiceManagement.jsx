@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { InlineSkeleton, PageError, PageLoader } from '../components/AsyncState'
 import LoadingButton from '../components/LoadingButton'
 import ConfirmDialog from '../components/ConfirmDialog'
+import InfoNote from '../components/InfoNote'
 import { runQuery } from '../services/api/client'
 import { findInvalidServiceInventoryConfigs } from '../utils/serviceInventoryConfig'
 
@@ -147,7 +148,9 @@ export default function ServiceManagement() {
           <button type="button" className="btn btn-danger btn-sm" disabled={Boolean(removingConfigId)} onClick={() => removeInvalidConfiguration(row.table, row)}>{removingConfigId === row.id ? 'Removing…' : 'Remove invalid entry'}</button>
         </div>)}
       </div>}
-      <p className="form-hint" style={{ margin: '0 0 14px' }}>Checking <strong>Offer as add-on</strong> only controls availability. Staff choose the quantity on the order form, up to the branch's available stock.</p>
+      <InfoNote compact title="Optional add-ons">
+        Checking <strong>Offer as add-on</strong> only controls availability. Staff choose the quantity on the order form, up to the branch's available stock.
+      </InfoNote>
       <div className="table-wrapper"><table><thead><tr><th>Inventory item</th><th>Available</th><th>Automatic deduction (unit/load)</th><th>Order add-on price</th></tr></thead><tbody>{branchItems.map(item => {
         const recipeOn = Object.hasOwn(recipeDraft, item.id), addonOn = Object.hasOwn(addonDraft, item.id)
         const itemUnit = item.unit || 'unit'

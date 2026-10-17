@@ -19,6 +19,7 @@ import { createBranchInventoryItem, getInventoryPage, restockBranchInventory } f
 import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
+import InfoNote from "../components/InfoNote";
 import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
 import useActiveBranches from "../hooks/useActiveBranches";
 
@@ -644,12 +645,14 @@ export default function Inventory() {
                       value={initialCost}
                       onChange={(e) => setInitialCost(e.target.value)}
                     />
-                    <span className="form-hint">Enter the total amount paid for the starting quantity. Leave blank if there was no purchase cost.</span>
+                    <InfoNote compact title="Initial stock cost">
+                      Enter the total amount paid for the starting quantity. Leave blank if there was no purchase cost.
+                    </InfoNote>
                   </div>
                 </div>}
-                <p className="form-hint">
+                <InfoNote title="Automatic deductions and forecasts">
                   Automatic deductions are configured per service and branch from the Services page. Inventory forecasts use those configured items together with recorded usage.
-                </p>
+                </InfoNote>
               </div>
               <div className="modal-footer">
                 <button
