@@ -244,14 +244,14 @@ export default function Analytics() {
 
     let orderQuery = supabase
       .from("orders")
-      .select("*, service_types(name)")
+      .select("id, created_at, updated_at, status, customer_id, completed_by_staff_id, created_by_staff_id, branch, branch_id, total_price, amount_paid, payment_status, service_types(name)")
       .gte("created_at", startDate)
       .lte("created_at", endDate)
       .order("created_at", { ascending: true });
 
     let expenseQuery = supabase
       .from("expenses")
-      .select("*")
+      .select("amount, expense_date")
       .gte("expense_date", format(new Date(startDate), "yyyy-MM-dd"))
       .lte("expense_date", format(new Date(endDate), "yyyy-MM-dd"));
 
@@ -275,7 +275,7 @@ export default function Analytics() {
       serviceItemQuery = serviceItemQuery.eq("orders.branch", selectedBranch);
     }
 
-    let inventoryQuery = supabase.from("inventory_items").select("*");
+    let inventoryQuery = supabase.from("inventory_items").select("id, name, current_stock, minimum_stock, unit, branch");
     if (selectedBranch !== "all") inventoryQuery = inventoryQuery.eq("branch", selectedBranch);
     const [ordersRes, expensesRes, staffRes, inventoryRes, paymentsRes, serviceItemsRes] = await Promise.all([
       orderQuery,

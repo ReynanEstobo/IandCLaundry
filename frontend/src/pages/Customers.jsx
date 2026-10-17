@@ -1,11 +1,11 @@
 import { format } from "date-fns";
 import { Edit2, Gift, Phone, Search, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { useAuth } from "../context/AuthContext";
-import { getVisibleCustomers } from "../services/api/operationsApi";
+import { getCustomersPage } from "../services/api/operationsApi";
 import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
@@ -17,7 +17,7 @@ export default function Customers() {
   const branchNames = useActiveBranches();
   const { role } = useAuth();
   const isAdmin = role === "admin";
-  const [allCustomers, setAllCustomers] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -28,6 +28,7 @@ export default function Customers() {
   const [editing, setEditing] = useState(null);
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [form, setForm] = useState({
     name: "",
     phone: "",
@@ -37,7 +38,7 @@ export default function Customers() {
   // 🔥 PAGINATION STATES
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 10;
-  const totalCount = allCustomers.length;
+  const [totalCount, setTotalCount] = useState(0);
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
@@ -51,12 +52,13 @@ export default function Customers() {
       // Admin receives the master customer directory. Staff receive only customers
       // associated with their branch through customer_branches. Preserve the
       // server order because it reflects the correct recency for each role.
-      const { data: allData = [] } = await getVisibleCustomers();
-      setAllCustomers(allData);
+      const result = await getCustomersPage({ page, pageSize: PAGE_SIZE, search: searchQuery });
+      setCustomers(result.data || []);
+      setTotalCount(Number(result.count || 0));
     } catch (error) {
       if (!background) {
         setLoadError(error.message || "Unable to load customer records.");
-        setAllCustomers([]);
+        setCustomers([]);
       } else {
         console.error("Background customer refresh failed:", error);
       }
@@ -64,21 +66,15 @@ export default function Customers() {
 
     if (!background) setLoading(false);
     else setRefreshing(false);
-  }, []);
+  }, [page, searchQuery]);
 
-  // Page changes use the already loaded directory and never trigger a
-  // full-screen network refresh.
   useEffect(() => {
-    const lastPage = Math.max(0, Math.ceil(allCustomers.length / PAGE_SIZE) - 1);
-    if (page > lastPage) {
-      setPage(lastPage);
-    }
-  }, [allCustomers, page]);
-
-  const customers = useMemo(
-    () => allCustomers.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
-    [allCustomers, page]
-  );
+    const timer = window.setTimeout(() => {
+      setSearchQuery(search.trim());
+      setPage(0);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   // 🔥 RESET PAGE WHEN SEARCH CHANGES
   // 🔥 LOAD DATA ON START + PAGE CHANGE
@@ -145,19 +141,7 @@ export default function Customers() {
   }
 
   // 🔥 SAME LOGIC AS ORDERS
-  const source = search ? allCustomers : customers;
-
-  const filtered = source.filter((c) => {
-    if (!search) return true;
-
-    const q = search.toLowerCase();
-
-    return (
-      c.name?.toLowerCase().includes(q) ||
-      c.phone?.includes(q) ||
-      (c.email || "").toLowerCase().includes(q)
-    );
-  });
+  const filtered = customers;
   const { sortedRows, sort, requestSort } = useSortableRows(filtered, "name", {
     name: (customer) => customer.name,
     phone: (customer) => customer.phone,
@@ -272,8 +256,7 @@ export default function Customers() {
               )}
             </tbody>
       </DataTable>
-      {!search && (
-        <div className="system-pagination" style={{ textAlign: "center" }}>
+      <div className="system-pagination" style={{ textAlign: "center" }}>
           <div
             className="system-pagination-controls"
             style={{
@@ -352,8 +335,7 @@ export default function Customers() {
                   totalCount,
                 )} out of ${totalCount}`}
           </div>
-        </div>
-      )}
+      </div>
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>

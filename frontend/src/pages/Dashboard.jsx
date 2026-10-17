@@ -175,10 +175,23 @@ export default function Dashboard() {
     }
     setRefreshError("");
     try {
-    const today = startOfToday().toISOString();
+    const todayStart = startOfToday();
+    const today = todayStart.toISOString();
+    // The dashboard only renders the rolling 30-day forecast or the latest
+    // five calendar years. Keeping that same display window avoids sending
+    // older, unused history to the browser as the operational archive grows.
+    const historyStart = new Date(todayStart);
+    if (range === "yearly") {
+      historyStart.setFullYear(historyStart.getFullYear() - 4, 0, 1);
+    } else {
+      historyStart.setDate(historyStart.getDate() - 30);
+    }
+    const historyStartIso = historyStart.toISOString();
 
     const [
-      ordersRes,
+      historicalOrdersRes,
+      activeOrdersRes,
+      unpaidOrdersRes,
       customersRes,
       inventoryRes,
       recentRes,
@@ -186,12 +199,26 @@ export default function Dashboard() {
       paymentsRes,
       expensesRes,
     ] = await Promise.all([
-      supabase.from("orders").select("*"),
-      supabase.from("customers").select("id", { count: "exact", head: true }),
-      supabase.from("inventory_items").select("*"),
       supabase
         .from("orders")
-        .select("*, customers(name, phone), service_types(name)", {
+        .select("id, created_at, status, payment_status, total_price, amount_paid")
+        .gte("created_at", historyStartIso),
+      // Active work and unpaid balances must remain visible even when an
+      // order was created before the chart-history window.
+      supabase
+        .from("orders")
+        .select("id, created_at, status, payment_status, total_price, amount_paid")
+        .not("status", "in", '("released","cancelled")'),
+      supabase
+        .from("orders")
+        .select("id, created_at, status, payment_status, total_price, amount_paid")
+        .eq("payment_status", "unpaid")
+        .not("status", "eq", "cancelled"),
+      supabase.from("customers").select("id", { count: "exact", head: true }),
+      supabase.from("inventory_items").select("id, name, current_stock, minimum_stock, unit, branch_id"),
+      supabase
+        .from("orders")
+        .select("id, order_number, status, estimated_ready_at, total_price, created_at, customers(name, phone), service_types(name)", {
           count: "exact",
         })
         // ✅ ADD THIS
@@ -200,23 +227,26 @@ export default function Dashboard() {
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1),
       supabase
         .from("inventory_usage_log")
-        .select("*")
+        .select("item_id, quantity_used, logged_at, reversed_at")
         .order("logged_at", { ascending: false })
         .limit(500),
-      supabase.from("payments").select("amount, paid_at, payment_date"),
-      supabase.from("expenses").select("amount, expense_date"),
+      supabase.from("payments").select("amount, paid_at, payment_date")
+        .or(`paid_at.gte.${historyStartIso},payment_date.gte.${historyStartIso}`),
+      supabase.from("expenses").select("amount, expense_date").gte("expense_date", historyStart.toISOString().slice(0, 10)),
     ]);
     const { data: settingsData } = await supabase
       .from("settings")
       .select("*")
       .single();
 
-    const requestError = ordersRes.error || customersRes.error || inventoryRes.error || recentRes.error || usageRes.error || paymentsRes.error || expensesRes.error;
+    const requestError = historicalOrdersRes.error || activeOrdersRes.error || unpaidOrdersRes.error || customersRes.error || inventoryRes.error || recentRes.error || usageRes.error || paymentsRes.error || expensesRes.error;
     if (requestError) throw requestError;
 
     setSettings(settingsData || {});
 
-    const orders = ordersRes.data || [];
+    const ordersById = new Map();
+    [...(historicalOrdersRes.data || []), ...(activeOrdersRes.data || []), ...(unpaidOrdersRes.data || [])].forEach((order) => ordersById.set(order.id, order));
+    const orders = [...ordersById.values()];
     const inventory = inventoryRes.data || [];
     const usageLogs = usageRes.data || [];
     const payments = paymentsRes.data || [];

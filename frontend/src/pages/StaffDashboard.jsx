@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { InlineSkeleton, PageError, PageLoader } from '../components/AsyncState'
 import { compareOrdersForList } from '../utils/orderListPriority'
 import { rollingDemandForecast } from '../utils/businessForecast'
-import { staffDashboardChartData } from '../utils/chartDates'
+import { analyticsPeriod, staffDashboardChartData } from '../utils/chartDates'
 import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorderQuantity } from '../utils/inventoryForecast'
 import DashboardCharts from '../components/DashboardCharts'
 import {
@@ -56,15 +56,24 @@ export default function StaffDashboard() {
       setLoadError('')
     } else setRefreshing(true)
     try {
+      // The forecast needs 30 days; the yearly chart intentionally shows the
+      // same five-year range as the admin dashboard. Older history is never
+      // displayed or used by this page.
+      const chartPeriod = analyticsPeriod(chartRange)
+      const historyStart = chartRange === 'yearly'
+        ? chartPeriod.start
+        : new Date(Math.min(chartPeriod.start.getTime(), Date.now() - (30 * 24 * 60 * 60 * 1000)))
+      const historyStartIso = historyStart.toISOString()
       const [ordersRes, inventoryRes, historyRes, paymentsRes, usageRes, recipesRes, orderItemsRes] = await Promise.all([
-        supabase.from('orders').select('*, customers(name, phone), service_types(name), order_items(service_name_snapshot, weight_kg, status)')
+        supabase.from('orders').select('id, order_number, status, payment_status, weight_kg, total_price, estimated_ready_at, created_at, customers(name, phone), service_types(name), order_items(service_name_snapshot, weight_kg, status)')
           .not('status', 'in', '("released","cancelled")')
           .order('created_at', { ascending: false }),
-        supabase.from('inventory_items').select('*, inventory_categories(name)'),
+        supabase.from('inventory_items').select('id, name, unit, current_stock, minimum_stock, branch_id, inventory_categories(name)'),
         // Row-level security restricts this data to the signed-in staff member's branch.
         supabase.from('orders').select('created_at, amount_paid, total_price, payment_status, status')
-          .not('status', 'eq', 'cancelled'),
-        supabase.from('payments').select('amount, paid_at, payment_date'),
+          .not('status', 'eq', 'cancelled').gte('created_at', historyStartIso),
+        supabase.from('payments').select('amount, paid_at, payment_date')
+          .or(`paid_at.gte.${historyStartIso},payment_date.gte.${historyStartIso}`),
         supabase.from('inventory_usage_log').select('item_id, quantity_used, logged_at, reversed_at')
           .order('logged_at', { ascending: false }).limit(500),
         supabase.from('service_inventory_requirements')
@@ -89,7 +98,7 @@ export default function StaffDashboard() {
       if (!background) setLoading(false)
       else setRefreshing(false)
     }
-  }, [])
+  }, [chartRange])
 
   useEffect(() => { loadData() }, [loadData])
 

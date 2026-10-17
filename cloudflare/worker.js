@@ -14,6 +14,7 @@ import { requestEmailChange, confirmEmailChange, verifyEmailChangeOtp } from '..
 import { listLoyaltyRewards, revokeLoyaltyReward } from '../backend/controllers/loyaltyController.js'
 import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail } from '../backend/controllers/notificationController.js'
 import { listOrdersPage } from '../backend/controllers/orderListController.js'
+import { listCustomersPage, listInventoryPage } from '../backend/controllers/operationalListController.js'
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests",
@@ -146,6 +147,8 @@ async function api(request, env) {
   if (method === 'POST' && path === 'ai/dss') { requireAdmin(await authenticate(request)); return json(await generateDecisionSupport(await body(request))) }
   if (method === 'GET' && path === 'public/orders/track') return json(await trackOrder(url.searchParams.get('q')))
   if (method === 'GET' && path === 'orders/page') return json(await listOrdersPage(Object.fromEntries(url.searchParams), await authenticate(request)))
+  if (method === 'GET' && path === 'customers/page') return json(await listCustomersPage(Object.fromEntries(url.searchParams), await authenticate(request)))
+  if (method === 'GET' && path === 'inventory/page') return json(await listInventoryPage(Object.fromEntries(url.searchParams), await authenticate(request)))
   if (method === 'GET' && path === 'public/settings') return json(await getPublicSettings())
   if (method === 'GET' && path === 'public/services') return json(await getPublicServices())
   if (method === 'GET' && path === 'public/turnstile-config') return json(getPublicTurnstileConfig())

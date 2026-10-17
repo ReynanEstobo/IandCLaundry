@@ -11,6 +11,19 @@ export async function getOrdersPage({ page = 0, pageSize = 10, status = '', sear
   return apiFetch(`/api/orders/page?${parameters.toString()}`)
 }
 
+export async function getCustomersPage({ page = 0, pageSize = 10, search = '' } = {}) {
+  const parameters = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  if (search) parameters.set('search', search)
+  return apiFetch(`/api/customers/page?${parameters.toString()}`)
+}
+
+export async function getInventoryPage({ page = 0, pageSize = 25, branch = '', search = '' } = {}) {
+  const parameters = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  if (branch && branch !== 'all') parameters.set('branch', branch)
+  if (search) parameters.set('search', search)
+  return apiFetch(`/api/inventory/page?${parameters.toString()}`)
+}
+
 export async function cancelBranchOrder(orderId, reason) {
   return apiFetch('/api/orders/cancel', { method: 'POST', body: JSON.stringify({ orderId, reason }) })
 }

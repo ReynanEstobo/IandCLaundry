@@ -5,6 +5,7 @@ import { execute } from '../backend/models/databaseModel.js'
 import { getPublicServices, trackOrder } from '../backend/controllers/publicController.js'
 import { listVisibleCustomers } from '../backend/controllers/customerController.js'
 import { listOrdersPage } from '../backend/controllers/orderListController.js'
+import { listCustomersPage, listInventoryPage } from '../backend/controllers/operationalListController.js'
 import { cancelOrder, createInventoryItem, createOrder, restockInventory } from '../backend/controllers/operationController.js'
 import { describeAuditEvent, listRecycleBin, restoreRecord } from '../backend/controllers/auditController.js'
 
@@ -41,6 +42,29 @@ test('paginated order listing keeps staff branch-scoped and bounds client paging
   assert.equal(calls.at(-1).args.p_limit, 1)
   assert.equal(calls.at(-1).args.p_offset, 0)
   await assert.rejects(listOrdersPage({ status: 'unknown' }, staff), /invalid/i)
+})
+
+test('customer and inventory pages enforce staff branch scope and bounded results', async t => {
+  const calls = mockDatabase(t)
+  database.rpc = async (name, args) => {
+    calls.push({ rpc: name, args })
+    return { data: { data: [], count: 0 }, error: null }
+  }
+
+  await listCustomersPage({ page: '1', pageSize: '1000', search: 'Ana' }, staff)
+  assert.deepEqual(calls.at(-1), {
+    rpc: 'list_customers_page',
+    args: { p_branch_id: 'branch-a', p_search: 'Ana', p_limit: 50, p_offset: 50 },
+  })
+
+  await listInventoryPage({ page: '2', pageSize: '1000', branch: 'Other branch', search: 'Detergent' }, staff)
+  assert.deepEqual(calls.at(-1), {
+    rpc: 'list_inventory_page',
+    args: { p_branch: 'Main', p_search: 'Detergent', p_limit: 100, p_offset: 200 },
+  })
+
+  await listInventoryPage({ branch: 'Other branch' }, admin)
+  assert.equal(calls.at(-1).args.p_branch, 'Other branch')
 })
 
 function mockDatabase(t, rows = []) {

@@ -15,7 +15,7 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { predictInventoryDaysLeft } from "../utils/inventoryForecast";
-import { createBranchInventoryItem, restockBranchInventory } from "../services/api/operationsApi";
+import { createBranchInventoryItem, getInventoryPage, restockBranchInventory } from "../services/api/operationsApi";
 import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
@@ -41,9 +41,14 @@ export default function Inventory() {
   const [restocking, setRestocking] = useState(false);
   const [editing, setEditing] = useState(null);
   const [search, setSearch] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [branchFilter, setBranchFilter] = useState(
     role === "staff" ? branch : "all",
   );
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 25;
+  const [totalCount, setTotalCount] = useState(0);
+  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const [restockQty, setRestockQty] = useState("");
   const [restockCost, setRestockCost] = useState("");
   const [initialCost, setInitialCost] = useState("");
@@ -64,15 +69,16 @@ export default function Inventory() {
     } else setRefreshing(true);
     try {
       const [itemsRes, usageRes, recipesRes, addonsRes, orderItemsRes] = await Promise.all([
-        supabase.from("inventory_items").select("*").order("name"),
+        getInventoryPage({ page, pageSize: PAGE_SIZE, branch: branchFilter, search: searchQuery }),
         supabase.from("inventory_usage_log").select("*").order("logged_at", { ascending: false }).limit(500),
         supabase.from("service_inventory_requirements").select("inventory_item_id, service_type_id, branch_id, quantity_per_load, is_active").eq("is_active", true),
         supabase.from("service_addon_items").select("inventory_item_id, service_type_id, branch_id, is_active").eq("is_active", true),
         supabase.from("order_items").select("service_type_id, branch_id, loads, status, created_at").not("status", "eq", "cancelled").order("created_at", { ascending: false }).limit(1000),
       ]);
-      const error = itemsRes.error || usageRes.error || recipesRes.error || addonsRes.error || orderItemsRes.error;
+      const error = usageRes.error || recipesRes.error || addonsRes.error || orderItemsRes.error;
       if (error) throw error;
       setItems(itemsRes.data || []);
+      setTotalCount(Number(itemsRes.count || 0));
       setUsageLogs(usageRes.data || []);
       setServiceRecipes(recipesRes.data || []);
       setServiceAddonConfigs(addonsRes.data || []);
@@ -84,7 +90,15 @@ export default function Inventory() {
       if (!background) setLoading(false);
       else setRefreshing(false);
     }
-  }, []);
+  }, [branchFilter, page, searchQuery]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearchQuery(search.trim());
+      setPage(0);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     loadData();
@@ -227,19 +241,7 @@ export default function Inventory() {
     setItemToDelete({ ...item, activeRecipes, activeAddons });
   }
 
-  const filtered = items.filter((i) => {
-    // SEARCH FILTER
-    const matchesSearch =
-      !search || i.name.toLowerCase().includes(search.toLowerCase());
-
-    // BRANCH FILTER
-    const matchesBranch =
-      role === "staff"
-        ? i.branch === branch
-        : branchFilter === "all" || i.branch === branchFilter;
-
-    return matchesSearch && matchesBranch;
-  });
+  const filtered = items;
   const { sortedRows, sort, requestSort } = useSortableRows(filtered, "item", {
     item: (item) => item.name,
     branch: (item) => item.branch,
@@ -279,7 +281,7 @@ export default function Inventory() {
             <select
               className="form-control"
               value={branchFilter}
-              onChange={(e) => setBranchFilter(e.target.value)}
+              onChange={(e) => { setBranchFilter(e.target.value); setPage(0); }}
               style={{
                 width: 240,
               }}
@@ -489,6 +491,23 @@ export default function Inventory() {
               )}
             </tbody>
       </DataTable>
+
+      <div className="system-pagination" style={{ textAlign: "center" }}>
+        <div className="system-pagination-controls" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginBottom: 8 }}>
+          <button className="btn btn-sm" disabled={page === 0} onClick={() => setPage(0)}>«</button>
+          <button className="btn btn-sm" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>‹</button>
+          {Array.from({ length: Math.min(totalPages, 3) }).map((_, offset) => {
+            const start = Math.min(Math.max(page - 1, 0), Math.max(totalPages - 3, 0));
+            const pageIndex = start + offset;
+            return <button key={pageIndex} className="btn btn-sm" disabled={pageIndex === page} onClick={() => setPage(pageIndex)}>{pageIndex + 1}</button>;
+          })}
+          <button className="btn btn-sm" disabled={page + 1 >= totalPages} onClick={() => setPage((current) => current + 1)}>›</button>
+          <button className="btn btn-sm" disabled={page + 1 >= totalPages} onClick={() => setPage(totalPages - 1)}>»</button>
+        </div>
+        <div style={{ fontSize: 13, color: "#94a3b8" }}>
+          {totalCount === 0 ? "0 of 0" : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, totalCount)} out of ${totalCount}`}
+        </div>
+      </div>
 
       {/* Add/Edit Item Modal */}
       {showModal && (

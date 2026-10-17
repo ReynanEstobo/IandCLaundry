@@ -18,6 +18,7 @@ import { requestEmailChange, confirmEmailChange, verifyEmailChangeOtp } from './
 import { listLoyaltyRewards, revokeLoyaltyReward } from './controllers/loyaltyController.js'
 import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail } from './controllers/notificationController.js'
 import { listOrdersPage } from './controllers/orderListController.js'
+import { listCustomersPage, listInventoryPage } from './controllers/operationalListController.js'
 
 const port = Number(process.env.PORT || 3001)
 const localRateWindows = new Map()
@@ -137,6 +138,8 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && path === 'ai/dss') { requireAdmin(await authenticate(request)); return write(response, 200, await generateDecisionSupport(await readBody(request))) }
     if (request.method === 'GET' && path === 'public/orders/track') return write(response, 200, await trackOrder(url.searchParams.get('q')))
     if (request.method === 'GET' && path === 'orders/page') return write(response, 200, await listOrdersPage(Object.fromEntries(url.searchParams), await authenticate(request)))
+    if (request.method === 'GET' && path === 'customers/page') return write(response, 200, await listCustomersPage(Object.fromEntries(url.searchParams), await authenticate(request)))
+    if (request.method === 'GET' && path === 'inventory/page') return write(response, 200, await listInventoryPage(Object.fromEntries(url.searchParams), await authenticate(request)))
     if (request.method === 'GET' && path === 'public/settings') return write(response, 200, await getPublicSettings())
     if (request.method === 'GET' && path === 'public/services') return write(response, 200, await getPublicServices())
     if (request.method === 'GET' && path === 'public/turnstile-config') return write(response, 200, getPublicTurnstileConfig())
