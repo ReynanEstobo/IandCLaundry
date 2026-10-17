@@ -4,7 +4,7 @@ import { useRealtime } from '../lib/useRealtime'
 import { useAuth } from '../context/AuthContext'
 import { InlineSkeleton, PageError, PageLoader } from '../components/AsyncState'
 import { compareOrdersForList } from '../utils/orderListPriority'
-import { rollingDemandForecast } from '../utils/businessForecast'
+import { paymentTimestamp, rollingDemandForecast } from '../utils/businessForecast'
 import { analyticsPeriod, staffDashboardChartData } from '../utils/chartDates'
 import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorderQuantity } from '../utils/inventoryForecast'
 import DashboardCharts from '../components/DashboardCharts'
@@ -64,7 +64,7 @@ export default function StaffDashboard() {
         ? chartPeriod.start
         : new Date(Math.min(chartPeriod.start.getTime(), Date.now() - (30 * 24 * 60 * 60 * 1000)))
       const historyStartIso = historyStart.toISOString()
-      const [ordersRes, inventoryRes, historyRes, paymentsRes, usageRes, recipesRes, orderItemsRes] = await Promise.all([
+      const [ordersRes, inventoryRes, historyRes, paymentsByPaidAtRes, paymentsByPaymentDateRes, usageRes, recipesRes, orderItemsRes] = await Promise.all([
         supabase.from('orders').select('id, order_number, status, payment_status, weight_kg, total_price, estimated_ready_at, created_at, customers(name, phone), service_types(name), order_items(service_name_snapshot, weight_kg, status)')
           .not('status', 'in', '("released","cancelled")')
           .order('created_at', { ascending: false }),
@@ -72,8 +72,8 @@ export default function StaffDashboard() {
         // Row-level security restricts this data to the signed-in staff member's branch.
         supabase.from('orders').select('created_at, amount_paid, total_price, payment_status, status')
           .not('status', 'eq', 'cancelled').gte('created_at', historyStartIso),
-        supabase.from('payments').select('amount, paid_at, payment_date')
-          .or(`paid_at.gte.${historyStartIso},payment_date.gte.${historyStartIso}`),
+        supabase.from('payments').select('id, amount, paid_at, payment_date').gte('paid_at', historyStartIso),
+        supabase.from('payments').select('id, amount, paid_at, payment_date').gte('payment_date', historyStartIso),
         supabase.from('inventory_usage_log').select('item_id, quantity_used, logged_at, reversed_at')
           .order('logged_at', { ascending: false }).limit(500),
         supabase.from('service_inventory_requirements')
@@ -81,13 +81,19 @@ export default function StaffDashboard() {
         supabase.from('order_items').select('service_type_id, branch_id, loads, status, created_at')
           .not('status', 'eq', 'cancelled').order('created_at', { ascending: false }).limit(1000)
       ])
-      if (ordersRes.error || inventoryRes.error || historyRes.error || paymentsRes.error || usageRes.error || recipesRes.error || orderItemsRes.error) {
-        throw ordersRes.error || inventoryRes.error || historyRes.error || paymentsRes.error || usageRes.error || recipesRes.error || orderItemsRes.error
+      if (ordersRes.error || inventoryRes.error || historyRes.error || paymentsByPaidAtRes.error || paymentsByPaymentDateRes.error || usageRes.error || recipesRes.error || orderItemsRes.error) {
+        throw ordersRes.error || inventoryRes.error || historyRes.error || paymentsByPaidAtRes.error || paymentsByPaymentDateRes.error || usageRes.error || recipesRes.error || orderItemsRes.error
       }
       setOrders([...(ordersRes.data || [])].sort(compareOrdersForList))
       setInventory(inventoryRes.data || [])
       setOrderHistory(historyRes.data || [])
-      setPaymentHistory(paymentsRes.data || [])
+      const paymentsById = new Map()
+      const paymentRows = [...(paymentsByPaidAtRes.data || []), ...(paymentsByPaymentDateRes.data || [])]
+      paymentRows.forEach(payment => paymentsById.set(payment.id, payment))
+      setPaymentHistory([...paymentsById.values()].filter(payment => {
+        const timestamp = paymentTimestamp(payment)
+        return timestamp && new Date(timestamp) >= historyStart
+      }))
       setUsageLogs(usageRes.data || [])
       setServiceRecipes(recipesRes.data || [])
       setServiceOrderItems(orderItemsRes.data || [])

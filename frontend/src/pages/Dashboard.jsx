@@ -196,7 +196,8 @@ export default function Dashboard() {
       inventoryRes,
       recentRes,
       usageRes,
-      paymentsRes,
+      paymentsByPaidAtRes,
+      paymentsByPaymentDateRes,
       expensesRes,
     ] = await Promise.all([
       supabase
@@ -230,8 +231,11 @@ export default function Dashboard() {
         .select("item_id, quantity_used, logged_at, reversed_at")
         .order("logged_at", { ascending: false })
         .limit(500),
-      supabase.from("payments").select("amount, paid_at, payment_date")
-        .or(`paid_at.gte.${historyStartIso},payment_date.gte.${historyStartIso}`),
+      // The local query adapter intentionally exposes only simple filters.
+      // Read both timestamp indexes, then retain the same preferred
+      // `paid_at || payment_date` timestamp used by the existing dashboard.
+      supabase.from("payments").select("id, amount, paid_at, payment_date").gte("paid_at", historyStartIso),
+      supabase.from("payments").select("id, amount, paid_at, payment_date").gte("payment_date", historyStartIso),
       supabase.from("expenses").select("amount, expense_date").gte("expense_date", historyStart.toISOString().slice(0, 10)),
     ]);
     const { data: settingsData } = await supabase
@@ -239,7 +243,7 @@ export default function Dashboard() {
       .select("*")
       .single();
 
-    const requestError = historicalOrdersRes.error || activeOrdersRes.error || unpaidOrdersRes.error || customersRes.error || inventoryRes.error || recentRes.error || usageRes.error || paymentsRes.error || expensesRes.error;
+    const requestError = historicalOrdersRes.error || activeOrdersRes.error || unpaidOrdersRes.error || customersRes.error || inventoryRes.error || recentRes.error || usageRes.error || paymentsByPaidAtRes.error || paymentsByPaymentDateRes.error || expensesRes.error;
     if (requestError) throw requestError;
 
     setSettings(settingsData || {});
@@ -249,7 +253,12 @@ export default function Dashboard() {
     const orders = [...ordersById.values()];
     const inventory = inventoryRes.data || [];
     const usageLogs = usageRes.data || [];
-    const payments = paymentsRes.data || [];
+    const paymentsById = new Map();
+    [...(paymentsByPaidAtRes.data || []), ...(paymentsByPaymentDateRes.data || [])].forEach((payment) => paymentsById.set(payment.id, payment));
+    const payments = [...paymentsById.values()].filter((payment) => {
+      const timestamp = paymentTimestamp(payment);
+      return timestamp && new Date(timestamp) >= historyStart;
+    });
     const expenses = expensesRes.data || [];
     const reportableOrders = orders.filter((o) => o.status !== "cancelled");
     const todayOrders = reportableOrders.filter((o) => o.created_at >= today);
