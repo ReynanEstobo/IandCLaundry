@@ -155,7 +155,7 @@ function validateResourcePayload(table, payload, operation) {
     if (table === 'customers') {
       if (needs('name')) value.name = assertText(value.name, { label: 'Customer name', min: 2, max: 120 })
       if (needs('phone')) value.phone = assertPhilippineMobile(value.phone)
-      if (needs('email')) value.email = assertEmail(value.email, { label: 'Customer email', required: true })
+      if (needs('email')) value.email = assertEmail(value.email, { label: 'Customer email' }) || null
     }
     if (table === 'inventory_items') {
       if (needs('name')) value.name = assertText(value.name, { label: 'Item name', min: 2, max: 120 })

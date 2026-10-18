@@ -866,8 +866,22 @@ export default function Orders() {
     toast.success(`Status → ${STATUS_LABELS[newStatus]}`);
 
     if (newStatus === "ready") {
-      if (order.customers?.email) {
+      if (String(order.customers?.email || "").trim()) {
         sendReadyEmail(order, order.customers.name, order.customers.email);
+      } else {
+        toast((notification) => (
+          <div role="status">
+            <strong>Manually notify the customer</strong>
+            <p style={{ margin: "6px 0" }}>
+              {order.customers?.name || "This customer"} has no email address.
+              Please contact them to let them know order {order.order_number} is ready for pickup.
+            </p>
+            {order.customers?.phone && <p style={{ margin: "6px 0" }}>Phone: {order.customers.phone}</p>}
+            <button type="button" className="btn btn-secondary btn-sm" onClick={() => toast.dismiss(notification.id)}>
+              Dismiss reminder
+            </button>
+          </div>
+        ), { id: `manual-pickup-${order.id}`, duration: Infinity });
       }
       if (order.customers?.phone) {
         sendReadySMS(

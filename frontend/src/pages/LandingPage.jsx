@@ -246,6 +246,7 @@ export default function LandingPage() {
   const [contactCooldown, setContactCooldown] = useState(0);
   const [turnstileSiteKey, setTurnstileSiteKey] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileErrorCode, setTurnstileErrorCode] = useState("");
   const [turnstileLoaded, setTurnstileLoaded] = useState(false);
   const [turnstileConfigLoaded, setTurnstileConfigLoaded] = useState(false);
   const turnstileContainerRef = useRef(null);
@@ -290,9 +291,17 @@ export default function LandingPage() {
         sitekey: turnstileSiteKey,
         action: "contact-form",
         theme: "auto",
-        callback: token => { if (active) setTurnstileToken(token); },
+        callback: token => { if (active) { setTurnstileToken(token); setTurnstileErrorCode(""); } },
         "expired-callback": () => { if (active) setTurnstileToken(""); },
-        "error-callback": () => { if (active) setTurnstileToken(""); },
+        "error-callback": errorCode => {
+          if (active) {
+            setTurnstileToken("");
+            setTurnstileErrorCode(String(errorCode || "unknown"));
+          }
+          // We display the code below so the visitor is not left with a blank
+          // Turnstile diagnostic panel.
+          return true;
+        },
       });
       if (active) setTurnstileLoaded(true);
     };
@@ -307,6 +316,7 @@ export default function LandingPage() {
       script.defer = true;
       script.dataset.turnstileApi = "true";
       script.addEventListener("load", renderWidget, { once: true });
+      script.addEventListener("error", () => { if (active) setTurnstileErrorCode("iframe-load"); }, { once: true });
       document.head.appendChild(script);
     } else {
       script.addEventListener("load", renderWidget, { once: true });
@@ -321,6 +331,7 @@ export default function LandingPage() {
       }
       setTurnstileLoaded(false);
       setTurnstileToken("");
+      setTurnstileErrorCode("");
     };
   }, [turnstileSiteKey]);
 
@@ -1055,6 +1066,8 @@ export default function LandingPage() {
                   ? "Security check complete."
                   : turnstileConfigLoaded && !turnstileSiteKey
                     ? "Security check is unavailable. Please try again later."
+                    : turnstileErrorCode
+                      ? `Security check could not load (code: ${turnstileErrorCode}). Disable content blockers or allow challenges.cloudflare.com, then refresh.`
                     : turnstileLoaded
                       ? "Complete the security check to send your message."
                       : "Loading security check…"}</small>

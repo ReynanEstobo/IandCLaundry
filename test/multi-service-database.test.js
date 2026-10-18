@@ -294,4 +294,27 @@ test('multi-service migration applies and duplicate order requests deduct stock 
   assert.equal(Number(discountedOrderRow.total_price), 175)
   assert.equal(Number(discountedOrderRow.amount_paid), 88)
   assert.equal(Number(discountedOrderRow.loyalty_discount_amount), 175)
+
+  // Exercise the actual optional-email RPC migration against the old constraint.
+  await db.exec(await readFile(new URL('../supabase_migrations/20261012_optional_order_email_and_payment_followup.sql', import.meta.url), 'utf8'))
+  const optionalEmailMigration = await readFile(new URL('../supabase_migrations/20261013_optional_customer_email_constraint.sql', import.meta.url), 'utf8')
+  await db.exec(optionalEmailMigration)
+  await db.exec(optionalEmailMigration) // Safe to reapply.
+  await db.query('UPDATE settings SET loyalty_enabled=false')
+  for (const [index, email] of [undefined, null, '', '   ', 'Test@Example.com'].entries()) {
+    const customer = { name: 'Optional Email Customer', phone: `0998888000${index}`, email }
+    const result = await db.query('SELECT (public.create_branch_order($1,$2,$3::jsonb,$4::jsonb,$5::jsonb,1,NULL)).*', [
+      branchId, staffId, JSON.stringify(customer), JSON.stringify({ client_request_id: randomUUID(), amount_paid: 0,
+        items: [{ service_type_id: serviceId, weight_kg: 5 }] }), '{}',
+    ])
+    assert.equal(result.rows[0].payment_status, 'unpaid')
+    assert.equal(Number(result.rows[0].amount_paid), 0)
+    assert.equal(Number(result.rows[0].total_price), 350)
+    const saved = (await db.query('SELECT email FROM customers WHERE id=$1', [result.rows[0].customer_id])).rows[0]
+    assert.equal(saved.email, index === 4 ? 'test@example.com' : null)
+  }
+  const registered = await db.query("SELECT (register_branch_customer($1,$2,'No Email','09988881111',NULL)).*", [branchId, staffId])
+  assert.equal(registered.rows[0].email, null)
+  await db.query("UPDATE customers SET email='  ' WHERE id=$1", [registered.rows[0].id])
+  await assert.rejects(db.query("UPDATE customers SET email='invalid' WHERE id=$1", [registered.rows[0].id]), /customers_email_format_check/)
 })

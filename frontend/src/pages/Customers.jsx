@@ -99,8 +99,8 @@ export default function Customers() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!form.name.trim()) return toast.error("Customer name is required");
-    if (isAdmin && (!form.phone.trim() || !form.email.trim()))
-      return toast.error("Phone and email are required");
+    if (isAdmin && !form.phone.trim())
+      return toast.error("Phone is required");
     if (isAdmin && !isValidPhilippineMobile(form.phone))
       return toast.error("Phone number must start with 09 and contain exactly 11 digits.");
     if (isAdmin && !form.branch)
@@ -386,7 +386,7 @@ export default function Customers() {
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Email *</label>
+                  <label>Email (optional)</label>
                   <input
                     className={`form-control ${!isAdmin ? "is-readonly" : ""}`}
                     type="email"
@@ -397,7 +397,6 @@ export default function Customers() {
                     }
                     readOnly={!isAdmin}
                     aria-readonly={!isAdmin}
-                    required
                   />
                   {!isAdmin && <span className="form-hint is-readonly-hint">Read-only · Only an administrator can change this email address.</span>}
                 </div>

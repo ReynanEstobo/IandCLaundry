@@ -126,10 +126,11 @@ test('placed order pricing, services, inventory selections, and ownership are im
   assert.equal(calls.length, 0)
 })
 
-test('new client records require email, but order clients may omit it', async t => {
+test('customer registration and order creation allow missing email but reject malformed email', async t => {
   const calls = mockDatabase(t)
+  await execute('customers', { operation: 'insert', payload: { name: 'Test Client', phone: '09123456789' } }, staff)
   await assert.rejects(
-    execute('customers', { operation: 'insert', payload: { name: 'Test Client', phone: '09123456789' } }, staff),
+    execute('customers', { operation: 'insert', payload: { name: 'Test Client', phone: '09123456789', email: 'invalid' } }, staff),
     /email/i,
   )
   await createOrder({
