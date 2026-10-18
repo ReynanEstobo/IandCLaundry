@@ -126,20 +126,19 @@ test('placed order pricing, services, inventory selections, and ownership are im
   assert.equal(calls.length, 0)
 })
 
-test('new client records and order clients require a valid email', async t => {
+test('new client records require email, but order clients may omit it', async t => {
   const calls = mockDatabase(t)
   await assert.rejects(
     execute('customers', { operation: 'insert', payload: { name: 'Test Client', phone: '09123456789' } }, staff),
     /email/i,
   )
-  await assert.rejects(
-    createOrder({
-      customer: { name: 'Test Client', phone: '09123456789' },
-      order: { weight_kg: 8, total_price: 200, amount_paid: 100 },
-    }, staff),
-    /email/i,
-  )
-  assert.equal(calls.length, 0)
+  await createOrder({
+    customer: { name: 'Test Client', phone: '09123456789' },
+    order: { weight_kg: 8, total_price: 200 },
+  }, staff)
+  const orderCall = calls.find(call => call.rpc === 'create_branch_order')
+  assert.equal(orderCall.args.p_order.amount_paid, 0)
+  assert.equal(orderCall.args.p_order.payment_status, 'unpaid')
 })
 
 test('staff cannot change customer phone numbers or email addresses', async t => {
@@ -262,12 +261,15 @@ test('staff must not be allowed to delete another staff account via generic data
   assert.equal(calls.some(call => call.table === 'staff' && call.method === 'update'),false)
 })
 
-test('new orders must reject nonnumeric payments before calling the database', async t => {
+test('new orders reject invalid payments but allow a blank payment to follow later', async t => {
   const calls = mockDatabase(t)
-  for (const amount_paid of ['invalid', 'Infinity', Infinity, NaN, -1, null, true, [], '', undefined, 99, 201]) {
-    await assert.rejects(createOrder({order:{weight_kg:8,total_price:200,amount_paid}},staff))
+  for (const amount_paid of ['invalid', 'Infinity', Infinity, NaN, -1, true, [], 201]) {
+    await assert.rejects(createOrder({customer:{ name:'Test Customer', phone:'09123456789' },order:{weight_kg:8,total_price:200,amount_paid}},staff))
   }
-  assert.equal(calls.some(call => call.rpc),false)
+  for (const amount_paid of [null, '', undefined, 0, 99]) {
+    await createOrder({customer:{ name:'Test Customer', phone:'09123456789' },order:{weight_kg:8,total_price:200,amount_paid}},staff)
+  }
+  assert.deepEqual(calls.filter(call => call.rpc).map(call => call.args.p_order.payment_status), ['unpaid', 'unpaid', 'unpaid', 'unpaid', 'partial'])
 })
 
 test('tracking supports complete current and legacy receipts, excludes cancelled orders, and selects no customer or payment fields', async t => {

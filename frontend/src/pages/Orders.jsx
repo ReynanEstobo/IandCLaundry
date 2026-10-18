@@ -189,7 +189,7 @@ async function sendOrderReceivedEmail(
   totalPrice,
   estimatedReadyAt,
 ) {
-  if (!customerEmail) return;
+  if (!String(customerEmail || "").trim()) return;
   try {
     const completionText = estimatedReadyAt
       ? new Date(estimatedReadyAt).toLocaleString("en-PH", { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })
@@ -649,19 +649,8 @@ export default function Orders() {
     const rawTotal = calcPrice(form.items, form.addons);
     const total_price = loyaltyPrice(rawTotal, loyaltyPreview);
     const amountPaid = parseFloat(form.amount_paid) || 0;
-    const minRequired = total_price * 0.5;
-
     if (!editing && amountPaid > total_price) {
       return toast.error("Payment cannot be greater than the full order total.");
-    }
-
-    // The 50% minimum applies when the order is first placed. Existing
-    // records may have older payment terms and can still have their non-payment
-    // details corrected without rewriting payment history.
-    if (!editing && amountPaid < minRequired) {
-      return toast.error(
-        `Minimum 50% payment required: \u20B1${minRequired.toLocaleString()}`,
-      );
     }
 
     // Auto-derive payment status from amount paid
@@ -1690,11 +1679,11 @@ export default function Orders() {
                       </div>
                     )}
                   </div>
-                  {/* Every customer must have an email. Existing emails are shown
-                      read-only; older customer records without one can be completed here. */}
+                  {/* An email is optional. A saved email stays read-only so the
+                      order confirmation is sent to the verified address. */}
                   {!editing && form.customer_phone.length >= 11 && (
                     <div className="form-group">
-                      <label>Customer Email *</label>
+                      <label>Customer Email (optional)</label>
                       <input
                         className={`form-control ${phoneMatch?.email ? "is-readonly" : ""}`}
                         type="email"
@@ -1706,7 +1695,6 @@ export default function Orders() {
                             customer_email: e.target.value,
                           }))
                         }
-                        required
                         disabled={Boolean(phoneMatch?.email)}
                       />
                       {phoneMatch?.email && <span className="form-hint is-readonly-hint">Read-only · The saved customer email is used for notifications.</span>}
@@ -1726,7 +1714,7 @@ export default function Orders() {
                             marginRight: 4,
                           }}
                         />
-                        For pickup notifications
+                        Email notifications are sent only when an email is provided.
                       </span>
                     </div>
                   )}
@@ -1918,9 +1906,9 @@ export default function Orders() {
                 <div className="order-section">
                   <div className="order-section-title">
                     <span className="order-step-number">Step 5</span>
-                    <span>Record payment <small>Enter the amount received from the customer</small></span>
+                    <span>Record payment <small>Enter an amount now, or leave it blank when payment will follow</small></span>
                     <span className="order-section-optional">
-                      Min. 50% required
+                      Payment optional
                     </span>
                   </div>
                   {editing && <div style={{ margin: "0 0 12px" }}>
@@ -1948,7 +1936,7 @@ export default function Orders() {
                       <span className="form-hint is-readonly-hint">Read-only · Cash is the only accepted payment method.</span>
                     </div>
                     <div className="form-group">
-                      <label>Amount Paid (₱) *</label>
+                      <label>Amount Paid Now (₱)</label>
                       <input
                         className={`form-control ${editing ? "is-readonly" : ""}`}
                         type="number"
@@ -1964,15 +1952,14 @@ export default function Orders() {
                             amount_paid: e.target.value,
                           }))
                         }
-                        required
                       />
+                      {!editing && <InfoNote compact title="Payment can follow">Leave this blank or enter 0 to create an unpaid order. The remaining balance must still be collected before the order can be released.</InfoNote>}
                       {editing && <span className="form-hint is-readonly-hint">Read-only · Existing payments are preserved in the audit ledger.</span>}
                       {(() => {
                         const rawTotal = calcPrice(form.items, form.addons);
                         const reward = loyaltyPreview;
                         const total = loyaltyPrice(rawTotal, reward);
                         const paid = parseFloat(form.amount_paid) || 0;
-                        const minRequired = total * 0.5;
                         const status =
                           paid <= 0
                             ? "unpaid"
@@ -1993,12 +1980,7 @@ export default function Orders() {
                             <span className={`badge badge-${status}`}>
                               {status}
                             </span>
-                            {paid < minRequired && (
-                              <span style={{ color: "var(--danger)" }}>
-                                Min: ₱{minRequired.toLocaleString()}
-                              </span>
-                            )}
-                            {paid >= minRequired && paid < total && (
+                            {paid < total && (
                               <span className="payment-balance-copy">
                                 Balance: ₱{(total - paid).toLocaleString()}
                               </span>

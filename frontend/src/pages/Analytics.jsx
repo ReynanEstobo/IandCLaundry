@@ -180,7 +180,7 @@ export default function Analytics() {
 
   const [stats, setStats] = useState({});
   const [operationalSummary, setOperationalSummary] = useState({
-    services: [], branches: [], topServices: [], topBranches: [], staffPerformance: [], lowStockItems: [], repeatCustomers: 0, completedOrders: 0, averageTurnaroundHours: null,
+    services: [], branches: [], topServices: [], topBranches: [], staffPerformance: [], lowStockItems: [], repeatCustomers: 0, completedOrders: 0, averageTurnaroundHours: null, newCustomerTotal: 0, dailyNewCustomers: [], outstandingBalances: [],
   });
 
   const [forecastLoading, setForecastLoading] = useState(false);
@@ -244,7 +244,7 @@ export default function Analytics() {
 
     let orderQuery = supabase
       .from("orders")
-      .select("id, created_at, updated_at, status, customer_id, completed_by_staff_id, created_by_staff_id, branch, branch_id, total_price, amount_paid, payment_status, service_types(name)")
+      .select("id, order_number, created_at, updated_at, status, customer_id, completed_by_staff_id, created_by_staff_id, branch, branch_id, total_price, amount_paid, payment_status, customers(name, phone), service_types(name)")
       .gte("created_at", startDate)
       .lte("created_at", endDate)
       .order("created_at", { ascending: true });
@@ -268,25 +268,33 @@ export default function Analytics() {
       .gte("created_at", startDate)
       .lte("created_at", endDate);
 
+    let customerQuery = supabase
+      .from("customers")
+      .select("id, created_at, branch")
+      .gte("created_at", startDate)
+      .lte("created_at", endDate);
+
     if (selectedBranch !== "all") {
       orderQuery = orderQuery.eq("branch", selectedBranch);
       expenseQuery = expenseQuery.eq("branch", selectedBranch);
       paymentQuery = paymentQuery.eq("branch", selectedBranch);
       serviceItemQuery = serviceItemQuery.eq("orders.branch", selectedBranch);
+      customerQuery = customerQuery.eq("branch", selectedBranch);
     }
 
     let inventoryQuery = supabase.from("inventory_items").select("id, name, current_stock, minimum_stock, unit, branch");
     if (selectedBranch !== "all") inventoryQuery = inventoryQuery.eq("branch", selectedBranch);
-    const [ordersRes, expensesRes, staffRes, inventoryRes, paymentsRes, serviceItemsRes] = await Promise.all([
+    const [ordersRes, expensesRes, staffRes, inventoryRes, paymentsRes, serviceItemsRes, customersRes] = await Promise.all([
       orderQuery,
       expenseQuery,
       supabase.from("staff").select("id, full_name"),
       inventoryQuery,
       paymentQuery,
       serviceItemQuery,
+      customerQuery,
     ]);
     if (requestId !== analyticsRequestId.current) return;
-    const requestError = ordersRes.error || expensesRes.error || staffRes.error || inventoryRes.error || paymentsRes.error || serviceItemsRes.error;
+    const requestError = ordersRes.error || expensesRes.error || staffRes.error || inventoryRes.error || paymentsRes.error || serviceItemsRes.error || customersRes.error;
     if (requestError) throw requestError;
 
     const orderData = (ordersRes.data || []).filter((order) => order.status !== "cancelled");
@@ -295,6 +303,7 @@ export default function Analytics() {
     const staffById = new Map((staffRes.data || []).map((staff) => [staff.id, staff.full_name || "Unassigned staff"]));
     const inventoryData = inventoryRes.data || [];
     const serviceItems = (serviceItemsRes.data || []).filter((item) => item.orders?.status !== 'cancelled');
+    const newCustomerData = customersRes.data || [];
 
     setOrders(orderData);
     setPayments(paymentData);
@@ -355,6 +364,36 @@ export default function Analytics() {
     const lowStockItems = inventoryData
       .filter((item) => Number(item.current_stock) <= Number(item.minimum_stock))
       .sort((a, b) => (Number(a.current_stock) - Number(a.minimum_stock)) - (Number(b.current_stock) - Number(b.minimum_stock)));
+    const newCustomersByDay = new Map();
+    newCustomerData.forEach((customer) => {
+      if (!customer.created_at) return;
+      const day = format(new Date(customer.created_at), "yyyy-MM-dd");
+      newCustomersByDay.set(day, (newCustomersByDay.get(day) || 0) + 1);
+    });
+    const dailyNewCustomers = [...newCustomersByDay.entries()]
+      .map(([date, count]) => ({ date, count }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const outstandingByCustomer = new Map();
+    orderData.forEach((order) => {
+      const remaining = Math.max(0, Number(order.total_price || 0) - Number(order.amount_paid || 0));
+      if (remaining <= 0) return;
+      const customer = order.customers || {};
+      const key = order.customer_id || order.id;
+      const current = outstandingByCustomer.get(key) || {
+        customerName: customer.name || "Walk-in customer",
+        phone: customer.phone || "—",
+        branches: new Set(),
+        orderNumbers: [],
+        remainingBalance: 0,
+      };
+      if (order.branch) current.branches.add(order.branch);
+      if (order.order_number) current.orderNumbers.push(order.order_number);
+      current.remainingBalance += remaining;
+      outstandingByCustomer.set(key, current);
+    });
+    const outstandingBalances = [...outstandingByCustomer.values()]
+      .map((customer) => ({ ...customer, branches: [...customer.branches].join(", ") || "Unassigned" }))
+      .sort((a, b) => b.remainingBalance - a.remainingBalance || a.customerName.localeCompare(b.customerName));
     setOperationalSummary({
       services: rankedServices,
       branches: rankedBranches,
@@ -365,6 +404,9 @@ export default function Analytics() {
       repeatCustomers: [...customerVisits.values()].filter((visits) => visits > 1).length,
       completedOrders,
       averageTurnaroundHours: completedOrders ? turnaroundTotalHours / completedOrders : null,
+      newCustomerTotal: newCustomerData.length,
+      dailyNewCustomers,
+      outstandingBalances,
     });
 
     generateForecast(orderData, paymentData);
@@ -1079,7 +1121,8 @@ Rules:
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 18 }}>
           {[
-            { label: "Repeat Customers", value: operationalSummary.repeatCustomers, icon: Users, color: "#0ea5e9", bg: "#e0f2fe" },
+            { label: "New Customers", value: operationalSummary.newCustomerTotal, icon: Users, color: "#0ea5e9", bg: "#e0f2fe" },
+            { label: "Repeat Customers", value: operationalSummary.repeatCustomers, icon: Users, color: "#0284c7", bg: "#e0f2fe" },
             { label: "Released Orders", value: operationalSummary.completedOrders, icon: ShoppingBag, color: "#10b981", bg: "#dcfce7" },
             { label: "Average Turnaround", value: operationalSummary.averageTurnaroundHours == null ? "—" : `${operationalSummary.averageTurnaroundHours.toFixed(1)}h`, icon: Timer, color: "#8b5cf6", bg: "#f3e8ff" },
           ].map((metric) => {
@@ -1096,6 +1139,7 @@ Rules:
           <OperationalList icon={<TrendingUp size={17} />} title="High-Performing Services" accent="#8b5cf6" empty="No service data yet" items={operationalSummary.topServices.map((service) => `${service.name} · ${service.orders} service requests · ₱${service.revenue.toLocaleString()}`)} />
           <OperationalList icon={<Building2 size={17} />} title="Top Branches" accent="#0ea5e9" empty="No branch data yet" items={operationalSummary.topBranches.map((branchMetric) => `${branchMetric.name} · ${branchMetric.orders} orders created · ₱${branchMetric.revenue.toLocaleString()}`)} />
           <OperationalList icon={<Users size={17} />} title="Staff Productivity" accent="#10b981" empty="No staff activity yet" items={operationalSummary.staffPerformance.slice(0, 3).map((staff) => `${staff.name} · ${staff.completed} released / ${staff.created} handled`)} />
+          <OperationalList icon={<Users size={17} />} title="Daily New Customers" accent="#0284c7" empty="No new customer profiles in this scope" items={operationalSummary.dailyNewCustomers.map((item) => `${format(new Date(`${item.date}T00:00:00`), "MMM d, yyyy")} · ${item.count} new customer${item.count === 1 ? "" : "s"}`)} />
         </div>
       </div>
 

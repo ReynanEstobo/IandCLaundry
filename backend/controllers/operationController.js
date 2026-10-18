@@ -21,7 +21,10 @@ export async function createOrder(body, identity) {
   const serviceItems = Array.isArray(order.items) ? order.items : (Array.isArray(body?.items) ? body.items : [])
   const weight = Number(order.weight_kg)
   const previewTotal = Number(order.total_price)
-  const amountPaid = Number(order.amount_paid || 0)
+  const rawAmountPaid = order.amount_paid
+  const amountPaid = rawAmountPaid === undefined || rawAmountPaid === null || String(rawAmountPaid).trim() === ''
+    ? 0
+    : Number(rawAmountPaid)
   const paymentMethod = String(order.payment_method || 'cash').trim().toLowerCase()
   if (paymentMethod !== 'cash') {
     throw Object.assign(new Error('Cash is the only accepted payment method.'), { status: 400 })
@@ -44,28 +47,23 @@ export async function createOrder(body, identity) {
       throw Object.assign(new Error('Add-on quantities must be whole numbers greater than zero.'), { status: 400 })
     }
   }
-  if (!['number', 'string'].includes(typeof order.amount_paid) || !String(order.amount_paid).trim() || !Number.isFinite(amountPaid) || amountPaid < 0) {
+  if ((rawAmountPaid !== undefined && rawAmountPaid !== null && !['number', 'string'].includes(typeof rawAmountPaid)) || !Number.isFinite(amountPaid) || amountPaid < 0) {
     throw Object.assign(new Error('A valid non-negative payment amount is required.'), { status: 400 })
   }
   if (Number.isFinite(previewTotal) && previewTotal >= 0 && amountPaid > previewTotal) {
     throw Object.assign(new Error('Payment cannot be greater than the full order total.'), { status: 400 })
   }
-  // Fast feedback for legacy/browser callers; the SQL RPC independently
-  // recalculates the real total and repeats this rule transactionally.
-  if (Number.isFinite(previewTotal) && previewTotal > 0 && amountPaid < previewTotal * 0.5) {
-    throw Object.assign(new Error(`Minimum 50% payment required: ₱${(previewTotal * 0.5).toLocaleString()}`), { status: 400 })
-  }
   const validatedCustomer = { ...customer }
   validatedCustomer.name = assertText(customer.name, { label: 'Customer name', min: 2, max: 120 })
   validatedCustomer.phone = assertPhilippineMobile(customer.phone)
-  validatedCustomer.email = assertEmail(customer.email, { label: 'Customer email', required: true })
+  validatedCustomer.email = assertEmail(customer.email, { label: 'Customer email' })
   const payload = {
     // The database resolves price snapshots. Client totals are previews only.
     items: serviceItems,
     service_type_id: order.service_type_id || serviceItems[0]?.service_type_id || null,
     weight_kg: Number.isFinite(weight) ? weight : null,
     payment_method: 'cash',
-    payment_status: Number.isFinite(previewTotal) && amountPaid >= previewTotal ? 'paid' : 'partial',
+    payment_status: amountPaid <= 0 ? 'unpaid' : (Number.isFinite(previewTotal) && amountPaid >= previewTotal ? 'paid' : 'partial'),
     amount_paid: amountPaid,
     client_request_id: order.client_request_id || body?.clientRequestId || globalThis.crypto.randomUUID(),
   }
