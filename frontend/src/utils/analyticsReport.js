@@ -209,7 +209,7 @@ export function buildAnalyticsReport(input) {
     ...model.operationalSummary.dailyNewCustomers.map((item) => [item.date, number(item.count)]),
     [],
     ['CUSTOMERS WITH REMAINING BALANCES'],
-    ['Customer', 'Phone', 'Order Number(s)', 'Branch', 'Remaining Balance (PHP)'],
+    ['Customer Name', 'Phone', 'Order Number(s)', 'Branch', 'Remaining Balance (PHP)'],
     ...model.operationalSummary.outstandingBalances.map((item) => [item.customerName, item.phone, item.orderNumbers.join(', '), item.branches, number(item.remainingBalance)]),
     [],
     ['CASH-RECEIPT AND DEMAND FORECAST'],
@@ -277,7 +277,7 @@ export function buildAnalyticsReport(input) {
 <footer class="document-footer"><span>I&amp;C Laundry · Management Performance Report</span><span>${html(reportId)} · Generated ${html(generatedLabel)}</span></footer>
 </div></main></body></html>`
 
-  const outstandingBalancesSection = `<section class="section"><div class="section-heading"><h2>06 · Customers With Remaining Balances</h2><span>${model.operationalSummary.outstandingBalances.length} customer${model.operationalSummary.outstandingBalances.length === 1 ? '' : 's'} with an unpaid amount in this scope</span></div><div class="alert-box">This list is based on non-cancelled orders created during the selected reporting period. Confirm the amount with the payment ledger before collecting a balance.</div><div style="height:7px"></div><table><thead><tr><th>Customer</th><th>Phone</th><th>Order Number(s)</th><th>Branch</th><th class="money">Remaining Balance</th></tr></thead><tbody>${outstandingBalanceRows}</tbody></table></section>`
+  const outstandingBalancesSection = `<section class="section"><div class="section-heading"><h2>06 · Customers With Remaining Balances</h2><span>${model.operationalSummary.outstandingBalances.length} customer${model.operationalSummary.outstandingBalances.length === 1 ? '' : 's'} with an unpaid amount in this scope</span></div><div class="alert-box">This list is based on non-cancelled orders created during the selected reporting period. Confirm the amount with the payment ledger before collecting a balance.</div><div style="height:7px"></div><table><thead><tr><th>Customer Name</th><th>Phone</th><th>Order Number(s)</th><th>Branch</th><th class="money">Remaining Balance</th></tr></thead><tbody>${outstandingBalanceRows}</tbody></table></section>`
   printHtml = printHtml.replace('<section class="section page-break">', `${outstandingBalancesSection}<section class="section page-break">`)
   printHtml = printHtml
     .replace('06 · Expected Activity Ahead', '07 · Expected Activity Ahead')

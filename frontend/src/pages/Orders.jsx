@@ -615,8 +615,6 @@ export default function Orders() {
       return toast.error("Phone number must start with 09 and contain exactly 11 digits");
     if (!form.customer_name.trim())
       return toast.error("Customer name is required");
-    if (!form.customer_email.trim())
-      return toast.error("Customer email is required");
     if (!form.items?.length || form.items.some((item) => !validServiceItem(item, serviceTypes.find((service) => String(service.id) === String(item.service_type_id)))))
       return toast.error("Choose a service and enter its required weight or quantity.");
     if (isAdmin && !form.branch)
