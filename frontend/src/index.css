@@ -875,6 +875,22 @@ a:focus-visible {
 .order-correction-dialog label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 700; }
 .order-correction-dialog textarea { resize: vertical; }
 .order-correction-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.manual-pickup-dialog {
+  box-sizing: border-box;
+  width: min(100%, 460px);
+  min-width: 0;
+  max-height: 100%;
+  max-height: calc(100dvh - max(16px, env(safe-area-inset-top)) - max(16px, env(safe-area-inset-bottom)));
+  padding: clamp(16px, 4vw, 26px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+.manual-pickup-dialog .btn {
+  min-height: 44px;
+  max-width: 100%;
+  white-space: normal;
+}
 .order-eta-cell {
   min-width: 190px;
 }

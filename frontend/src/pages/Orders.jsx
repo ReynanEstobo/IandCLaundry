@@ -217,6 +217,7 @@ export default function Orders() {
   const isAdmin = role === "admin";
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [releaseConfirmationOrder, setReleaseConfirmationOrder] = useState(null);
+  const [manualPickupReminder, setManualPickupReminder] = useState(null);
   const [showAdditionalPaymentModal, setShowAdditionalPaymentModal] = useState(false);
   const [additionalPayment, setAdditionalPayment] = useState({ amount: "", paymentMethod: "cash" });
   const [recordingPayment, setRecordingPayment] = useState(false);
@@ -869,19 +870,7 @@ export default function Orders() {
       if (String(order.customers?.email || "").trim()) {
         sendReadyEmail(order, order.customers.name, order.customers.email);
       } else {
-        toast((notification) => (
-          <div role="status">
-            <strong>Manually notify the customer</strong>
-            <p style={{ margin: "6px 0" }}>
-              {order.customers?.name || "This customer"} has no email address.
-              Please contact them to let them know order {order.order_number} is ready for pickup.
-            </p>
-            {order.customers?.phone && <p style={{ margin: "6px 0" }}>Phone: {order.customers.phone}</p>}
-            <button type="button" className="btn btn-secondary btn-sm" onClick={() => toast.dismiss(notification.id)}>
-              Dismiss reminder
-            </button>
-          </div>
-        ), { id: `manual-pickup-${order.id}`, duration: Infinity });
+        setManualPickupReminder(order);
       }
       if (order.customers?.phone) {
         sendReadySMS(
@@ -1526,6 +1515,27 @@ export default function Orders() {
                         )} out of ${totalCount}`}
                 </div>
             </div>
+        </div>
+      )}
+
+      {manualPickupReminder && (
+        <div className="modal-overlay">
+          <section className="order-correction-dialog manual-pickup-dialog" role="dialog" aria-modal="true" aria-labelledby="manual-pickup-title" aria-describedby="manual-pickup-description" onKeyDown={(event) => {
+            if (event.key === "Escape") setManualPickupReminder(null);
+            if (event.key === "Tab") event.preventDefault();
+          }}>
+            <h3 id="manual-pickup-title">Manually notify the customer</h3>
+            <p id="manual-pickup-description">
+              <strong>{manualPickupReminder.customers?.name || "This customer"}</strong> has no email address.
+              Please contact them to let them know order <strong>{manualPickupReminder.order_number}</strong> is ready for pickup.
+            </p>
+            {manualPickupReminder.customers?.phone && <p>Phone: <strong>{manualPickupReminder.customers.phone}</strong></p>}
+            <div className="order-correction-actions">
+              <button type="button" className="btn btn-primary" autoFocus onClick={() => setManualPickupReminder(null)}>
+                Dismiss reminder
+              </button>
+            </div>
+          </section>
         </div>
       )}
 
