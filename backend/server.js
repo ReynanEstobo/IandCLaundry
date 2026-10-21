@@ -10,13 +10,12 @@ import { listAuditLog, restoreRecord } from './controllers/auditController.js'
 import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from './controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from './controllers/staffProvisionController.js'
 import { getPublicServices, getPublicSettings, getPublicTurnstileConfig, sendContactMessage, trackOrder } from './controllers/publicController.js'
-import { sendSms } from './services/notificationService.js'
-import { askGemini, generateForecast, generateDecisionSupport } from './services/aiService.js'
+import { generateFromPrompt, generateForecast, generateDecisionSupport } from './services/aiService.js'
 import { events } from './services/realtimeService.js'
 import { resourceRoutes } from './routes/resourceRoutes.js'
 import { requestEmailChange, confirmEmailChange, verifyEmailChangeOtp } from './controllers/emailChangeController.js'
 import { listLoyaltyRewards, revokeLoyaltyReward } from './controllers/loyaltyController.js'
-import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail } from './controllers/notificationController.js'
+import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail, sendCustomerSms } from './controllers/notificationController.js'
 import { listOrdersPage } from './controllers/orderListController.js'
 import { listCustomersPage, listInventoryPage } from './controllers/operationalListController.js'
 
@@ -26,6 +25,8 @@ const LOCAL_GENERAL_LIMIT = { limit: 180, windowMs: 60_000 }
 const LOCAL_ROUTE_LIMITS = {
   'POST:auth/login': { limit: 5, windowMs: 3 * 60_000 },
   'POST:public/contact': { limit: 3, windowMs: 15 * 60_000 },
+  'POST:notifications/sms': { limit: 30, windowMs: 15 * 60_000 },
+  'POST:ai/generate': { limit: 20, windowMs: 15 * 60_000 },
 }
 
 function consumeLocalLimit(key, policy) {
@@ -132,8 +133,8 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && path === 'notifications/email') { const identity = await authenticate(request); return write(response, 200, await sendAuditedEmail(await readBody(request), identity)) }
     if (request.method === 'GET' && path === 'notifications/email-audit') { const identity = await authenticate(request); return write(response, 200, await listEmailDeliveryAudit(identity, { page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize') })) }
     if (request.method === 'POST' && path === 'notifications/email/retry') { const identity = await authenticate(request); return write(response, 200, await retryEmailDelivery(await readBody(request), identity)) }
-    if (request.method === 'POST' && path === 'notifications/sms') { await authenticate(request); return write(response, 200, await sendSms(await readBody(request))) }
-    if (request.method === 'POST' && path === 'ai/generate') { await authenticate(request); return write(response, 200, await askGemini((await readBody(request)).prompt)) }
+    if (request.method === 'POST' && path === 'notifications/sms') { const identity = await authenticate(request); return write(response, 200, await sendCustomerSms(await readBody(request), identity)) }
+    if (request.method === 'POST' && path === 'ai/generate') { requireAdmin(await authenticate(request)); return write(response, 200, await generateFromPrompt((await readBody(request)).prompt)) }
     if (request.method === 'POST' && path === 'ai/forecast') { requireAdmin(await authenticate(request)); return write(response, 200, await generateForecast(await readBody(request))) }
     if (request.method === 'POST' && path === 'ai/dss') { requireAdmin(await authenticate(request)); return write(response, 200, await generateDecisionSupport(await readBody(request))) }
     if (request.method === 'GET' && path === 'public/orders/track') return write(response, 200, await trackOrder(url.searchParams.get('q')))
@@ -172,7 +173,12 @@ const server = http.createServer(async (request, response) => {
     return write(response, 404, { error: 'Endpoint not found' })
   } catch (error) {
     console.error(error)
-    return write(response, error.status || 500, { error: error.message || 'Internal server error', code: error.code, retryAfterSeconds: error.retryAfterSeconds, details: error.details })
+    const status = Number(error.status) || 500
+    // Match the Worker: validation and authorization messages are shown, but
+    // internal failures and raw database error details never reach the browser.
+    return write(response, status, status >= 500
+      ? { error: 'Internal server error' }
+      : { error: error.message || 'Request failed', code: error.code, retryAfterSeconds: error.retryAfterSeconds })
   }
 })
 

@@ -21,6 +21,18 @@ const PROTECTED_TRANSACTION_TABLES = new Set([
   'order_items', 'order_item_addons',
 ])
 
+// Cross-branch reference and reporting data. Staff screens never use these
+// tables directly; inventory category names reach staff only through an
+// embedded `inventory_categories(name)` on their branch-scoped inventory.
+const ADMIN_ONLY_TABLES = new Set(['inventory_categories', 'ai_forecasts', 'sms_log'])
+// Staff profiles and admin-only tables must not be reachable by embedding them
+// in another table's selection, e.g. `orders` with `*, creator:staff(*)`.
+const RESTRICTED_EMBED_PATTERN = /(?:^|[\s,(:])(?:staff|sms_log|ai_forecasts)\s*[(!]/
+
+function hasRecordIdFilter(filters = []) {
+  return filters.some(({ type, column, value }) => type === 'eq' && column === 'id' && value !== undefined && value !== null && value !== '')
+}
+
 function applyFilters(query, filters = []) {
   return filters.reduce((current, { type, column, value }) => {
     if (!column) return current
@@ -215,6 +227,25 @@ function validateResourcePayload(table, payload, operation) {
 
 export async function execute(table, request, identity) {
   if (!TABLES.has(table)) throw Object.assign(new Error('Unknown resource'), { status: 404 })
+  // An update or delete without a record id would apply to every matching row
+  // in the table (or the whole branch for staff). The app always edits one record.
+  if (['update', 'delete'].includes(request.operation) && !hasRecordIdFilter(request.filters)) {
+    throw Object.assign(new Error('Updates and deletions must target a specific record.'), { status: 400 })
+  }
+  if (identity.role !== 'admin') {
+    if (ADMIN_ONLY_TABLES.has(table)) throw Object.assign(new Error('Administrator access required'), { status: 403 })
+    if (table === 'branches' && request.operation !== 'select') {
+      throw Object.assign(new Error('Only administrators can change branches.'), { status: 403 })
+    }
+    if (RESTRICTED_EMBED_PATTERN.test(String(request.selection || ''))) {
+      throw Object.assign(new Error('Staff profiles can only be read by administrators.'), { status: 403 })
+    }
+    // Staff may read only their own profile; the full directory is administrative.
+    if (table === 'staff' && request.operation === 'select') {
+      if (!identity.staffId) throw Object.assign(new Error('An active staff account is required.'), { status: 403 })
+      request = { ...request, filters: [...(request.filters || []), { type: 'eq', column: 'id', value: identity.staffId }] }
+    }
+  }
   if (table === 'staff' && request.operation === 'delete' && identity.role !== 'admin') {
     throw Object.assign(new Error('Only administrators can delete accounts.'), { status: 403 })
   }

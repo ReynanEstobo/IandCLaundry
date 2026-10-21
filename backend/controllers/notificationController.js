@@ -1,9 +1,12 @@
 import { database } from '../config/supabase.js'
-import { sendEmail } from '../services/notificationService.js'
-import { assertEmail, assertText } from '../utils/validation.js'
+import { sendEmail, sendSms } from '../services/notificationService.js'
+import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
 
 const DELIVERY_TYPES = new Set(['manual', 'order_received', 'ready_for_pickup'])
 const RETRYABLE_TYPES = new Set(['manual', 'order_received', 'ready_for_pickup'])
+// Six concatenated SMS segments: room for the order-received template with a
+// long customer name and several services, while bounding provider cost.
+const SMS_MAX_LENGTH = 918
 const badRequest = message => Object.assign(new Error(message), { status: 400 })
 
 function requireActiveStaff(identity) {
@@ -110,6 +113,20 @@ async function deliver(payload, identity, retryOfId = null) {
 
 export async function sendAuditedEmail(body, identity) {
   return deliver(body, identity)
+}
+
+// SMS is a paid provider call. Only staff may send it, and only to a phone
+// number that belongs to a registered customer, so a session cannot be used
+// to message arbitrary numbers.
+export async function sendCustomerSms(body, identity) {
+  requireActiveStaff(identity)
+  const phone = assertPhilippineMobile(body?.phone, { label: 'Customer phone number' })
+  const message = String(body?.message || '').trim()
+  if (!message || message.length > SMS_MAX_LENGTH) throw badRequest(`SMS message must contain 1–${SMS_MAX_LENGTH} characters.`)
+  const { data, error } = await database.rpc('find_customer_by_phone', { p_phone: phone })
+  if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
+  if (!data?.length) throw Object.assign(new Error('SMS can only be sent to a registered customer.'), { status: 403 })
+  return sendSms({ phone, message })
 }
 
 export async function listEmailDeliveryAudit(identity, { page = 1, pageSize = 10 } = {}) {

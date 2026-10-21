@@ -6,13 +6,12 @@ import { listAuditLog, restoreRecord } from '../backend/controllers/auditControl
 import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from '../backend/controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from '../backend/controllers/staffProvisionController.js'
 import { getPublicServices, getPublicSettings, getPublicTurnstileConfig, sendContactMessage, trackOrder } from '../backend/controllers/publicController.js'
-import { sendSms } from '../backend/services/notificationService.js'
-import { askGemini, generateForecast, generateDecisionSupport } from '../backend/services/aiService.js'
+import { generateFromPrompt, generateForecast, generateDecisionSupport } from '../backend/services/aiService.js'
 import { resourceRoutes } from '../backend/routes/resourceRoutes.js'
 import { configureRuntimeEnv } from '../backend/config/supabase.js'
 import { requestEmailChange, confirmEmailChange, verifyEmailChangeOtp } from '../backend/controllers/emailChangeController.js'
 import { listLoyaltyRewards, revokeLoyaltyReward } from '../backend/controllers/loyaltyController.js'
-import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail } from '../backend/controllers/notificationController.js'
+import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail, sendCustomerSms } from '../backend/controllers/notificationController.js'
 import { listOrdersPage } from '../backend/controllers/orderListController.js'
 import { listCustomersPage, listInventoryPage } from '../backend/controllers/operationalListController.js'
 
@@ -68,6 +67,9 @@ const ratePolicies = {
   'PATCH:auth/email': { limit: 10, windowMs: 15 * 60 * 1000 },
   'POST:public/contact': { limit: 3, windowMs: 15 * 60 * 1000 },
   'GET:public/orders/track': { limit: 30, windowMs: 60 * 1000 },
+  // Paid provider calls: cap the cost a single session or source can incur.
+  'POST:notifications/sms': { limit: 30, windowMs: 15 * 60 * 1000 },
+  'POST:ai/generate': { limit: 20, windowMs: 15 * 60 * 1000 },
 }
 // Applies to every API route before it reaches authentication, Supabase, or an
 // email provider. It is intentionally keyed by Cloudflare's trusted client IP
@@ -141,8 +143,8 @@ async function api(request, env) {
   if (method === 'POST' && path === 'notifications/email') { const identity = await authenticate(request); return json(await sendAuditedEmail(await body(request), identity)) }
   if (method === 'GET' && path === 'notifications/email-audit') { const identity = await authenticate(request); return json(await listEmailDeliveryAudit(identity, { page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize') })) }
   if (method === 'POST' && path === 'notifications/email/retry') { const identity = await authenticate(request); return json(await retryEmailDelivery(await body(request), identity)) }
-  if (method === 'POST' && path === 'notifications/sms') { await authenticate(request); return json(await sendSms(await body(request))) }
-  if (method === 'POST' && path === 'ai/generate') { await authenticate(request); return json(await askGemini((await body(request)).prompt)) }
+  if (method === 'POST' && path === 'notifications/sms') { const identity = await authenticate(request); return json(await sendCustomerSms(await body(request), identity)) }
+  if (method === 'POST' && path === 'ai/generate') { requireAdmin(await authenticate(request)); return json(await generateFromPrompt((await body(request)).prompt)) }
   if (method === 'POST' && path === 'ai/forecast') { requireAdmin(await authenticate(request)); return json(await generateForecast(await body(request))) }
   if (method === 'POST' && path === 'ai/dss') { requireAdmin(await authenticate(request)); return json(await generateDecisionSupport(await body(request))) }
   if (method === 'GET' && path === 'public/orders/track') return json(await trackOrder(url.searchParams.get('q')))

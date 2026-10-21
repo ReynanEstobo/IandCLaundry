@@ -10,6 +10,17 @@ const responseCache = new Map()
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000
 const MAX_CACHE_ENTRIES = 100
 
+const MAX_PROMPT_LENGTH = 20_000
+
+// Entry point for the free-form `ai/generate` endpoint. Internal callers use
+// askGemini directly with their own server-built prompts.
+export async function generateFromPrompt(prompt) {
+  if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > MAX_PROMPT_LENGTH) {
+    throw Object.assign(new Error(`Prompt must contain 1–${MAX_PROMPT_LENGTH.toLocaleString('en-US')} characters.`), { status: 400 })
+  }
+  return askGemini(prompt)
+}
+
 export async function askGemini(prompt) {
   const key = runtimeValue('GEMINI_API_KEY')
   if (!key) throw Object.assign(new Error('Gemini API key is not configured'), { status: 500 })

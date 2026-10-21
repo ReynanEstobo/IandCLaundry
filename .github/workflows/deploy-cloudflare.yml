@@ -34,6 +34,11 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      # A failing test stops the job here, so a broken commit never reaches
+      # production.
+      - name: Run tests
+        run: npm test
+
       - name: Build frontend
         run: npm run build
 

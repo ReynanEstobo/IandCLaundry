@@ -104,6 +104,71 @@ test('staff cannot alter settings, directly set stages, or delete transaction hi
   assert.equal(calls.length,0)
 })
 
+test('staff can read branches but only administrators can change them', async t => {
+  const calls = mockDatabase(t, [{ id: 'branch-a', name: 'Main' }])
+  const result = await execute('branches', { operation: 'select', selection: 'id, name' }, staff)
+  assert.equal(result.data.length, 1)
+  for (const [operation, payload] of [['insert', { name: 'New Branch' }], ['update', { name: 'Renamed' }], ['delete', undefined]]) {
+    await assert.rejects(
+      execute('branches', { operation, payload, filters: [{ type: 'eq', column: 'id', value: 'branch-a' }] }, staff),
+      /Only administrators can change branches/,
+    )
+  }
+  assert.equal(calls.some(call => ['insert', 'update', 'delete'].includes(call.method)), false)
+  await execute('branches', { operation: 'update', payload: { name: 'Renamed' }, filters: [{ type: 'eq', column: 'id', value: 'branch-a' }] }, admin)
+  assert.equal(calls.some(call => call.table === 'branches' && call.method === 'update'), true)
+})
+
+test('cross-branch reference and SMS history tables are administrator-only', async t => {
+  const calls = mockDatabase(t)
+  for (const table of ['inventory_categories', 'ai_forecasts', 'sms_log']) {
+    for (const operation of ['select', 'insert']) {
+      await assert.rejects(execute(table, { operation, payload: { name: 'x' } }, staff), /Administrator access required/)
+    }
+    await execute(table, { operation: 'select' }, admin)
+  }
+  assert.equal(calls.filter(call => call.method === 'select').length, 3)
+})
+
+test('staff can read only their own staff profile', async t => {
+  const calls = mockDatabase(t, [
+    { id: 'staff-a', auth_id: 'auth-a', full_name: 'Own Profile' },
+    { id: 'staff-b', auth_id: 'auth-b', full_name: 'Coworker' },
+  ])
+  const own = await execute('staff', { operation: 'select', selection: 'role, full_name' }, staff)
+  assert.deepEqual(own.data.map(row => row.id), ['staff-a'])
+  const coworker = await execute('staff', { operation: 'select', filters: [{ type: 'eq', column: 'auth_id', value: 'auth-b' }] }, staff)
+  assert.deepEqual(coworker.data, [])
+  const directory = await execute('staff', { operation: 'select' }, admin)
+  assert.equal(directory.data.length, 2)
+  assert.equal(calls.length > 0, true)
+})
+
+test('staff cannot reach staff profiles or admin-only tables through an embedded selection', async t => {
+  const calls = mockDatabase(t)
+  for (const selection of ['*, staff(*)', '*, creator:staff!orders_created_by_staff_id_fkey(email)', 'id,sms_log(message)', 'id, ai_forecasts (*)']) {
+    await assert.rejects(execute('orders', { operation: 'select', selection }, staff), /only be read by administrators/)
+  }
+  assert.equal(calls.length, 0)
+  // Ordinary column names and the staff dashboard's category embed stay allowed.
+  await execute('orders', { operation: 'select', selection: 'id, created_by_staff_id, completed_by_staff_id, customers(name, phone)' }, staff)
+  await execute('inventory_items', { operation: 'select', selection: 'id, name, branch_id, inventory_categories(name)' }, staff)
+  await execute('orders', { operation: 'select', selection: '*, staff(full_name)' }, admin)
+})
+
+test('updates and deletions must target a specific record id', async t => {
+  const calls = mockDatabase(t, [{ id: 'customer-1', name: 'Client', branch: 'Main' }])
+  for (const filters of [undefined, [], [{ type: 'eq', column: 'branch', value: 'Main' }], [{ type: 'eq', column: 'id', value: '' }], [{ type: 'in', column: 'id', value: ['customer-1'] }]]) {
+    for (const identity of [staff, admin]) {
+      await assert.rejects(execute('customers', { operation: 'delete', filters }, identity), /must target a specific record/)
+      await assert.rejects(execute('customers', { operation: 'update', payload: { name: 'Mass Rename' }, filters }, identity), /must target a specific record/)
+    }
+  }
+  assert.equal(calls.length, 0)
+  await execute('customers', { operation: 'update', payload: { name: 'Renamed Client' }, filters: [{ type: 'eq', column: 'id', value: 'customer-1' }] }, staff)
+  assert.equal(calls.some(call => call.table === 'customers' && call.method === 'update'), true)
+})
+
 test('staff can archive inventory items assigned to their branch only', async t => {
   const calls = mockDatabase(t, [{ id: 'inventory-1', name: 'Detergent', branch: 'Main', branch_id: 'branch-a' }])
   await execute('inventory_items', { operation: 'delete', filters: [{ type: 'eq', column: 'id', value: 'inventory-1' }] }, staff)
