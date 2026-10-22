@@ -1541,12 +1541,12 @@ td .btn-danger.btn-sm:hover:not(:disabled) { background: var(--danger-light); bo
   .login-brand-mascot { right: 6%; width: min(78%, 340px); }
 }
 
-/* Phones: the brand side becomes a short band above the form, with a wave
-   along its lower edge instead of the side curve. */
-@media (max-width: 767px) {
+/* Phones held upright: the brand side becomes a short band above the form,
+   with a wave along its lower edge instead of the side curve. */
+@media (max-width: 767px) and (min-height: 501px), (max-width: 767px) and (orientation: portrait) {
   .login-page-wrapper.login-screen { padding: 0; background: var(--bg-card); }
   .login-shell { flex-direction: column; width: 100%; height: 100%; border-radius: 0; box-shadow: none; animation: none; }
-  .login-brand-panel { display: block; flex: 0 0 auto; order: -1; height: clamp(124px, 22vh, 190px); }
+  .login-brand-panel { display: block; flex: 0 0 auto; order: -1; height: clamp(120px, 23vh, 230px); height: clamp(120px, 23svh, 230px); }
   .login-brand-curve, .login-brand-copy, .login-brand-streaks, .login-brand-panel::after { display: none; }
   .login-brand-wave { position: absolute; right: 0; bottom: -1px; left: 0; z-index: 4; display: block; width: 100%; height: 26px; fill: var(--bg-card); }
   .login-brand-mascot { right: 50%; bottom: 14px; width: auto; height: 82%; transform: translateX(50%); animation: none; }
@@ -1557,11 +1557,55 @@ td .btn-danger.btn-sm:hover:not(:disabled) { background: var(--danger-light); bo
   .login-brand-bubbles i:nth-child(5) { top: 44%; right: 12%; width: 30px; height: 30px; }
   /* Overlaps the band by 2px so no sub-pixel seam shows under the wave. */
   .login-form-side { flex: 1 1 auto; min-width: 0; margin-top: -2px; padding: 16px 20px 18px; }
-  .login-screen .login-form-wrapper { justify-content: flex-start; padding: 18px 0; }
+  .login-screen .login-form-wrapper { padding: 14px 0; }
   .login-screen .login-card-header h1 { font-size: 26px; }
+  /* Keeps "Remember me" and "Forgot password?" on one line down to 360px. */
+  .login-options { column-gap: 10px; }
+  .login-screen .login-remember-me { gap: 8px; }
 }
-@media (max-width: 767px) and (max-height: 640px) {
+/* Shorter phones (iPhone SE/8 size) keep a slimmer band; the shortest drop it. */
+@media (max-width: 767px) and (max-height: 700px) {
+  .login-brand-panel { height: 120px; }
+  .login-screen .login-form-wrapper { padding: 10px 0; }
+}
+@media (max-width: 767px) and (max-height: 640px) and (min-height: 501px), (max-width: 767px) and (max-height: 640px) and (orientation: portrait) {
   .login-brand-panel { display: none; }
+}
+
+/* Phones held sideways: the card fills the screen edge to edge, the form is
+   compact enough to fit the short height, and the mascot sizes to it. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .login-page-wrapper.login-screen { padding: 0; }
+  .login-shell { width: 100%; height: 100%; border-radius: 0; box-shadow: none; animation: none; }
+  .login-form-side { flex-basis: 58%; min-width: 0; padding: 8px clamp(20px, 4vw, 40px); }
+  .login-screen .login-form-wrapper { padding: 2px 0; }
+  .login-screen .login-card-header { margin-bottom: 8px; }
+  .login-screen .login-card-header h1 { font-size: 21px; }
+  .login-screen .login-card-header p { margin-top: 2px; font-size: 13.5px; }
+  .login-screen .login-form { gap: 8px; }
+  .login-screen .login-input { min-height: 40px; padding-top: 8px; padding-bottom: 8px; }
+  .login-screen .login-submit-btn { min-height: 44px; margin-top: 0; }
+  .login-screen .login-remember-hint, .login-screen .login-card-footer, .login-brand-tagline { display: none; }
+  .login-brand-copy { top: 22px; left: 28%; }
+  .login-brand-name { font-size: 24px; }
+  .login-brand-mascot { right: 8%; width: auto; height: 58%; }
+}
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 599px) {
+  .login-form-side { flex: 1 1 auto; }
+  .login-brand-panel { display: none; }
+}
+
+/* Touch screens: every control gets a finger-sized target (44px) without
+   changing how the form looks. */
+@media (pointer: coarse), (max-width: 767px) {
+  .login-screen .login-back-btn { min-height: 44px; }
+  .login-screen .login-input-password { padding-right: 44px; }
+  .login-screen .login-eye-btn { right: -8px; justify-content: center; width: 44px; height: 44px; }
+  .login-options { row-gap: 0; }
+  .login-screen .login-remember-me { min-height: 44px; }
+  .login-screen .login-remember-me input { width: 20px; height: 20px; }
+  .login-screen .login-forgot-password { display: inline-flex; align-items: center; min-height: 44px; }
+  .login-screen .login-remember-hint { margin-top: -4px; }
 }
 
 /* ---------- Motion ----------

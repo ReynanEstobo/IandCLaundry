@@ -76,7 +76,7 @@ export default function Login() {
                 <label htmlFor="login-username">Account ID or Username</label>
                 <div className="login-input-wrap">
                   <UserRound size={15} className="login-input-icon" />
-                  <input id="login-username" spellCheck={false}
+                  <input id="login-username" spellCheck={false} autoCapitalize="none" autoCorrect="off"
                     className="login-input"
                     type="text"
                     name="username"
