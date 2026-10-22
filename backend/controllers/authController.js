@@ -92,6 +92,18 @@ export async function refreshLoginSession({ refreshToken }) {
   return { session: data.session, ...identity }
 }
 
+// The account signed in with this access token, or null once the token has
+// expired. A failure to reach the auth service is an error, not a sign-out.
+export async function currentLoginSession(accessToken) {
+  const { data, error } = await authClient.auth.getUser(accessToken)
+  if (error && !(Number(error.status) >= 400 && Number(error.status) < 500)) {
+    throw Object.assign(new Error('Unable to verify your session right now.'), { status: 503 })
+  }
+  if (error || !data?.user) return null
+  const identity = await identityFor(data.user)
+  return { session: { access_token: accessToken, user: data.user }, ...identity }
+}
+
 export async function signUp({ email, password, options }) {
   if (!email || !password) throw Object.assign(new Error('Email and password are required'), { status: 400 })
   assertStrongPassword(password, email)

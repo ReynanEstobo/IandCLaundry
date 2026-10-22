@@ -1,89 +1,126 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { apiFetch, clearSession, getStoredSession, onSessionChange, refreshRememberedSession, sessionExpiry, storeSession } from '../frontend/src/services/api/client.js'
+import { apiFetch, clearSession, getStoredSession, onSessionChange, restoreSession, startSessionMonitor, storeSession } from '../frontend/src/services/api/client.js'
 
-test('expiry clears sessions; rejected older requests cannot log out a new session', async t => {
-  const savedStorage = globalThis.localStorage
-  const savedFetch = globalThis.fetch
-  const values = new Map()
-  globalThis.localStorage = {
-    getItem: key => values.get(key) ?? null,
-    setItem: (key, value) => values.set(key, value),
-    removeItem: key => values.delete(key),
-  }
+const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+const tick = () => new Promise(resolve => setTimeout(resolve, 20))
+
+function mockFetch(t, handler) {
+  const saved = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (path, options = {}) => { calls.push({ path, options }); return handler(path, options, calls) }
+  t.after(() => { globalThis.fetch = saved; clearSession({ broadcast: false }) })
+  return calls
+}
+
+test('requests carry the session cookie, renew it once on expiry, and only sign out the session they started with', async t => {
   const events = []
   const unsubscribe = onSessionChange(session => events.push(session))
-  t.after(() => {
-    clearSession()
-    unsubscribe()
-    globalThis.localStorage = savedStorage
-    globalThis.fetch = savedFetch
+  t.after(unsubscribe)
+  storeSession({ user: { id: 'u1' } })
+
+  // An expired access cookie is renewed once, then the request is retried.
+  let calls = mockFetch(t, (path, _options, seen) => {
+    if (path === '/api/auth/refresh') return json({ session: { user: { id: 'u1' }, expires_at: 2 } })
+    return seen.filter(call => call.path === '/api/staff').length === 1 ? json({ error: 'Expired' }, 401) : json({ ok: true })
   })
-  const session = token => ({access_token: token, expires_at: Math.floor(Date.now() / 1000) + 3600})
-  for (const role of ['admin', 'staff']) {
-    values.set('hc-laundry-session', JSON.stringify({...session('expired'), role, expires_at: 1}))
-    assert.equal(getStoredSession(), null)
-    assert.equal(values.size, 0)
-    assert.equal(events.at(-1), null)
+  assert.deepEqual(await apiFetch('/api/staff', { method: 'POST' }), { ok: true })
+  assert.deepEqual(calls.map(call => call.path), ['/api/staff', '/api/auth/refresh', '/api/staff'])
+  for (const call of calls) {
+    assert.equal(call.options.credentials, 'same-origin')
+    assert.equal(call.options.headers.Authorization, undefined, 'tokens never travel in script-visible headers')
   }
-  // Automatic expiry works even if the user does not make another request.
-  storeSession({access_token:'short-session', expires_at:(Date.now() + 25) / 1000})
-  await new Promise(resolve => setTimeout(resolve, 60))
-  assert.equal(values.size, 0)
-  assert.equal(events.at(-1), null)
+  assert.equal(getStoredSession().user.id, 'u1')
 
-  storeSession(session('valid'))
-  globalThis.fetch = async () => new Response('{"error":"Forbidden"}', {status:403})
+  // Permission errors and network failures are not expiry.
+  mockFetch(t, () => json({ error: 'Forbidden' }, 403))
   await assert.rejects(apiFetch('/api/staff'), /Forbidden/)
-  assert.equal(getStoredSession().access_token, 'valid')
-  globalThis.fetch = async () => { throw new Error('Offline') }
+  assert.equal(getStoredSession().user.id, 'u1')
+  mockFetch(t, () => { throw new Error('Offline') })
   await assert.rejects(apiFetch('/api/staff'), /Offline/)
-  assert.equal(getStoredSession().access_token, 'valid')
+  assert.equal(getStoredSession().user.id, 'u1')
 
+  // An older request cannot sign out a session that replaced it meanwhile.
   let finish
-  globalThis.fetch = () => new Promise(resolve => { finish = resolve })
+  mockFetch(t, path => path === '/api/auth/refresh' ? json({ error: 'Expired' }, 401) : new Promise(resolve => { finish = resolve }))
   const pending = apiFetch('/api/staff')
-  storeSession(session('replacement'))
-  finish(new Response('{"error":"Expired"}', {status:401}))
+  await tick()
+  storeSession({ user: { id: 'replacement' } })
+  finish(json({ error: 'Expired' }, 401))
   await assert.rejects(pending, /Expired/)
-  assert.equal(getStoredSession().access_token, 'replacement')
-  globalThis.fetch = async () => new Response('{"error":"Expired"}', {status:401})
+  assert.equal(getStoredSession().user.id, 'replacement')
+
+  // When the session cannot be renewed, the browser is signed out.
+  calls = mockFetch(t, () => json({ error: 'Expired' }, 401))
   await assert.rejects(apiFetch('/api/staff'), /Expired/)
   assert.equal(getStoredSession(), null)
+  assert.equal(events.at(-1), null)
 
-  storeSession(session('signed-in'))
-  await assert.rejects(apiFetch('/api/auth/login'), /Expired/)
-  assert.equal(getStoredSession().access_token, 'signed-in')
-  globalThis.fetch = async (_path, options) => {
-    assert.equal(options.headers.Authorization, 'Bearer signed-in')
-    return Response.json({success:true})
-  }
-  await apiFetch('/api/auth/signup', {method:'POST'})
-  assert.equal(sessionExpiry({access_token: 'x.' + btoa('{"exp":1234}') + '.x'}), 1234000)
+  // Sign-in and public endpoints never trigger a renewal or a sign-out.
+  storeSession({ user: { id: 'signed-in' } })
+  calls = mockFetch(t, () => json({ error: 'Invalid login credentials' }, 401))
+  await assert.rejects(apiFetch('/api/auth/login', { method: 'POST' }), /Invalid login/)
+  assert.deepEqual(calls.map(call => call.path), ['/api/auth/login'])
+  assert.equal(getStoredSession().user.id, 'signed-in')
 })
 
-test('Remember me renews an expired persistent session through its refresh token', async t => {
+test('a session saved by the previous version moves into cookies once and its stored tokens are removed', async t => {
   const savedStorage = globalThis.localStorage
-  const savedFetch = globalThis.fetch
-  const values = new Map()
-  globalThis.localStorage = {
-    getItem: key => values.get(key) ?? null,
-    setItem: (key, value) => values.set(key, value),
-    removeItem: key => values.delete(key),
-  }
-  t.after(() => {
-    clearSession()
-    globalThis.localStorage = savedStorage
-    globalThis.fetch = savedFetch
-  })
-  values.set('ic-laundry-session', JSON.stringify({ access_token: 'old-token', refresh_token: 'refresh-token', expires_at: 1 }))
-  globalThis.fetch = async (path, options) => {
-    assert.equal(path, '/api/auth/refresh')
-    assert.deepEqual(JSON.parse(options.body), { refreshToken: 'refresh-token' })
-    return Response.json({ session: { access_token: 'new-token', refresh_token: 'new-refresh-token', expires_at: Math.floor(Date.now() / 1000) + 3600 } })
-  }
+  const values = new Map([['ic-laundry-session', JSON.stringify({ access_token: 'old-token', refresh_token: 'refresh-token', expires_at: 1 })]])
+  globalThis.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) }
+  t.after(() => { globalThis.localStorage = savedStorage })
+  const calls = mockFetch(t, path => path === '/api/auth/refresh'
+    ? json({ session: { user: { id: 'u1' }, remember: true } })
+    : json({ session: { user: { id: 'u1' }, remember: true } }))
+
+  assert.equal((await restoreSession()).user.id, 'u1')
+  assert.equal(calls[0].path, '/api/auth/refresh')
+  assert.deepEqual(JSON.parse(calls[0].options.body), { refreshToken: 'refresh-token', remember: true })
+  assert.equal(values.size, 0, 'no token stays in browser storage')
+
+  await restoreSession()
+  assert.equal(calls[1].path, '/api/auth/session')
+})
+
+test('a server that cannot be reached keeps the current session instead of signing out', async t => {
+  storeSession({ user: { id: 'u1' } })
+  mockFetch(t, () => json({ error: 'Internal server error' }, 503))
+  assert.equal((await restoreSession()).user.id, 'u1')
+  mockFetch(t, () => json({ session: null }))
+  assert.equal(await restoreSession(), null)
+})
+
+test('every tab follows sign-in and sign-out from any other tab of the browser', async t => {
+  const savedDocument = globalThis.document
+  const savedWindow = globalThis.window
+  let reloads = 0
+  globalThis.document = { hidden: false, addEventListener() {}, removeEventListener() {} }
+  globalThis.window = { location: { reload: () => { reloads++ } } }
+  const otherTab = new BroadcastChannel('ic-laundry-auth')
+  const announced = []
+  otherTab.onmessage = ({ data }) => announced.push(data)
+  const stop = startSessionMonitor()
+  t.after(() => { stop(); otherTab.close(); globalThis.document = savedDocument; globalThis.window = savedWindow })
+  const calls = mockFetch(t, () => json({ session: { user: { id: 'u1' } } }))
+
+  // This tab tells the others when it signs in or out.
+  storeSession({ user: { id: 'u1' } })
+  await tick()
+  assert.deepEqual(announced.at(-1), { type: 'signed-in', userId: 'u1' })
+
+  // Signing out in another tab signs this one out.
+  otherTab.postMessage({ type: 'signed-out' })
+  await tick()
   assert.equal(getStoredSession(), null)
-  const refreshed = await refreshRememberedSession()
-  assert.equal(refreshed.access_token, 'new-token')
-  assert.equal(getStoredSession().access_token, 'new-token')
+
+  // Signing in from another tab signs this one in to the same account.
+  otherTab.postMessage({ type: 'signed-in', userId: 'u1' })
+  await tick()
+  assert.equal(calls.at(-1).path, '/api/auth/session')
+  assert.equal(getStoredSession().user.id, 'u1')
+
+  // Signing in as a different account replaces this tab's account.
+  otherTab.postMessage({ type: 'signed-in', userId: 'u2' })
+  await tick()
+  assert.equal(reloads, 1)
 })

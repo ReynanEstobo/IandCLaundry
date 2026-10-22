@@ -1,11 +1,16 @@
 import { authClient } from '../config/supabase.js'
 import { getStaffProfile } from '../models/databaseModel.js'
+import { ACCESS_COOKIE, assertSameSiteRequest, readCookie } from '../utils/sessionCookies.js'
 
 export async function authenticate(request) {
   const authorization = request.headers?.get
     ? request.headers.get('authorization')
     : request.headers?.authorization
-  const token = authorization?.replace(/^Bearer\s+/i, '')
+  // Browsers sign in with the session cookie; an explicit bearer token is
+  // still accepted for API clients.
+  const bearer = authorization?.replace(/^Bearer\s+/i, '')
+  const token = bearer || readCookie(request, ACCESS_COOKIE)
+  if (!bearer && token) assertSameSiteRequest(request)
   if (!token) throw Object.assign(new Error('Authentication required'), { status: 401 })
   const { data, error } = await authClient.auth.getUser(token)
   if (error || !data.user) throw Object.assign(new Error('Invalid or expired session'), { status: 401 })

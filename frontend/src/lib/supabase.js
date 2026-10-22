@@ -53,10 +53,11 @@ export const supabase = {
     onAuthStateChange(callback) { authListeners.add(callback); return { data: { subscription: { unsubscribe: () => authListeners.delete(callback) } } } },
     async signInWithPassword({ identifier, email, password, remember = true }) {
       try {
-        const data = await apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify({ identifier: identifier || email, password }) })
+        // The server sets the session cookies; `remember` decides whether they outlive the browser.
+        const data = await apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify({ identifier: identifier || email, password, remember }) })
         reauthenticationPassword = password
         data.session.hc_must_change_password = Boolean(data.mustChangePassword)
-        storeSession(data.session, { remember })
+        storeSession(data.session)
         return { data: { user: data.user, session: data.session }, error: null }
       } catch (error) { return { data: { user: null, session: null }, error: { message: error.message } } }
     },
@@ -66,7 +67,12 @@ export const supabase = {
         return { data: { user: data.user, session: data.session }, error: null }
       } catch (error) { return { data: { user: null, session: null }, error: { message: error.message } } }
     },
-    async signOut() { clearSession(); return { error: null } },
+    // Clears the cookies on the server, then signs out every tab of this browser.
+    async signOut() {
+      try { await apiFetch('/api/auth/logout', { method: 'POST' }) } catch { /* still sign out locally */ }
+      clearSession()
+      return { error: null }
+    },
     async updateUser({ password, currentPassword, otp }) {
       try {
         const session = getStoredSession()
@@ -78,9 +84,9 @@ export const supabase = {
         // Changing a password invalidates the prior JWT in some Supabase
         // configurations. Sign in again right away so the app stores a new,
         // valid session before leaving the activation/security screen.
-        const refreshed = await apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify({ identifier: session?.user?.email, password }) })
+        const refreshed = await apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify({ identifier: session?.user?.email, password, remember: isStoredSessionPersistent() }) })
         refreshed.session.hc_must_change_password = Boolean(refreshed.mustChangePassword)
-        storeSession(refreshed.session, { remember: isStoredSessionPersistent() })
+        storeSession(refreshed.session)
         reauthenticationPassword = password
         return { error: null }
       } catch (error) { return { error: { message: error.message } } }

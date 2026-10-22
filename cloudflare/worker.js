@@ -3,7 +3,7 @@ import { handleData } from '../backend/controllers/dataController.js'
 import { cancelOrder, collectOrderPayment, createInventoryItem, createOrder, restockInventory, settleAndReleaseOrder, transitionAllOrderItems, transitionOrder, transitionOrderItem } from '../backend/controllers/operationController.js'
 import { listVisibleCustomers, lookupCustomer } from '../backend/controllers/customerController.js'
 import { listAuditLog, restoreRecord } from '../backend/controllers/auditController.js'
-import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from '../backend/controllers/authController.js'
+import { signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from '../backend/controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from '../backend/controllers/staffProvisionController.js'
 import { getPublicServices, getPublicSettings, getPublicTurnstileConfig, sendContactMessage, trackOrder } from '../backend/controllers/publicController.js'
 import { generateFromPrompt, generateForecast, generateDecisionSupport } from '../backend/services/aiService.js'
@@ -14,6 +14,7 @@ import { listLoyaltyRewards, revokeLoyaltyReward } from '../backend/controllers/
 import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail, sendCustomerSms } from '../backend/controllers/notificationController.js'
 import { listOrdersPage } from '../backend/controllers/orderListController.js'
 import { listCustomersPage, listInventoryPage } from '../backend/controllers/operationalListController.js'
+import { renewSession, restoreSession, signIn, signOut } from '../backend/controllers/sessionController.js'
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests",
@@ -37,6 +38,13 @@ const json = (payload, status = 200, headers = {}) => secure(new Response(JSON.s
   status,
   headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers },
 }), true)
+
+// Session endpoints answer with Set-Cookie headers alongside their JSON.
+function withCookies(response, cookies = []) {
+  cookies.forEach(cookie => response.headers.append('Set-Cookie', cookie))
+  return response
+}
+const sessionJson = ({ payload, cookies }) => withCookies(json(payload), cookies)
 
 async function body(request) {
   const contentLength = Number(request.headers.get('content-length') || 0)
@@ -124,8 +132,10 @@ async function api(request, env) {
   // their own UI immediately; production polling can be added independently.
   if (method === 'GET' && path === 'events') return new Response(null, { status: 204 })
 
-  if (method === 'POST' && path === 'auth/login') return json(await login(await body(request)))
-  if (method === 'POST' && path === 'auth/refresh') return json(await refreshLoginSession(await body(request)))
+  if (method === 'POST' && path === 'auth/login') return sessionJson(await signIn(await body(request)))
+  if (method === 'POST' && path === 'auth/refresh') return sessionJson(await renewSession(request, await body(request)))
+  if (method === 'GET' && path === 'auth/session') return sessionJson(await restoreSession(request))
+  if (method === 'POST' && path === 'auth/logout') return sessionJson(await signOut(request))
   if (method === 'POST' && path === 'auth/forgot-password/otp') return json(await requestForgotPasswordOtp(await body(request)))
   if (method === 'POST' && path === 'auth/forgot-password/otp/verify') return json(await verifyForgotPasswordOtp(await body(request)))
   if (method === 'PATCH' && path === 'auth/forgot-password') return json(await resetForgottenPassword(await body(request)))
@@ -190,13 +200,13 @@ export default {
         const status = Number(error?.status) || 500
         // Validation and authorization errors can be shown to the requester,
         // but internal service errors must not disclose database or provider details.
-        return json({
+        return withCookies(json({
           error: status >= 500 ? 'Internal server error' : (error?.message || 'Request failed'),
           code: status >= 500 ? undefined : error?.code,
           retryAfterSeconds: status >= 500 ? undefined : error?.retryAfterSeconds,
         }, status, status === 429 && error?.retryAfterSeconds
           ? { 'Retry-After': String(error.retryAfterSeconds) }
-          : {})
+          : {}), error?.cookies)
       }
   },
 }

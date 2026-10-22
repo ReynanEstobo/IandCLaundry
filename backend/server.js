@@ -7,7 +7,7 @@ import { handleData } from './controllers/dataController.js'
 import { cancelOrder, collectOrderPayment, createInventoryItem, createOrder, restockInventory, settleAndReleaseOrder, transitionAllOrderItems, transitionOrder, transitionOrderItem } from './controllers/operationController.js'
 import { listVisibleCustomers, lookupCustomer } from './controllers/customerController.js'
 import { listAuditLog, restoreRecord } from './controllers/auditController.js'
-import { login, refreshLoginSession, signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from './controllers/authController.js'
+import { signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from './controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from './controllers/staffProvisionController.js'
 import { getPublicServices, getPublicSettings, getPublicTurnstileConfig, sendContactMessage, trackOrder } from './controllers/publicController.js'
 import { generateFromPrompt, generateForecast, generateDecisionSupport } from './services/aiService.js'
@@ -18,6 +18,7 @@ import { listLoyaltyRewards, revokeLoyaltyReward } from './controllers/loyaltyCo
 import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail, sendCustomerSms } from './controllers/notificationController.js'
 import { listOrdersPage } from './controllers/orderListController.js'
 import { listCustomersPage, listInventoryPage } from './controllers/operationalListController.js'
+import { renewSession, restoreSession, signIn, signOut } from './controllers/sessionController.js'
 
 const port = Number(process.env.PORT || 3001)
 const localRateWindows = new Map()
@@ -62,8 +63,8 @@ function enforceLocalLoginIdentifierLimit(payload) {
   }
 }
 
-function write(response, status, payload) {
-  response.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': process.env.FRONTEND_ORIGIN || 'http://localhost:5173', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS', ...(payload?.retryAfterSeconds ? { 'Retry-After': String(payload.retryAfterSeconds) } : {}) })
+function write(response, status, payload, cookies = []) {
+  response.writeHead(status, { ...(cookies?.length ? { 'Set-Cookie': cookies } : {}), 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': process.env.FRONTEND_ORIGIN || 'http://localhost:5173', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS', ...(payload?.retryAfterSeconds ? { 'Retry-After': String(payload.retryAfterSeconds) } : {}) })
   response.end(JSON.stringify(payload))
 }
 
@@ -114,8 +115,10 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === 'GET' && url.pathname === '/api/health') return write(response, 200, { status: 'ok' })
     if (request.method === 'GET' && url.pathname === '/api/events') return streamEvents(request, response)
-    if (request.method === 'POST' && path === 'auth/login') return write(response, 200, await login(request.rateLimitedBody || await readBody(request)))
-    if (request.method === 'POST' && path === 'auth/refresh') return write(response, 200, await refreshLoginSession(await readBody(request)))
+    if (request.method === 'POST' && path === 'auth/login') { const { payload, cookies } = await signIn(request.rateLimitedBody || await readBody(request)); return write(response, 200, payload, cookies) }
+    if (request.method === 'POST' && path === 'auth/refresh') { const { payload, cookies } = await renewSession(request, await readBody(request)); return write(response, 200, payload, cookies) }
+    if (request.method === 'GET' && path === 'auth/session') { const { payload, cookies } = await restoreSession(request); return write(response, 200, payload, cookies) }
+    if (request.method === 'POST' && path === 'auth/logout') { const { payload, cookies } = await signOut(request); return write(response, 200, payload, cookies) }
     if (request.method === 'POST' && path === 'auth/forgot-password/otp') return write(response, 200, await requestForgotPasswordOtp(await readBody(request)))
     if (request.method === 'POST' && path === 'auth/forgot-password/otp/verify') return write(response, 200, await verifyForgotPasswordOtp(await readBody(request)))
     if (request.method === 'PATCH' && path === 'auth/forgot-password') return write(response, 200, await resetForgottenPassword(await readBody(request)))
@@ -178,7 +181,7 @@ const server = http.createServer(async (request, response) => {
     // internal failures and raw database error details never reach the browser.
     return write(response, status, status >= 500
       ? { error: 'Internal server error' }
-      : { error: error.message || 'Request failed', code: error.code, retryAfterSeconds: error.retryAfterSeconds })
+      : { error: error.message || 'Request failed', code: error.code, retryAfterSeconds: error.retryAfterSeconds }, error.cookies)
   }
 })
 

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { getStoredSession, refreshRememberedSession, startSessionMonitor } from '../services/api/client'
+import { getStoredSession, restoreSession, startSessionMonitor } from '../services/api/client'
 
 const AuthContext = createContext({})
 
@@ -55,23 +55,24 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let active = true
-    let lastToken
+    let lastAccount
+    // The browser never sees tokens; the account and its forced
+    // password-change state are what decide a profile reload.
     const applySession = session => {
-      if (!active || lastToken === (session?.access_token || null)) return
-      lastToken = session?.access_token || null
+      const account = session ? `${session.user?.id}:${Boolean(session.hc_must_change_password)}` : null
+      if (!active || lastAccount === account) return
+      lastAccount = account
       const u = session?.user ?? null
       setUser(u)
       fetchStaffRole(u).finally(() => { if (active) setLoading(false) })
     }
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => applySession(session))
     const stopMonitor = startSessionMonitor()
-    const existingSession = getStoredSession()
-    if (existingSession) applySession(existingSession)
-    else {
-      refreshRememberedSession()
-        .then(session => applySession(session))
-        .catch(() => applySession(null))
-    }
+    // Every tab, including a duplicated one, asks the server which account
+    // this browser is signed in to.
+    restoreSession()
+      .then(session => applySession(session))
+      .catch(() => applySession(null))
 
     return () => {
       active = false
