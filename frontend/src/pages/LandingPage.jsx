@@ -767,7 +767,7 @@ export default function LandingPage() {
                 <Package size={18} className="track-input-icon" />
                 <input aria-label="Order number" autoComplete="off" spellCheck={false}
                   type="text"
-                  placeholder="Enter order number (e.g. IC-20260327-1234)"
+                  placeholder="Enter order number (e.g. IC-20260327-00001234)"
                   value={trackOrderId}
                   onChange={(e) => setTrackOrderId(e.target.value)}
                   required

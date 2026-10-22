@@ -6,7 +6,9 @@ import { assertEmail, assertPhilippineMobile, assertText } from '../utils/valida
 export async function trackOrder(orderNumber) {
   if (typeof orderNumber !== 'string' || !orderNumber.trim()) throw Object.assign(new Error('Tracking number is required'), { status: 400 })
   const number = orderNumber.trim().toUpperCase()
-  if (!/^(?:IC|HC|4J)-\d{8}-\d{4}$/.test(number)) {
+  // Current receipts end in an 8-digit sequence (collision-safe numbering);
+  // receipts issued before that change end in 4 digits.
+  if (!/^(?:IC|HC|4J)-\d{8}-(?:\d{8}|\d{4})$/.test(number)) {
     throw Object.assign(new Error('Enter the complete tracking number from your receipt.'), { status: 400 })
   }
   const { data, error } = await database.from('orders')

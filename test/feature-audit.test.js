@@ -283,7 +283,7 @@ test('global admin must choose a branch for a new order', async t => {
 
 test('public tracking must reject wildcard-only input before querying orders', async t => {
   const calls = mockDatabase(t)
-  for (const input of ['%', '_', 'IC-', '20260909', 'IC-20260909-12%4', {}, '']) {
+  for (const input of ['%', '_', 'IC-', '20260909', 'IC-20260909-12%4', 'IC-20260909-0000%234', 'IC-20260909-123456', {}, '']) {
     await assert.rejects(trackOrder(input))
   }
   assert.equal(calls.length,0)
@@ -340,9 +340,10 @@ test('new orders reject invalid payments but allow a blank payment to follow lat
 
 test('tracking supports complete current and legacy receipts, excludes cancelled orders, and selects no customer or payment fields', async t => {
   const rows = ['IC','HC','4J'].map(prefix => ({order_number:prefix+'-20260909-1234',status:'received'}))
+  rows.push({order_number:'IC-20261022-00001234',status:'received'})
   rows.push({order_number:'IC-20260909-5678',status:'cancelled'})
   const calls = mockDatabase(t,rows)
-  for (const row of rows.slice(0,3)) {
+  for (const row of rows.slice(0,4)) {
     assert.deepEqual((await trackOrder(' '+row.order_number.toLowerCase()+' ')).data,[row])
   }
   assert.deepEqual((await trackOrder('IC-20260909-5678')).data,[])
@@ -351,7 +352,7 @@ test('tracking supports complete current and legacy receipts, excludes cancelled
     assert.doesNotMatch(call.args[0], /customer|total_price|payment|notes|staff/)
   }
   assert.equal(calls.some(call => call.method === 'ilike'),false)
-  assert.equal(calls.filter(call => call.method === 'limit' && call.args[0] === 1).length,5)
+  assert.equal(calls.filter(call => call.method === 'limit' && call.args[0] === 1).length,6)
 })
 
 test('staff client directory excludes deleted associations and other branches', async t => {
