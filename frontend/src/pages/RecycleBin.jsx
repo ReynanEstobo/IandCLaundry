@@ -1,8 +1,9 @@
-import { ArchiveRestore, ChevronLeft, ChevronRight, History, RotateCcw, ShieldCheck } from 'lucide-react'
+import { ArchiveRestore, History, RotateCcw, ShieldCheck } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { PageError, PageLoader, TableSkeleton } from '../components/AsyncState'
 import ConfirmDialog from '../components/ConfirmDialog'
+import Pagination from '../components/Pagination'
 import { DataTable, EmptyState, PageHeader, SortableHeader, useSortableRows } from '../components/DataView'
 import { getAuditLog, restoreDeletedRecord } from '../services/api/auditApi'
 
@@ -129,35 +130,20 @@ export default function RecycleBin() {
               <td data-label="Record"><strong>{recordName(record)}</strong></td>
               <td data-label="Branch">{record.branch || '—'}</td>
               <td data-label="Archived at">{record.deleted_at ? new Date(record.deleted_at).toLocaleString('en-PH') : '—'}</td>
-              <td data-card-actions data-label="Action"><div><button className="btn btn-sm btn-primary" disabled={restoringId === key} onClick={() => setRecordToRestore(record)}><RotateCcw size={14} /> {restoringId === key ? 'Restoring…' : 'Restore'}</button></div></td>
+              <td data-card-actions data-label="Action"><div className="row-actions"><button className="btn btn-sm btn-primary" disabled={restoringId === key} onClick={() => setRecordToRestore(record)}><RotateCcw size={14} /> {restoringId === key ? 'Restoring…' : 'Restore'}</button></div></td>
             </tr>
           })}
         </tbody>
       </DataTable>
-      <div className="audit-pagination system-pagination" aria-label="Archived records pagination">
-        <span>
-          {records.length === 0
-            ? '0 of 0 records'
-            : `${(archivedPage - 1) * ARCHIVED_PAGE_SIZE + 1}–${Math.min(archivedPage * ARCHIVED_PAGE_SIZE, records.length)} out of ${records.length}`}
-        </span>
-        <div>
-          <button
-            className="btn btn-sm btn-secondary"
-            disabled={archivedPage <= 1}
-            onClick={() => setArchivedPage(page => Math.max(1, page - 1))}
-          >
-            <ChevronLeft size={15} /> Previous
-          </button>
-          <span className="audit-pagination-page" aria-live="polite">Page {archivedPage} of {archivedTotalPages}</span>
-          <button
-            className="btn btn-sm btn-secondary"
-            disabled={archivedPage >= archivedTotalPages}
-            onClick={() => setArchivedPage(page => Math.min(archivedTotalPages, page + 1))}
-          >
-            Next <ChevronRight size={15} />
-          </button>
-        </div>
-      </div>
+      <Pagination
+        page={archivedPage - 1}
+        totalPages={archivedTotalPages}
+        totalCount={records.length}
+        pageSize={ARCHIVED_PAGE_SIZE}
+        onPageChange={nextPage => setArchivedPage(nextPage + 1)}
+        label="Archived records pages"
+        itemLabel="archived records"
+      />
     </section>
 
     <section className="card audit-section-card" aria-busy={auditLoading || undefined}>
@@ -181,13 +167,16 @@ export default function RecycleBin() {
           </tr>)}
         </tbody>
       </DataTable>}
-      <div className="audit-pagination system-pagination">
-        <span>Page {audit.page} of {audit.totalPages}</span>
-        <div>
-          <button className="btn btn-sm btn-secondary" disabled={audit.page <= 1 || auditLoading} onClick={() => load(audit.page - 1)}><ChevronLeft size={15} /> Previous</button>
-          <button className="btn btn-sm btn-secondary" disabled={audit.page >= audit.totalPages || auditLoading} onClick={() => load(audit.page + 1)}>Next <ChevronRight size={15} /></button>
-        </div>
-      </div>
+      <Pagination
+        page={audit.page - 1}
+        totalPages={audit.totalPages}
+        totalCount={audit.total}
+        pageSize={audit.pageSize}
+        onPageChange={nextPage => load(nextPage + 1)}
+        disabled={auditLoading}
+        label="Activity history pages"
+        itemLabel="audit events"
+      />
     </section>
 
     <ConfirmDialog

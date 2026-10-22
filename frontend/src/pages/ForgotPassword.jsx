@@ -1,5 +1,5 @@
-import { Eye, EyeOff, KeyRound, LockKeyhole, MailCheck, ShieldCheck, UserRoundCheck } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { Eye, EyeOff, KeyRound, LockKeyhole, MailCheck, ShieldCheck } from 'lucide-react'
+import { useId, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import LoadingButton from '../components/LoadingButton'
@@ -11,16 +11,20 @@ import { passwordPolicyError } from '../utils/validation'
 const OTP_SESSION_KEY = 'ic-laundry:forgot-password-otp'
 const OTP_COOLDOWN_KEY = 'ic-laundry:forgot-password-otp-cooldown'
 
-function PasswordInput({ label, value, onChange, visible, onToggle, disabled }) {
+function PasswordInput({ label, value, onChange, visible, onToggle, disabled, hint }) {
+  const id = useId()
   return <div className="login-field">
-    <label>{label}</label>
+    <label htmlFor={id}>{label}</label>
     <div className="login-input-wrap">
       <LockKeyhole size={15} className="login-input-icon" />
-      <input className="login-input login-input-password" type={visible ? 'text' : 'password'} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} minLength={12} placeholder="Strong password" autoComplete="new-password" required />
-      <button type="button" className="login-eye-btn" disabled={disabled} onClick={onToggle}>{visible ? <EyeOff size={15} /> : <Eye size={15} />}</button>
+      <input id={id} aria-describedby={hint ? `${id}-hint` : undefined} className="login-input login-input-password" type={visible ? 'text' : 'password'} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} minLength={12} placeholder="Strong password" autoComplete="new-password" required />
+      <button type="button" className="login-eye-btn" disabled={disabled} onClick={onToggle} aria-label={`${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`}>{visible ? <EyeOff size={15} /> : <Eye size={15} />}</button>
     </div>
+    {hint && <p id={`${id}-hint`} className="auth-hint">{hint}</p>}
   </div>
 }
+
+const RESET_STEPS = ['Username', 'Verify code', 'New password']
 
 export default function ForgotPassword() {
   const navigate = useNavigate()
@@ -97,28 +101,35 @@ export default function ForgotPassword() {
     window.requestAnimationFrame(() => identifierInput.current?.focus())
   }
   const locked = loading || !verified
-  return <main className="login-page-wrapper forgot-password-page">
-    <div className="forgot-password-shell">
-      <aside className="forgot-password-brand" aria-label="Password reset instructions">
-        <div className="forgot-password-brand-heading">
-          <img src="/assets/Rectangle.png" alt="I&C Laundry" />
-          <span>I&amp;C Laundry</span>
-        </div>
-        <div className="forgot-password-brand-copy">
-          <span className="forgot-password-eyebrow">ACCOUNT RECOVERY</span>
-          <h1>A fresh start for your account.</h1>
-          <p>Reset your password securely with the username and recovery email connected to your staff account.</p>
-        </div>
-        <ol className="forgot-password-steps">
-          <li className="active"><span className="forgot-password-step-icon"><UserRoundCheck size={18} /></span><span><strong>Enter your username</strong><small>We’ll find the matching staff account.</small></span></li>
-          <li className={codeRequested ? 'active' : ''}><span className="forgot-password-step-icon"><MailCheck size={18} /></span><span><strong>Verify your email code</strong><small>Check the recovery email on the account.</small></span></li>
-          <li className={verified ? 'active' : ''}><span className="forgot-password-step-icon"><LockKeyhole size={18} /></span><span><strong>Choose a new password</strong><small>Your account is ready to use again.</small></span></li>
+  // Display only: which of the three steps the person is on.
+  const step = verified ? 3 : codeRequested ? 2 : 1
+  const stepDescription = {
+    1: 'Enter your username. We’ll send a verification code to the recovery email on that account.',
+    2: 'Enter the 6-digit code from the recovery email linked to this username.',
+    3: 'Choose a new password. You’ll sign in with it from now on.',
+  }[step]
+  return <main className="auth-page">
+    <div className="auth-shell">
+      <div className="auth-brand">
+        <img src="/assets/Rectangle.png" alt="" />
+        <span>I&amp;C Laundry</span>
+      </div>
+      <section className="auth-card" aria-labelledby="forgot-password-title">
+        <ol className="auth-steps" aria-label={`Step ${step} of ${RESET_STEPS.length}`}>
+          {RESET_STEPS.map((label, index) => (
+            <li
+              key={label}
+              className={`auth-step ${index + 1 < step ? 'is-done' : ''} ${index + 1 === step ? 'is-current' : ''}`}
+              aria-current={index + 1 === step ? 'step' : undefined}
+            >
+              {label}
+            </li>
+          ))}
         </ol>
-        <p className="forgot-password-brand-note"><ShieldCheck size={16} /> Your recovery code expires after 10 minutes.</p>
-      </aside>
-      <section className="login-right-panel forgot-password-panel">
-      <div className="login-form-wrapper"><div className="login-card-enhanced">
-        <div className="login-card-header"><div className="login-card-icon"><ShieldCheck size={24} /></div><div><h2>Reset your password</h2><p>We’ll send a verification code to the recovery email linked to your username.</p></div></div>
+        <header className="auth-card-header">
+          <h1 id="forgot-password-title">Reset your password</h1>
+          <p>{stepDescription}</p>
+        </header>
         <form onSubmit={submit} className={`login-form forgot-password-form ${verified ? 'is-verified' : codeRequested ? 'is-code-requested' : 'is-username-entry'}`}>
           {!codeRequested && <div className="login-field">
             <label htmlFor="forgot-password-identifier">Username</label>
@@ -126,24 +137,24 @@ export default function ForgotPassword() {
           </div>}
           {(!codeRequested || !verified) && <>
             {codeRequested && <div className="forgot-password-account-summary"><span>Recovery requested for</span><strong>{identifier}</strong></div>}
-            <LoadingButton type="button" className="login-submit-btn forgot-password-action" disabled={loading || cooldown.remaining > 0} onClick={requestCode} loading={loading} loadingLabel="Sending...">{codeRequested ? cooldown.label : <><MailCheck size={16} /> Send verification code</>}</LoadingButton>
+            <LoadingButton type="button" className="login-submit-btn forgot-password-action" disabled={loading || cooldown.remaining > 0} onClick={requestCode} loading={loading} loadingLabel="Sending…">{codeRequested ? cooldown.label : <><MailCheck size={16} /> Send verification code</>}</LoadingButton>
           </>}
           {codeRequested && !verified && <>
             <p className="forgot-password-status" role="status">If this username belongs to an active account, its recovery email should receive a code. Check spam too.</p>
             <button type="button" className="login-forgot-password forgot-password-change-identifier" disabled={loading} onClick={changeIdentifier}>Use a different username</button>
-            <div className="login-field"><label>Email verification code</label><div className="login-input-wrap"><KeyRound size={15} className="login-input-icon" /><input className={`login-input otp-verification-input ${otpStatus}`} inputMode="numeric" maxLength={6} disabled={loading || verified || otpStatus === 'checking'} value={otp} onChange={event => updateOtp(event.target.value)} placeholder="6-digit code" aria-invalid={otpStatus === 'invalid'} required /></div>{otpStatus === 'checking' && <p className="otp-verification-checking" role="status">Checking OTP…</p>}{otpMessage && <p className="otp-verification-message" role="alert">{otpMessage}</p>}</div>
+            <div className="login-field"><label htmlFor="forgot-password-code">Email verification code</label><div className="login-input-wrap"><KeyRound size={15} className="login-input-icon" /><input id="forgot-password-code" autoComplete="one-time-code" className={`login-input otp-verification-input ${otpStatus}`} inputMode="numeric" maxLength={6} disabled={loading || verified || otpStatus === 'checking'} value={otp} onChange={event => updateOtp(event.target.value)} placeholder="6-digit code" aria-invalid={otpStatus === 'invalid'} required /></div>{otpStatus === 'checking' && <p className="otp-verification-checking" role="status">Checking OTP…</p>}{otpMessage && <p className="otp-verification-message" role="alert">{otpMessage}</p>}</div>
           </>}
           {verified && <>
             <div className="otp-verification-success forgot-password-verified" role="status"><ShieldCheck size={18} /> Code verified for <strong>{identifier}</strong></div>
-            <PasswordInput label="New password" value={password} onChange={setPassword} visible={showPassword} onToggle={() => setShowPassword(value => !value)} disabled={locked} />
+            <PasswordInput label="New password" value={password} onChange={setPassword} visible={showPassword} onToggle={() => setShowPassword(value => !value)} disabled={locked} hint="12–128 characters, with an uppercase letter, a lowercase letter, a number, and a symbol. No spaces, and not your username." />
             <PasswordInput label="Confirm new password" value={confirmation} onChange={setConfirmation} visible={showConfirmation} onToggle={() => setShowConfirmation(value => !value)} disabled={locked} />
-            <LoadingButton type="submit" className="login-submit-btn forgot-password-action" disabled={!verified || loading} loading={loading} loadingLabel="Resetting...">Reset password</LoadingButton>
+            <LoadingButton type="submit" className="login-submit-btn forgot-password-action" disabled={!verified || loading} loading={loading} loadingLabel="Resetting…">Reset password</LoadingButton>
             <button type="button" className="login-forgot-password forgot-password-change-identifier" disabled={loading} onClick={changeIdentifier}>Use a different username</button>
           </>}
           <div className="login-card-footer"><Link to="/login">Back to sign in</Link></div>
         </form>
-      </div></div>
       </section>
+      <p className="auth-footnote"><ShieldCheck size={14} aria-hidden="true" /> Verification codes expire after 10 minutes.</p>
     </div>
   </main>
 }

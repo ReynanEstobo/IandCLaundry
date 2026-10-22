@@ -4,7 +4,6 @@ import {
   Package,
   Plus,
   RefreshCw,
-  Search,
   Trash2,
   TrendingDown,
   X,
@@ -16,11 +15,13 @@ import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { predictInventoryDaysLeft } from "../utils/inventoryForecast";
 import { createBranchInventoryItem, getInventoryPage, restockBranchInventory } from "../services/api/operationsApi";
-import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
+import { useShowPageLoader, InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
+import RowActionsMenu from "../components/RowActionsMenu";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
 import InfoNote from "../components/InfoNote";
-import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
+import { useSearchPending, SearchStatusIcon, useChangedRows, DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
+import Pagination from "../components/Pagination";
 import useActiveBranches from "../hooks/useActiveBranches";
 
 export default function Inventory() {
@@ -32,6 +33,7 @@ export default function Inventory() {
   const [serviceAddonConfigs, setServiceAddonConfigs] = useState([]);
   const [serviceOrderItems, setServiceOrderItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const showPageLoader = useShowPageLoader(loading);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -100,6 +102,7 @@ export default function Inventory() {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [search]);
+  const searching = useSearchPending(search, searchQuery, items);
 
   useEffect(() => {
     loadData();
@@ -251,8 +254,9 @@ export default function Inventory() {
     status: (item) => Number(item.current_stock) <= Number(item.minimum_stock) ? 0 : 1,
     forecast: (item) => predictDaysLeft(item) ?? Number.POSITIVE_INFINITY,
   });
+  const changedRows = useChangedRows(filtered);
 
-  if (loading) return <PageLoader label="Loading inventory…" />;
+  if (showPageLoader) return <PageLoader label="Loading inventory…" />;
   if (loadError) return <PageError message={loadError} onRetry={loadData} />;
 
   return (
@@ -268,10 +272,10 @@ export default function Inventory() {
         >
           {/* SEARCH */}
           <div className="search-box">
-            <Search />
+            <SearchStatusIcon searching={searching} />
 
             <input
-              placeholder="Search items..."
+              placeholder="Search items…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -302,7 +306,7 @@ export default function Inventory() {
 
       {refreshing && <div className="section-fetch-state"><InlineSkeleton label="Refreshing inventory…" /></div>}
 
-      <DataTable ariaLabel="Inventory items">
+      <DataTable ariaLabel="Inventory items" busy={refreshing || searching}>
             <thead>
               <tr>
                 <SortableHeader label="Item" column="item" sort={sort} onSort={requestSort} />
@@ -337,7 +341,7 @@ export default function Inventory() {
                     else if (daysLeft <= 7) forecastColor = "var(--warning)";
                   }
                   return (
-                    <tr key={item.id}>
+                    <tr key={item.id} className={changedRows.has(item.id) ? "row-updated" : undefined}>
                       <td data-card-primary data-label="Item"
                         style={{
                           fontWeight: 600,
@@ -454,10 +458,10 @@ export default function Inventory() {
                         )}
                       </td>
                       <td data-card-actions data-label="Actions">
-                        <div style={{ display: "flex", gap: 4 }}>
+                        <div className="row-actions">
                           <button
-                            className="btn-icon"
-                            title="Restock"
+                            type="button"
+                            className="btn btn-sm btn-primary"
                             aria-label={`Restock ${item.name}`}
                             onClick={() => {
                               setShowRestock(item);
@@ -465,25 +469,15 @@ export default function Inventory() {
                               setRestockCost("");
                             }}
                           >
-                            <RefreshCw size={16} /><span className="mobile-action-label">Restock</span>
+                            <RefreshCw size={14} aria-hidden="true" /> Restock
                           </button>
-                          <button
-                            className="btn-icon"
-                            onClick={() => openEdit(item)}
-                            title="Edit item"
-                            aria-label={`Edit ${item.name}`}
-                          >
-                            <Edit2 size={16} /><span className="mobile-action-label">Edit</span>
-                          </button>
-                          <button
-                            className="btn-icon"
-                            onClick={() => requestArchive(item)}
-                            style={{ color: "var(--danger)" }}
-                            title="Archive item"
-                            aria-label={`Archive ${item.name}`}
-                          >
-                            <Trash2 size={16} /><span className="mobile-action-label">Archive</span>
-                          </button>
+                          <RowActionsMenu
+                            label={`More actions for ${item.name}`}
+                            items={[
+                              { key: "edit", label: "Edit item", icon: Edit2, onSelect: () => openEdit(item) },
+                              { key: "archive", label: "Archive item", icon: Trash2, tone: "danger", onSelect: () => requestArchive(item) },
+                            ]}
+                          />
                         </div>
                       </td>
                     </tr>
@@ -493,22 +487,15 @@ export default function Inventory() {
             </tbody>
       </DataTable>
 
-      <div className="system-pagination" style={{ textAlign: "center" }}>
-        <div className="system-pagination-controls" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, marginBottom: 8 }}>
-          <button className="btn btn-sm" disabled={page === 0} onClick={() => setPage(0)}>«</button>
-          <button className="btn btn-sm" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>‹</button>
-          {Array.from({ length: Math.min(totalPages, 3) }).map((_, offset) => {
-            const start = Math.min(Math.max(page - 1, 0), Math.max(totalPages - 3, 0));
-            const pageIndex = start + offset;
-            return <button key={pageIndex} className="btn btn-sm" disabled={pageIndex === page} onClick={() => setPage(pageIndex)}>{pageIndex + 1}</button>;
-          })}
-          <button className="btn btn-sm" disabled={page + 1 >= totalPages} onClick={() => setPage((current) => current + 1)}>›</button>
-          <button className="btn btn-sm" disabled={page + 1 >= totalPages} onClick={() => setPage(totalPages - 1)}>»</button>
-        </div>
-        <div style={{ fontSize: 13, color: "#94a3b8" }}>
-          {totalCount === 0 ? "0 of 0" : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, totalCount)} out of ${totalCount}`}
-        </div>
-      </div>
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        totalCount={totalCount}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        label="Inventory pages"
+        itemLabel="inventory items"
+      />
 
       {/* Add/Edit Item Modal */}
       {showModal && (

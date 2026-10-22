@@ -1,11 +1,13 @@
 import { AlertCircle, CheckCircle, History, Mail, RotateCcw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { apiFetch } from "../services/api/client";
 import { useRealtime } from "../lib/useRealtime";
-import { PageError, PageLoader, TableSkeleton } from "../components/AsyncState";
+import { useShowPageLoader, PageError, PageLoader, TableSkeleton } from "../components/AsyncState";
 import LoadingButton from "../components/LoadingButton";
+import Pagination from "../components/Pagination";
+import { useClientPagination } from "../components/DataView";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { getEmailDeliveryAudit, retryEmail } from "../services/api/notificationApi";
 
@@ -34,6 +36,7 @@ function garmentLabel(delivery) {
 export default function Notifications() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const showPageLoader = useShowPageLoader(loading);
   const [loadError, setLoadError] = useState("");
   const [sending, setSending] = useState(false);
   const [tab, setTab] = useState("email");
@@ -214,7 +217,9 @@ I&C Laundry`,
   // ─────────────────────────────────────
   // LOADING
   // ─────────────────────────────────────
-  if (loading) return <PageLoader label="Loading notifications…" />;
+  const readyOrders = useMemo(() => orders.filter((o) => o.status === "ready"), [orders]);
+  const readyPage = useClientPagination(readyOrders);
+  if (showPageLoader) return <PageLoader label="Loading notifications…" />;
   if (loadError) return <PageError message={loadError} onRetry={loadData} />;
 
   return (
@@ -326,7 +331,7 @@ I&C Laundry`,
                 <textarea
                   className="form-control"
                   rows={6}
-                  placeholder="Type your message..."
+                  placeholder="Type your message…"
                   value={emailForm.body}
                   onChange={(e) =>
                     setEmailForm((f) => ({
@@ -402,40 +407,16 @@ I&C Laundry`,
                 </p>
               </div>
 
-              <div
-                style={{
-                  fontSize: 13,
-                  color: "var(--text-muted)",
-                }}
-              >
-                <p
-                  style={{
-                    marginBottom: 8,
-                  }}
-                >
-                  <strong
-                    style={{
-                      color: "var(--text-secondary)",
-                    }}
-                  >
-                    Features:
-                  </strong>
+              <div className="email-delivery-notes">
+                <p>
+                  <strong>Ready-for-pickup emails</strong> are sent automatically
+                  when an order is marked ready and the customer has an email
+                  address.
                 </p>
-
-                <ul
-                  style={{
-                    paddingLeft: 20,
-                    lineHeight: 1.8,
-                  }}
-                >
-                  <li>Manual email notifications</li>
-
-                  <li>Quick ready-for-pickup email sending</li>
-
-                  <li>Secure Gmail delivery</li>
-
-                  <li>Real-time order monitoring</li>
-                </ul>
+                <p>
+                  Use <strong>Quick Notify</strong> to send one again, and{" "}
+                  <strong>Delivery Audit</strong> to see failed emails and retry them.
+                </p>
               </div>
             </div>
           </div>
@@ -478,16 +459,14 @@ I&C Laundry`,
                 </thead>
 
                 <tbody>
-                  {orders.filter((o) => o.status === "ready").length === 0 ? (
+                  {readyOrders.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="empty-state">
                         <p>No orders ready for pickup notification</p>
                       </td>
                     </tr>
                   ) : (
-                    orders
-                      .filter((o) => o.status === "ready")
-                      .map((order) => (
+                    readyPage.pageRows.map((order) => (
                         <tr key={order.id}>
                           <td
                             style={{
@@ -531,6 +510,15 @@ I&C Laundry`,
               </table>
             </div>
           </div>
+          <Pagination
+            page={readyPage.page}
+            totalPages={readyPage.totalPages}
+            totalCount={readyPage.totalCount}
+            pageSize={readyPage.pageSize}
+            onPageChange={readyPage.setPage}
+            label="Ready orders pages"
+            itemLabel="orders ready for pickup"
+          />
         </>
       )}
 
@@ -606,6 +594,7 @@ I&C Laundry`,
                           : <span className="notification-provider">Accepted by {delivery.provider === "gmail_smtp" ? "Gmail" : "email service"}</span>}
                       </td>
                       <td data-label="Action" data-card-actions>
+                        <div className="row-actions">
                         {delivery.status === "failed" && RETRYABLE_NOTIFICATION_TYPES.has(delivery.notification_type) ? (
                           <LoadingButton
                             className="btn btn-sm btn-primary"
@@ -618,6 +607,7 @@ I&C Laundry`,
                         ) : delivery.status === "failed" ? (
                           <span className="notification-no-action">Request a new code</span>
                         ) : <span className="notification-no-action">—</span>}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -625,22 +615,16 @@ I&C Laundry`,
                 </table>
               </div>
             )}
-              <div className="audit-pagination notification-audit-pagination system-pagination">
-                <span>
-                  {auditPagination.total
-                    ? `Showing ${(auditPage - 1) * auditPagination.pageSize + 1}–${Math.min(auditPage * auditPagination.pageSize, auditPagination.total)} of ${auditPagination.total}`
-                    : "No delivery attempts"}
-                </span>
-                <div>
-                  <button className="btn btn-sm btn-secondary" type="button" disabled={auditLoading || auditPage <= 1} onClick={() => loadDeliveryAudit(auditPage - 1)}>
-                    Previous
-                  </button>
-                  <span className="notification-audit-page">Page {auditPage} of {auditPagination.totalPages}</span>
-                  <button className="btn btn-sm btn-secondary" type="button" disabled={auditLoading || auditPage >= auditPagination.totalPages} onClick={() => loadDeliveryAudit(auditPage + 1)}>
-                    Next
-                  </button>
-                </div>
-              </div>
+              <Pagination
+                page={auditPage - 1}
+                totalPages={auditPagination.totalPages}
+                totalCount={auditPagination.total}
+                pageSize={auditPagination.pageSize}
+                onPageChange={(nextPage) => loadDeliveryAudit(nextPage + 1)}
+                disabled={auditLoading}
+                label="Delivery audit pages"
+                itemLabel="delivery attempts"
+              />
             </div>
         </section>
       )}

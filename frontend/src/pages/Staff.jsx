@@ -8,11 +8,13 @@ import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { apiFetch } from "../services/api/client";
 import { useRealtime } from "../lib/useRealtime";
-import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
+import { useShowPageLoader, InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
+import RowActionsMenu from "../components/RowActionsMenu";
+import Pagination from "../components/Pagination";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
 import InfoNote from "../components/InfoNote";
-import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
+import { useChangedRows, useClientPagination, DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
 import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
 import useActiveBranches from "../hooks/useActiveBranches";
 
@@ -42,6 +44,7 @@ export default function Staff() {
   const [staffList, setStaffList] = useState([]);
 
   const [loading, setLoading] = useState(true);
+  const showPageLoader = useShowPageLoader(loading);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
 
@@ -295,11 +298,13 @@ export default function Staff() {
     role: (staff) => staff.role,
     added: (staff) => staff.created_at ? new Date(staff.created_at).getTime() : 0,
   });
+  const changedRows = useChangedRows(filtered);
+  const staffPage = useClientPagination(sortedRows);
 
   // ─────────────────────────────────────
   // LOADING
   // ─────────────────────────────────────
-  if (loading) return <PageLoader label="Loading staff…" />;
+  if (showPageLoader) return <PageLoader label="Loading staff…" />;
   if (loadError) return <PageError message={loadError} onRetry={loadStaff} />;
 
   return (
@@ -311,7 +316,7 @@ export default function Staff() {
           <Search />
 
           <input
-            placeholder="Search staff..."
+            placeholder="Search staff…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -323,14 +328,12 @@ export default function Staff() {
       {refreshing && <div className="section-fetch-state"><InlineSkeleton label="Refreshing staff accounts…" /></div>}
 
       {/* TABLE */}
-      <DataTable ariaLabel="Staff accounts">
+      <DataTable ariaLabel="Staff accounts" busy={refreshing}>
             <thead>
               <tr>
                 <SortableHeader label="Name" column="name" sort={sort} onSort={requestSort} />
-                <SortableHeader label="Staff ID / Username" column="account" sort={sort} onSort={requestSort} />
-                <SortableHeader label="Contact Email" column="email" sort={sort} onSort={requestSort} />
-                <SortableHeader label="Phone" column="phone" sort={sort} onSort={requestSort} />
-                <SortableHeader label="Position" column="position" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Account" column="account" sort={sort} onSort={requestSort} />
+                <SortableHeader label="Contact" column="email" sort={sort} onSort={requestSort} />
                 <SortableHeader label="Branch" column="branch" sort={sort} onSort={requestSort} />
                 <SortableHeader label="Role" column="role" sort={sort} onSort={requestSort} />
                 <SortableHeader label="Added" column="added" sort={sort} onSort={requestSort} />
@@ -340,91 +343,42 @@ export default function Staff() {
 
             <tbody>
               {sortedRows.length === 0 ? (
-                <EmptyState colSpan={9} message="No staff found" />
+                <EmptyState colSpan={7} message="No staff found" />
               ) : (
-                sortedRows.map((s) => (
-                  <tr key={s.id}>
+                staffPage.pageRows.map((s) => (
+                  <tr key={s.id} className={changedRows.has(s.id) ? "row-updated" : undefined}>
                     {/* NAME */}
-                    <td data-card-primary data-label="Staff member"
-                      style={{
-                        fontWeight: 600,
-                        color: "var(--text-primary)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-
-                          alignItems: "center",
-
-                          gap: 10,
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: 32,
-                            height: 32,
-
-                            borderRadius: "50%",
-
-                            background:
-                              s.role === "admin"
-                                ? "var(--primary)"
-                                : "var(--primary-light)",
-
-                            color: "#fff",
-
-                            display: "flex",
-
-                            alignItems: "center",
-
-                            justifyContent: "center",
-
-                            fontSize: 13,
-
-                            fontWeight: 700,
-
-                            flexShrink: 0,
-                          }}
-                        >
+                    <td data-card-primary data-label="Staff member">
+                      <div className="staff-name-cell">
+                        <span className={`staff-avatar ${s.role === "admin" ? "is-admin" : ""}`} aria-hidden="true">
                           {s.full_name.charAt(0).toUpperCase()}
-                        </div>
-
-                        {s.full_name}
+                        </span>
+                        <span>
+                          <span className="orders-cell-main">{s.full_name}</span>
+                          <span className="orders-cell-sub">{s.position || "No position"}</span>
+                        </span>
                       </div>
                     </td>
 
-                    <td data-label="Staff ID / Username">
-                      <div style={{ fontSize: 12, lineHeight: 1.5 }}>
-                        <strong>{s.staff_code || "—"}</strong><br />
-                        <span style={{ color: "var(--text-muted)" }}>{s.username || "Legacy account"}</span>
-                      </div>
+                    <td data-label="Account">
+                      <span className="order-number">{s.staff_code || "—"}</span>
+                      <span className="orders-cell-sub">{s.username || "Legacy account"}</span>
                     </td>
 
                     {/* CONTACT EMAIL — the auth email for provisioned accounts
                         is intentionally internal and must not be shown here. */}
-                    <td data-label="Contact email">{s.contact_email || (s.username ? "No contact email" : s.email || "—")}</td>
-
-                    {/* PHONE */}
-                    <td data-label="Phone">{s.phone || "—"}</td>
-
-                    {/* POSITION */}
-                    <td data-label="Position">{s.position || "—"}</td>
+                    <td data-label="Contact">
+                      <span className="orders-cell-main">{s.contact_email || (s.username ? "No contact email" : s.email || "—")}</span>
+                      <span className="orders-cell-sub">{s.phone || "No phone"}</span>
+                    </td>
 
                     {/* BRANCH */}
                     <td data-label="Branch">{s.branch || "—"}</td>
 
                     {/* ROLE */}
                     <td data-label="Role">
-                      <span
-                        className={`badge ${
-                          s.role === "admin" ? "badge-paid" : "badge-partial"
-                        }`}
-                        style={{
-                          textTransform: "capitalize",
-                        }}
-                      >
-                        {s.role}
+                      <span className={`badge role-badge ${s.role === "admin" ? "is-admin" : ""}`}>
+                        {s.role === "admin" ? "Administrator" : "Staff"}
                       </span>
                     </td>
 
@@ -443,46 +397,24 @@ export default function Staff() {
 
                     {/* ACTIONS */}
                     <td data-card-actions data-label="Actions">
-                      <div
-                        style={{
-                          display: "flex",
-
-                          gap: 4,
-                        }}
-                      >
-                        {/* EDIT */}
+                      <div className="row-actions">
                         <button
-                          className="btn-icon"
+                          type="button"
+                          className="btn btn-sm btn-secondary"
                           onClick={() => openEdit(s)}
-                          title="Edit"
                           aria-label={`Edit ${s.full_name}`}
                         >
-                          <Edit2 size={16} /><span className="mobile-action-label">Edit</span>
+                          <Edit2 size={14} aria-hidden="true" /> Edit
                         </button>
-
-                        {s.auth_id && (
-                          <button
-                            className="btn-icon"
-                            onClick={() => setStaffToReset(s)}
-                            title="Reset generated credentials"
-                            aria-label={`Reset credentials for ${s.full_name}`}
-                          >
-                            <KeyRound size={16} /><span className="mobile-action-label">Reset</span>
-                          </button>
-                        )}
-
-                        {/* DELETE */}
-                        <button
-                          className="btn-icon"
-                          onClick={() => setStaffToDelete(s)}
-                          title="Delete"
-                          aria-label={`Archive ${s.full_name}`}
-                          style={{
-                            color: "var(--danger)",
-                          }}
-                        >
-                          <Trash2 size={16} /><span className="mobile-action-label">Archive</span>
-                        </button>
+                        <RowActionsMenu
+                          label={`More actions for ${s.full_name}`}
+                          items={[
+                            ...(s.auth_id
+                              ? [{ key: "reset", label: "Reset credentials", icon: KeyRound, onSelect: () => setStaffToReset(s) }]
+                              : []),
+                            { key: "archive", label: "Archive staff", icon: Trash2, tone: "danger", onSelect: () => setStaffToDelete(s) },
+                          ]}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -490,6 +422,15 @@ export default function Staff() {
               )}
             </tbody>
       </DataTable>
+      <Pagination
+        page={staffPage.page}
+        totalPages={staffPage.totalPages}
+        totalCount={staffPage.totalCount}
+        pageSize={staffPage.pageSize}
+        onPageChange={staffPage.setPage}
+        label="Staff pages"
+        itemLabel="staff accounts"
+      />
 
       {/* MODAL */}
       {showModal && (

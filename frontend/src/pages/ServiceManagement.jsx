@@ -1,7 +1,8 @@
 import { AlertTriangle, Edit2, PackageCheck, Plus, Save, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
-import { InlineSkeleton, PageError, PageLoader } from '../components/AsyncState'
+import { useShowPageLoader, InlineSkeleton, PageError, PageLoader } from '../components/AsyncState'
+import RowActionsMenu from '../components/RowActionsMenu'
 import LoadingButton from '../components/LoadingButton'
 import ConfirmDialog from '../components/ConfirmDialog'
 import InfoNote from '../components/InfoNote'
@@ -17,6 +18,7 @@ export default function ServiceManagement() {
   const [recipeDraft, setRecipeDraft] = useState({}), [addonDraft, setAddonDraft] = useState({})
   const [form, setForm] = useState(blankService), [editing, setEditing] = useState(null), [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(true), [refreshing, setRefreshing] = useState(false), [saving, setSaving] = useState(false), [savingConfig, setSavingConfig] = useState(false), [error, setError] = useState('')
+  const showPageLoader = useShowPageLoader(loading)
   const [serviceToArchive, setServiceToArchive] = useState(null), [archiving, setArchiving] = useState(false)
   const [removingConfigId, setRemovingConfigId] = useState('')
 
@@ -124,7 +126,7 @@ export default function ServiceManagement() {
   }
   function toggleDraft(setter, id, checked, initial) { setter(current => { const next = { ...current }; if (checked) next[id] = next[id] || initial; else delete next[id]; return next }) }
 
-  if (loading) return <PageLoader label="Loading service configuration…" />
+  if (showPageLoader) return <PageLoader label="Loading service configuration…" />
   if (error) return <PageError message={error} onRetry={load} />
   return <div className="settings-page">
     {refreshing && <div className="section-fetch-state"><InlineSkeleton label="Refreshing service configuration…" /></div>}
@@ -134,7 +136,10 @@ export default function ServiceManagement() {
         <td><strong>{service.name}</strong>{service.description && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{service.description}</div>}</td>
         <td>₱{Number(service.bundle_price || 0).toLocaleString()} / {Number(service.bundle_kg || 0)} kg</td><td>₱{Number(service.excess_kg_price || 0).toLocaleString()} / kg</td>
         <td>{service.processing_type === 'air_dry_only' ? 'Air-drying only · no washing' : 'Full laundry service'}</td><td>{service.is_active ? 'Active' : 'Inactive'}</td>
-        <td><button className="btn btn-secondary btn-sm" onClick={() => openService(service)}><Edit2 size={14} /> Edit</button> <button className="btn btn-danger btn-sm" aria-label={`Archive ${service.name}`} onClick={() => setServiceToArchive(service)}><Trash2 size={14} /></button></td>
+        <td data-card-actions data-label="Actions"><div className="row-actions">
+          <button type="button" className="btn btn-sm btn-secondary" onClick={() => openService(service)} aria-label={`Edit ${service.name}`}><Edit2 size={14} aria-hidden="true" /> Edit</button>
+          <RowActionsMenu label={`More actions for ${service.name}`} items={[{ key: 'archive', label: 'Archive service', icon: Trash2, tone: 'danger', onSelect: () => setServiceToArchive(service) }]} />
+        </div></td>
       </tr>)}</tbody></table></div>
     </div>
     <div className="card settings-card">

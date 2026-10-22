@@ -6384,7 +6384,6 @@ textarea.form-control {
   .orders-table .orders-column-date {
     display: none;
   }
-  .orders-table { min-width: 560px !important; }
 }
 [data-theme="dark"] .orders-table-row:hover,
 [data-theme="dark"] .orders-table-row.services-expanded,
@@ -6399,11 +6398,8 @@ textarea.form-control {
   .garment-toolbar-actions .search-box { flex-basis: 100%; }
   .garment-toolbar-actions .btn-primary { flex: 1 1 auto; }
   .garment-filter-btn { min-height: 36px; padding-inline: 10px; }
-  .orders-table { min-width: 620px !important; }
   .orders-table th,
   .orders-table td { padding-left: 10px; padding-right: 10px; }
-  .order-services-expanded-row > td { position: sticky; left: 0; width: calc(100vw - 34px); padding: 0 10px 12px !important; }
-  .order-services-detail { width: calc(100vw - 34px); padding: 13px; border-radius: 12px; }
   .order-services-detail-heading { align-items: flex-start; }
   .order-services-detail-grid { grid-template-columns: 1fr; }
   .order-service-detail-card { padding: 11px; }

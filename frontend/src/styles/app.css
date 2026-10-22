@@ -1,0 +1,5 @@
+/* The original stylesheet sits in a lower cascade layer so the interface theme
+   overrides it by order alone. Remove a legacy rule only after its replacement
+   exists in theme.css. */
+@import "../index.css" layer(legacy);
+@import "./theme.css";

@@ -1,5 +1,14 @@
 import { AlertCircle, RefreshCw } from "lucide-react";
-import React from "react";
+import React, { useRef } from "react";
+
+// True only until a page's first load has finished. Later fetches keep the
+// page mounted, so React updates just the parts whose data changed instead of
+// swapping the whole page for a loader.
+export function useShowPageLoader(loading) {
+  const loadedOnce = useRef(false);
+  if (!loading) loadedOnce.current = true;
+  return loading && !loadedOnce.current;
+}
 
 export function SkeletonLoader({ label = "Loading data…", compact = false }) {
   return (
@@ -64,14 +73,40 @@ export function TableSkeleton({ label = "Loading records…", rows = 5, columns 
   );
 }
 
+// The I&C Laundry loading mark: a washing machine whose drum tumbles while
+// data loads. Used for page and section loads; buttons keep the small spinner.
+export function LaundryLoader({ label = "Loading data…", compact = false }) {
+  return (
+    <div className={`laundry-loader ${compact ? "laundry-loader-compact" : ""}`} role="status" aria-live="polite">
+      <svg className="laundry-loader-machine" viewBox="0 0 64 72" aria-hidden="true">
+        <rect className="laundry-loader-body" x="3" y="3" width="58" height="66" rx="9" />
+        <line className="laundry-loader-panel" x1="3" y1="17" x2="61" y2="17" />
+        <circle className="laundry-loader-knob" cx="13" cy="10" r="3" />
+        <circle className="laundry-loader-light" cx="45" cy="10" r="1.7" />
+        <circle className="laundry-loader-light laundry-loader-light-2" cx="52" cy="10" r="1.7" />
+        <circle className="laundry-loader-door" cx="32" cy="43" r="18" />
+        <g className="laundry-loader-drum">
+          <circle className="laundry-loader-water" cx="32" cy="43" r="13" />
+          <path className="laundry-loader-cloth" d="M23 41c3.5-4.5 9.5-4.5 13 0-3.5 2.5-9.5 2.5-13 0z" />
+          <rect className="laundry-loader-cloth laundry-loader-cloth-2" x="31" y="45" width="8" height="5" rx="2.5" />
+        </g>
+        <circle className="laundry-loader-bubble" cx="25" cy="34" r="1.8" />
+        <circle className="laundry-loader-bubble laundry-loader-bubble-2" cx="39" cy="36" r="1.4" />
+        <circle className="laundry-loader-bubble laundry-loader-bubble-3" cx="35" cy="31" r="1.1" />
+      </svg>
+      <span className="laundry-loader-label">{label}</span>
+    </div>
+  );
+}
+
 export function LoadingVisual({ label = "Loading data…", compact = false }) {
-  return <SkeletonLoader label={label} compact={compact} />;
+  return <LaundryLoader label={label} compact={compact} />;
 }
 
 export function PageLoader({ label = "Loading data…" }) {
   return (
-    <div className="async-state" role="status" aria-live="polite">
-      <SkeletonLoader label={label} />
+    <div className="async-state">
+      <LaundryLoader label={label} />
     </div>
   );
 }

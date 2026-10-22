@@ -33,43 +33,47 @@ export default function ActivatePassword() {
   }
 
   return (
-    <main className="login-page-wrapper">
-      <section className="login-right-panel" style={{ width: '100%', minHeight: '100vh' }}>
-        <div className="login-form-wrapper">
-          <div className="login-card-enhanced">
-            <div className="login-card-header">
-              <div className="login-card-icon"><ShieldCheck size={24} /></div>
-              <div>
-                <h2>Activate your staff account</h2>
-                <p>Create a private password before accessing I&C Laundry.</p>
+    <main className="auth-page">
+      <div className="auth-shell">
+        <div className="auth-brand">
+          <img src="/assets/Rectangle.png" alt="" />
+          <span>I&amp;C Laundry</span>
+        </div>
+        <section className="auth-card" aria-labelledby="activate-title">
+          <header className="auth-card-header">
+            <span className="auth-card-icon"><ShieldCheck size={20} aria-hidden="true" /></span>
+            <h1 id="activate-title">Activate your staff account</h1>
+            <p>Create your own private password before using I&amp;C Laundry.</p>
+          </header>
+          <form onSubmit={submit} className="login-form">
+            <div className="login-field">
+              <label htmlFor="activate-password">New password</label>
+              <div className="login-input-wrap">
+                <LockKeyhole size={15} className="login-input-icon" />
+                <input id="activate-password" aria-describedby="activate-password-rules" className="login-input login-input-password" type={showPassword ? 'text' : 'password'} value={password} onChange={event => setPassword(event.target.value)} minLength={12} autoComplete="new-password" required />
+                <button type="button" className="login-eye-btn" onClick={() => setShowPassword(visible => !visible)} aria-label={showPassword ? 'Hide new password' : 'Show new password'}>
+                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+              <p id="activate-password-rules" className="auth-hint">12–128 characters, with an uppercase letter, a lowercase letter, a number, and a symbol. No spaces.</p>
+            </div>
+            <div className="login-field">
+              <label htmlFor="activate-password-confirm">Confirm new password</label>
+              <div className="login-input-wrap">
+                <LockKeyhole size={15} className="login-input-icon" />
+                <input id="activate-password-confirm" className="login-input login-input-password" type={showConfirmation ? 'text' : 'password'} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} minLength={12} autoComplete="new-password" required />
+                <button type="button" className="login-eye-btn" onClick={() => setShowConfirmation(visible => !visible)} aria-label={showConfirmation ? 'Hide confirmation password' : 'Show confirmation password'}>
+                  {showConfirmation ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
               </div>
             </div>
-            <form onSubmit={submit} className="login-form">
-              <div className="login-field">
-                <label>New password</label>
-                <div className="login-input-wrap">
-                  <LockKeyhole size={15} className="login-input-icon" />
-                  <input className="login-input login-input-password" type={showPassword ? 'text' : 'password'} value={password} onChange={event => setPassword(event.target.value)} minLength={12} autoComplete="new-password" required />
-                  <button type="button" className="login-eye-btn" onClick={() => setShowPassword(visible => !visible)} aria-label={showPassword ? 'Hide new password' : 'Show new password'}>
-                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-              </div>
-              <div className="login-field">
-                <label>Confirm new password</label>
-                <div className="login-input-wrap">
-                  <LockKeyhole size={15} className="login-input-icon" />
-                  <input className="login-input login-input-password" type={showConfirmation ? 'text' : 'password'} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} minLength={12} autoComplete="new-password" required />
-                  <button type="button" className="login-eye-btn" onClick={() => setShowConfirmation(visible => !visible)} aria-label={showConfirmation ? 'Hide confirmation password' : 'Show confirmation password'}>
-                    {showConfirmation ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-              </div>
-              <LoadingButton type="submit" className="login-submit-btn" loading={saving} loadingLabel="Activating…">Activate account</LoadingButton>
-            </form>
-          </div>
-        </div>
-      </section>
+            <LoadingButton type="submit" className="login-submit-btn" loading={saving} loadingLabel="Activating…">Activate account</LoadingButton>
+          </form>
+        </section>
+        <p className="auth-footnote">
+          <LockKeyhole size={14} aria-hidden="true" /> Use a password you don’t use on any other site.
+        </p>
+      </div>
     </main>
   )
 }

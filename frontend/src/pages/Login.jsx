@@ -60,7 +60,7 @@ export default function Login() {
         <img src="/assets/Rectangle.png" alt="I&C Laundry" className="login-left-logo" />
         <div className="login-left-text">
           <h1>I&C Laundry</h1>
-          <p>Professional laundry services - fresh, clean, and perfectly cared every time.</p>
+          <p>Orders, customers, and inventory for every I&C Laundry branch.</p>
         </div>
       </div>
 
@@ -136,7 +136,7 @@ export default function Login() {
               <p className="login-remember-hint">
                 Your account is remembered by this system; your password is protected by your browser's password manager.
               </p>
-              <LoadingButton type="submit" className="login-submit-btn" loading={loading} loadingLabel="Signing in...">Sign In</LoadingButton>
+              <LoadingButton type="submit" className="login-submit-btn" loading={loading} loadingLabel="Signing in…">Sign In</LoadingButton>
               <div className="login-card-footer login-forgot-row">
                 <button type="button" className="login-forgot-password" disabled={loading} onClick={() => navigate('/forgot-password')}>Forgot password?</button>
               </div>

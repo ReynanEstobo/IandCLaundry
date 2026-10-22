@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRealtime } from '../lib/useRealtime'
 import { useAuth } from '../context/AuthContext'
-import { InlineSkeleton, PageError, PageLoader } from '../components/AsyncState'
+import { useShowPageLoader, InlineSkeleton, PageError, PageLoader } from '../components/AsyncState'
 import { compareOrdersForList } from '../utils/orderListPriority'
 import { paymentTimestamp, rollingDemandForecast } from '../utils/businessForecast'
 import { analyticsPeriod, staffDashboardChartData } from '../utils/chartDates'
@@ -10,19 +10,20 @@ import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorder
 import DashboardCharts from '../components/DashboardCharts'
 import {
   Clock, AlertTriangle, ShoppingBag, CheckCircle2, Timer, User, Radio,
-  Brain, Zap, TrendingUp
+  Brain, Zap, TrendingUp, Inbox, LoaderCircle, PackageCheck, LayoutList
 } from 'lucide-react'
 
 const STATUS_FLOW = ['received', 'on_process', 'ready']
+const CARDS_PER_COLUMN = 8
 const STATUS_LABELS = {
   received: 'Received',
   on_process: 'On Process',
   ready: 'Ready',
 }
 const STATUS_ICONS = {
-  received: '📥',
-  on_process: '⚙️',
-  ready: '✅',
+  received: <Inbox size={15} />,
+  on_process: <LoaderCircle size={15} />,
+  ready: <PackageCheck size={15} />,
 }
 
 function buildBranchForecast(orderHistory, paymentHistory, lowStockItems) {
@@ -38,6 +39,8 @@ function buildBranchForecast(orderHistory, paymentHistory, lowStockItems) {
 export default function StaffDashboard() {
   const { branch } = useAuth()
   const [orders, setOrders] = useState([])
+  // Board paging: each stage shows a few cards, then more on request.
+  const [columnLimits, setColumnLimits] = useState({})
   const [orderHistory, setOrderHistory] = useState([])
   const [paymentHistory, setPaymentHistory] = useState([])
   const [inventory, setInventory] = useState([])
@@ -45,6 +48,7 @@ export default function StaffDashboard() {
   const [serviceRecipes, setServiceRecipes] = useState([])
   const [serviceOrderItems, setServiceOrderItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const showPageLoader = useShowPageLoader(loading)
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [chartRange, setChartRange] = useState('weekly')
@@ -124,7 +128,7 @@ export default function StaffDashboard() {
     const now = new Date()
     const est = new Date(estimatedCompletion)
     const diffMs = est - now
-    if (diffMs <= 0) return 'Ready!'
+    if (diffMs <= 0) return 'Overdue'
     const mins = Math.floor(diffMs / 60000)
     const hrs = Math.floor(mins / 60)
     const remainMins = mins % 60
@@ -147,11 +151,11 @@ export default function StaffDashboard() {
   const chartData = staffDashboardChartData(orderHistory, paymentHistory, chartRange)
   const visibleStatuses = statusFilter === 'all' ? STATUS_FLOW : [statusFilter]
 
-  if (loading) return <PageLoader label="Loading branch dashboard…" />
+  if (showPageLoader) return <PageLoader label="Loading branch dashboard…" />
   if (loadError) return <PageError message={loadError} onRetry={loadData} />
 
   return (
-    <section className="staff-dashboard">
+    <section className="staff-dashboard dashboard-columns">
       <div className="staff-dashboard-heading">
         <div>
           <p className="staff-dashboard-kicker">Branch operations</p>
@@ -163,9 +167,8 @@ export default function StaffDashboard() {
         </span>
       </div>
 
-      <div className="staff-dashboard-summary">
-        {/* Stats Row */}
-        <div className="stats-grid staff-dashboard-stats">
+      {/* Stats Row */}
+      <div className="stats-grid staff-dashboard-stats">
         <div className="stat-card blue">
           <div className="stat-icon"><ShoppingBag size={22} /></div>
           <div className="stat-value">{activeCount}</div>
@@ -186,9 +189,88 @@ export default function StaffDashboard() {
           <div className="stat-value">{lowStockItems.length}</div>
           <div className="stat-label">Low Stock Items</div>
         </div>
-        </div>
+      </div>
 
-        <aside className="staff-dss-overview" aria-label="Branch decision support overview">
+      <DashboardCharts data={chartData} range={chartRange} onRangeChange={setChartRange} />
+
+      {/* Order board: the stages staff work through, below the charts. */}
+      <div className="staff-kanban-toolbar">
+        <div className="staff-kanban-legend" role="group" aria-label="Filter orders by status">
+          {['all', ...STATUS_FLOW].map(status => (
+            <button
+              type="button"
+              key={status}
+              className={`staff-kanban-filter ${statusFilter === status ? 'active' : ''}`}
+              onClick={() => setStatusFilter(status)}
+              aria-pressed={statusFilter === status}
+            >
+              <span aria-hidden="true">{status === 'all' ? <LayoutList size={15} /> : STATUS_ICONS[status]}</span>
+              <span>{status === 'all' ? 'All' : STATUS_LABELS[status]}</span>
+              <small>{status === 'all' ? orders.length : orders.filter(order => order.status === status).length}</small>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="kanban-board">
+        {visibleStatuses.map(status => {
+          const columnOrders = orders.filter(o => o.status === status)
+          const shownCount = columnLimits[status] || CARDS_PER_COLUMN
+          const hiddenCount = columnOrders.length - shownCount
+          return (
+            <div key={status} className="kanban-column" data-stage={status}>
+              <div className="kanban-column-header">
+                <div className="kanban-column-title">
+                  <span className="kanban-column-icon">{STATUS_ICONS[status]}</span>
+                  <span>{STATUS_LABELS[status]}</span>
+                  <span className="kanban-count">{columnOrders.length}</span>
+                </div>
+              </div>
+              <div className="kanban-cards">
+                {columnOrders.length === 0 ? (
+                  <div className="kanban-empty"><strong>No orders</strong><small>This stage is currently clear.</small></div>
+                ) : columnOrders.slice(0, shownCount).map(order => (
+                  <div key={order.id} className="kanban-card staff-kanban-card">
+                    <div className="kanban-card-header">
+                      <span className="kanban-order-num">{order.order_number}</span>
+                      <span className={`kanban-payment-badge badge-${order.payment_status}`}>{order.payment_status}</span>
+                    </div>
+                    <div className="kanban-card-customer">
+                      <User size={13} />
+                      <span>{order.customers?.name || 'Walk-in'}</span>
+                    </div>
+                    <div className="kanban-card-details">
+                      <span className="staff-kanban-service-text">{order.order_items?.length ? order.order_items.map(item => item.service_name_snapshot).join(', ') : order.service_types?.name}</span>
+                      <span className="kanban-card-kg">{order.weight_kg} kg</span>
+                    </div>
+                    <div className="staff-kanban-meta">
+                      <span className="kanban-card-price">₱{Number(order.total_price).toLocaleString()}</span>
+                      <span className={`staff-kanban-time ${status === 'ready' ? 'ready' : ''} ${status !== 'ready' && getTimeRemaining(order.estimated_ready_at) === 'Overdue' ? 'overdue' : ''}`}>
+                        {status !== 'ready' && (
+                          <><Clock size={12} /> {getTimeRemaining(order.estimated_ready_at) || 'ETA unavailable'}</>
+                        )}
+                        {status === 'ready' && <><CheckCircle2 size={12} /> Ready</>}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+                {hiddenCount > 0 && (
+                  <button
+                    type="button"
+                    className="kanban-show-more"
+                    onClick={() => setColumnLimits(limits => ({ ...limits, [status]: shownCount + CARDS_PER_COLUMN }))}
+                  >
+                    Show {Math.min(hiddenCount, CARDS_PER_COLUMN)} more
+                    <small>{hiddenCount} not shown</small>
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <aside className="staff-dss-overview dashboard-side" aria-label="Branch decision support overview">
           <div className="staff-dss-header">
             <div>
               <span className="staff-dss-eyebrow"><Brain size={15} /> DSS overview</span>
@@ -257,76 +339,7 @@ export default function StaffDashboard() {
               <CheckCircle2 size={17} /> No low-stock alert. Keep routine stock checks.
             </div>
           )}
-        </aside>
-      </div>
-
-      <DashboardCharts data={chartData} range={chartRange} onRangeChange={setChartRange} />
-
-      {/* Kanban Board — same as admin Orders page */}
-
-      <div className="staff-kanban-toolbar">
-        <div className="staff-kanban-legend" role="group" aria-label="Filter orders by status">
-          {['all', ...STATUS_FLOW].map(status => (
-            <button
-              type="button"
-              key={status}
-              className={`staff-kanban-filter ${statusFilter === status ? 'active' : ''}`}
-              onClick={() => setStatusFilter(status)}
-              aria-pressed={statusFilter === status}
-            >
-              <span aria-hidden="true">{status === 'all' ? '☰' : STATUS_ICONS[status]}</span>
-              <span>{status === 'all' ? 'All' : STATUS_LABELS[status]}</span>
-              <small>{status === 'all' ? orders.length : orders.filter(order => order.status === status).length}</small>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="kanban-board">
-        {visibleStatuses.map(status => {
-          const columnOrders = orders.filter(o => o.status === status)
-          return (
-            <div key={status} className="kanban-column" data-stage={status}>
-              <div className="kanban-column-header">
-                <div className="kanban-column-title">
-                  <span className="kanban-column-icon">{STATUS_ICONS[status]}</span>
-                  <span>{STATUS_LABELS[status]}</span>
-                  <span className="kanban-count">{columnOrders.length}</span>
-                </div>
-              </div>
-              <div className="kanban-cards">
-                {columnOrders.length === 0 ? (
-                  <div className="kanban-empty"><span>{STATUS_ICONS[status]}</span><strong>No orders</strong><small>This stage is currently clear.</small></div>
-                ) : columnOrders.map(order => (
-                  <div key={order.id} className="kanban-card staff-kanban-card">
-                    <div className="kanban-card-header">
-                      <span className="kanban-order-num">{order.order_number}</span>
-                      <span className={`kanban-payment-badge badge-${order.payment_status}`}>{order.payment_status}</span>
-                    </div>
-                    <div className="kanban-card-customer">
-                      <User size={13} />
-                      <span>{order.customers?.name || 'Walk-in'}</span>
-                    </div>
-                    <div className="kanban-card-details">
-                      <span className="staff-kanban-service-text">{order.order_items?.length ? order.order_items.map(item => item.service_name_snapshot).join(', ') : order.service_types?.name}</span>
-                      <span className="kanban-card-kg">{order.weight_kg} kg</span>
-                    </div>
-                    <div className="staff-kanban-meta">
-                      <span className="kanban-card-price">₱{Number(order.total_price).toLocaleString()}</span>
-                      <span className={`staff-kanban-time ${status === 'ready' ? 'ready' : ''}`}>
-                        {status !== 'ready' && (
-                          <><Clock size={12} /> {getTimeRemaining(order.estimated_ready_at) || 'ETA unavailable'}</>
-                        )}
-                        {status === 'ready' && <><CheckCircle2 size={12} /> Ready</>}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      </aside>
     </section>
   )
 }

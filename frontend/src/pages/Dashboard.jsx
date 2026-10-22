@@ -23,6 +23,7 @@ import { useRealtime } from "../lib/useRealtime";
 import { generateDecisionSupport } from "../services/geminiService";
 import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import DashboardCharts from "../components/DashboardCharts";
+import Pagination from "../components/Pagination";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { paymentTimestamp, recordedPaymentAmount, rollingDemandForecast } from "../utils/businessForecast";
 import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorderQuantity } from "../utils/inventoryForecast";
@@ -216,7 +217,7 @@ export default function Dashboard() {
         .eq("payment_status", "unpaid")
         .not("status", "eq", "cancelled"),
       supabase.from("customers").select("id", { count: "exact", head: true }),
-      supabase.from("inventory_items").select("id, name, current_stock, minimum_stock, unit, branch_id"),
+      supabase.from("inventory_items").select("id, name, current_stock, minimum_stock, unit, branch, branch_id"),
       supabase
         .from("orders")
         .select("id, order_number, status, estimated_ready_at, total_price, created_at, customers(name, phone), service_types(name)", {
@@ -426,7 +427,7 @@ export default function Dashboard() {
           type: "critical",
           icon: ShoppingCart,
           title: "Restock Needed",
-          message: `Running low on ${needRestock.map((i) => `${i.name} (${i.current_stock} ${i.unit} left)`).join(", ")}. Consider restocking soon.`,
+          message: `Running low on ${needRestock.map((i) => `${i.name}${i.branch ? ` at ${i.branch}` : ""} (${i.current_stock} ${i.unit} left)`).join(", ")}. Consider restocking soon.`,
           action: "Review Inventory",
           link: "/dashboard/inventory",
         });
@@ -552,7 +553,7 @@ export default function Dashboard() {
     : null;
 
   return (
-    <section className="staff-dashboard admin-dashboard">
+    <section className="staff-dashboard admin-dashboard dashboard-columns">
       <div className="staff-dashboard-heading">
         <div>
           <p className="staff-dashboard-kicker">Business operations</p>
@@ -705,7 +706,7 @@ export default function Dashboard() {
       )}
 
       <section className="dashboard-workspace">
-        <aside className="dashboard-workspace-sidebar">
+        <aside className="dashboard-workspace-sidebar dashboard-side">
         {/* AI Forecasting Overview */}
       {forecasts && (
         <div className="staff-dss-overview admin-dss-overview" aria-label="All-branch decision support overview">
@@ -1005,125 +1006,16 @@ export default function Dashboard() {
             </tbody>
           </table>
         </div>
-          <div className="system-pagination dashboard-table-pagination" style={{ textAlign: "center" }}>
-            {/* PAGINATION BUTTONS */}
-            <div
-              className="system-pagination-controls"
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 8,
-              }}
-            >
-              {/* FIRST */}
-              <button
-                className="btn btn-sm"
-                disabled={page === 0 || recentLoading}
-                onClick={() => setPage(0)}
-                style={{
-                  opacity: page === 0 ? 0.4 : 1,
-                  padding: "6px 10px",
-                }}
-              >
-                «
-              </button>
-
-              {/* PREVIOUS */}
-              <button
-                className="btn btn-sm"
-                disabled={page === 0 || recentLoading}
-                onClick={() => setPage((p) => Math.max(p - 1, 0))}
-                style={{
-                  opacity: page === 0 ? 0.4 : 1,
-                  padding: "6px 10px",
-                }}
-              >
-                ‹
-              </button>
-
-              {/* PAGE NUMBERS */}
-              {(() => {
-                const pages = [];
-
-                if (totalPages === 0) return null;
-
-                // Always show max 3 pages
-                let start = Math.max(0, page - 1);
-                let end = Math.min(totalPages, start + 3);
-
-                // Adjust if near end
-                if (end - start < 3) {
-                  start = Math.max(0, end - 3);
-                }
-
-                for (let i = start; i < end; i++) {
-                  const isActive = i === page;
-
-                  pages.push(
-                    <button
-                      key={i}
-                      onClick={() => setPage(i)}
-                      disabled={recentLoading}
-                      style={{
-                        minWidth: 36,
-                        height: 36,
-                        borderRadius: 8,
-                        border: isActive
-                          ? "1px solid #64748b"
-                          : "1px solid transparent",
-                        background: isActive ? "#1e293b" : "transparent",
-                        color: isActive ? "#fff" : "#94a3b8",
-                        fontWeight: 600,
-                        transition: "all 0.2s ease",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {i + 1}
-                    </button>,
-                  );
-                }
-
-                return pages;
-              })()}
-              {/* NEXT */}
-              <button
-                className="btn btn-sm"
-                disabled={page + 1 >= totalPages || recentLoading}
-                onClick={() => setPage((p) => (p + 1 < totalPages ? p + 1 : p))}
-                style={{
-                  opacity: page + 1 >= totalPages ? 0.4 : 1,
-                  padding: "6px 10px",
-                }}
-              >
-                ›
-              </button>
-
-              {/* LAST */}
-              <button
-                className="btn btn-sm"
-                disabled={page + 1 >= totalPages || recentLoading}
-                onClick={() => setPage(totalPages - 1)}
-                style={{
-                  opacity: page + 1 >= totalPages ? 0.4 : 1,
-                  padding: "6px 10px",
-                }}
-              >
-                »
-              </button>
-            </div>
-
-            {/* RANGE TEXT */}
-            <div style={{ fontSize: 13, color: "#94a3b8" }}>
-              {totalCount === 0
-                ? "0 of 0"
-                : `${page * PAGE_SIZE + 1}–${Math.min(
-                    (page + 1) * PAGE_SIZE,
-                    totalCount,
-                  )} out of ${totalCount}`}
-            </div>
-          </div>
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            totalCount={totalCount}
+            pageSize={PAGE_SIZE}
+            onPageChange={setPage}
+            disabled={recentLoading}
+            label="Recent orders pages"
+            itemLabel="orders"
+          />
       </div>
         </div>
       </section>

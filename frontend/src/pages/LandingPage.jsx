@@ -12,9 +12,6 @@ import {
   Phone,
   Search,
   Send,
-  Shield,
-  Sparkles,
-  Star,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -642,62 +639,42 @@ export default function LandingPage() {
 
       {/* HERO SECTION */}
       <section className="landing-hero" id="home">
-        <div className="hero-decoration hero-decoration-1" />
-        <div className="hero-decoration hero-decoration-2" />
-        <div className="hero-decoration hero-decoration-3" />
-        <div className="hero-blob" />
-
         <div className="landing-container landing-hero-inner" ref={heroRef}>
           <div
             className={`landing-hero-text ${heroVisible ? "animate-in" : ""}`}
           >
-            <div className="landing-hero-badge">
-              <Sparkles size={14} />
-              <span>Professional Laundry Service</span>
-            </div>
+            <p className="landing-hero-location">
+              <MapPin size={14} aria-hidden="true" />
+              Paz Street, Brgy. 7, Balayan, Batangas
+            </p>
             <h1>
-              Simplify Your Life with{" "}
-              <span className="text-highlight">I&C Laundry</span> Service
+              Drop off your laundry. <span className="text-highlight">We’ll take it from there.</span>
             </h1>
             <p>
-              A modern multi-branch laundry management platform designed to
-              provide efficient garment tracking, customer service, analytics,
-              loyalty rewards, and AI-powered operational insights.
+              Washing, drying, and folding at every I&C Laundry branch. Your
+              receipt comes with a tracking number, so you can check whether
+              your order is ready before you head over.
             </p>
             <div className="landing-hero-buttons">
               <button
-                className="landing-btn-primary landing-btn-glow"
-                onClick={() => navigate("/login")}
+                className="landing-btn-primary"
+                onClick={(e) => scrollToSection(e, "track")}
               >
-                Login
+                Track your order
                 <ChevronRight size={18} />
               </button>
               <button
                 className="landing-btn-secondary"
-                onClick={(e) => scrollToSection(e, "track")}
+                onClick={() => navigate("/login")}
               >
-                Track Garment
+                Staff login
               </button>
             </div>
           </div>
           <div
             className={`landing-hero-image ${heroVisible ? "animate-in-right" : ""}`}
           >
-            <div className="landing-hero-image-bg" />
-            <div className="landing-hero-image-ring" />
-            <img src="/assets/image%2046.png" alt="I&C Laundry Service" />
-            <div className="hero-float-badge hero-float-badge-1">
-              <Star size={16} />
-              <span>Top Rated</span>
-            </div>
-            <div className="hero-float-badge hero-float-badge-2">
-              <Clock size={16} />
-              <span>Fast Service</span>
-            </div>
-            <div className="hero-float-badge hero-float-badge-3">
-              <Shield size={16} />
-              <span>Trusted</span>
-            </div>
+            <img src="/assets/image%2046.png" alt="I&C Laundry mascot" />
           </div>
         </div>
       </section>
@@ -806,7 +783,7 @@ export default function LandingPage() {
                 ) : (
                   <Search size={18} />
                 )}
-                {trackLoading ? "Searching..." : "Track"}
+                {trackLoading ? "Searching…" : "Track"}
               </button>
             </form>
             {trackError && <p className="track-error">{trackError}</p>}
@@ -1121,9 +1098,8 @@ export default function LandingPage() {
               </span>
             </div>
             <p>
-              Laundry service providers offer professionals laundering solutions
-              to assist individuals and business in achieving optimal garment
-              care and cleanliness
+              Wash, dry, and fold service in Balayan, Batangas. Keep your
+              receipt: its tracking number shows your order’s status online.
             </p>
           </div>
           <div className="landing-footer-divider" />

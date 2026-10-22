@@ -12,6 +12,11 @@ import { useAuth } from '../context/AuthContext'
 
 const OTP_SESSION_KEY = 'ic-laundry:account-password-otp'
 const OTP_COOLDOWN_KEY = 'ic-laundry:account-password-otp-cooldown'
+const ACCOUNT_TABS = [
+  { id: 'password', label: 'Password', icon: ShieldCheck },
+  { id: 'recovery-email', label: 'Recovery email', icon: MailCheck },
+  { id: 'session', label: 'Session', icon: LogOut },
+]
 
 function PasswordField({ label, value, onChange, visible, onToggle, placeholder, disabled }) {
   return <div className="login-field">
@@ -42,6 +47,7 @@ export default function AccountSecurity() {
   const [passwordChanged, setPasswordChanged] = useState(false)
   const [visible, setVisible] = useState({ next: false, confirmation: false })
   const cooldown = useOtpCooldown(OTP_COOLDOWN_KEY)
+  const [activeTab, setActiveTab] = useState(ACCOUNT_TABS[0].id)
 
   async function requestCode() {
     setSendingCode(true)
@@ -93,19 +99,39 @@ export default function AccountSecurity() {
   }
 
   const flip = field => () => setVisible(state => ({ ...state, [field]: !state[field] }))
-  return <div className="account-security-page">
-    <section className="card settings-card account-security-card">
-      <div className="settings-card-header account-security-header">
-        <div className="settings-card-icon blue"><ShieldCheck size={24} /></div>
-        <div><span className="account-security-kicker">ACCOUNT SECURITY</span><h3>Change Password</h3><p>Verify your identity with a one-time code sent to your contact email.</p></div>
-      </div>
-      <div className="account-security-steps" aria-label="Password change steps"><span className="active"><b>1</b> Request code</span><span className={otpStatus === 'valid' ? 'active' : ''}><b>2</b> Verify email</span><span className={otpStatus === 'valid' ? 'active' : ''}><b>3</b> New password</span></div>
+  const handleTabKeyDown = event => {
+    const index = ACCOUNT_TABS.findIndex(tab => tab.id === activeTab)
+    const steps = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }
+    let next = null
+    if (event.key in steps) next = ACCOUNT_TABS[(index + steps[event.key] + ACCOUNT_TABS.length) % ACCOUNT_TABS.length]
+    if (event.key === 'Home') next = ACCOUNT_TABS[0]
+    if (event.key === 'End') next = ACCOUNT_TABS[ACCOUNT_TABS.length - 1]
+    if (!next) return
+    event.preventDefault()
+    setActiveTab(next.id)
+    document.getElementById(`account-tab-${next.id}`)?.focus()
+  }
+  return <div className="account-security-page settings-layout">
+    <div className="settings-tabs" role="tablist" aria-label="Account sections" aria-orientation="vertical" onKeyDown={handleTabKeyDown}>
+      {ACCOUNT_TABS.map(({ id, label, icon: Icon }) => (
+        <button key={id} type="button" role="tab" id={`account-tab-${id}`} className="settings-tab" aria-selected={activeTab === id} aria-controls={`account-panel-${id}`} tabIndex={activeTab === id ? 0 : -1} onClick={() => setActiveTab(id)}>
+          <Icon size={16} aria-hidden="true" /> {label}
+        </button>
+      ))}
+    </div>
+    <div className="settings-content">
+    <section id="account-panel-password" role="tabpanel" aria-labelledby="account-tab-password" hidden={activeTab !== 'password'} className="card settings-section account-security-card">
+      <header className="settings-section-header">
+        <h3>Change password</h3>
+        <p>Verify your identity with a one-time code sent to your contact email, then set a new password.</p>
+      </header>
+      <div className="settings-row settings-row-stacked"><div className="settings-password-form">
       <form onSubmit={submit} className="login-form account-security-form">
         <LoadingButton type="button" className="account-security-code-button" disabled={cooldown.remaining > 0} onClick={requestCode} loading={sendingCode} loadingLabel="Sending verification code…">
           <MailCheck size={16} /> {destination ? cooldown.label : 'Send verification code'}
         </LoadingButton>
         {cooldown.remaining > 0 && <p className="otp-cooldown-notice" role="status">{cooldown.message}</p>}
-        {recoveryEmailMissing && <div className="otp-email-missing" role="alert">No recovery email is bound to your account. Use <strong>Change Bound Email</strong> below to add one before requesting an OTP.</div>}
+        {recoveryEmailMissing && <div className="otp-email-missing" role="alert">No recovery email is bound to your account. Open the <button type="button" className="login-forgot-password" onClick={() => setActiveTab('recovery-email')}>Recovery email</button> tab to add one before requesting an OTP.</div>}
         {destination && <div className="account-security-notice"><MailCheck size={16} /><span>Code sent to <strong>{destination}</strong>. It expires in 10 minutes.</span></div>}
         <div className="login-field" style={{ marginTop: 16 }}>
           <label>Email verification code</label>
@@ -121,12 +147,34 @@ export default function AccountSecurity() {
         <PasswordField label="Confirm new password" value={confirmation} onChange={setConfirmation} visible={visible.confirmation} onToggle={flip('confirmation')} placeholder="Re-enter your new password" disabled={saving || otpStatus !== 'valid'} />
         <LoadingButton type="submit" className="btn btn-primary" disabled={otpStatus !== 'valid'} loading={saving} loadingLabel="Changing password…"><LockKeyhole size={16} /> Change password</LoadingButton>
       </form>
+      </div></div>
     </section>
-    <ChangeEmail onChanged={() => { clearOtpSession(OTP_SESSION_KEY); setOtp(''); setDestination(''); setOtpStatus('idle') }} />
-    <section className="card account-security-session-card">
-      <div><strong>{staffName || 'Staff account'}</strong><p>{contactEmail || user?.email || 'No contact email'}{branch ? ` · ${branch}` : ''}<br />Sign out when you finish using a shared phone or computer.</p></div>
-      <button type="button" className="btn btn-danger" onClick={signOut}><LogOut size={16} /> Sign Out</button>
+    <div id="account-panel-recovery-email" role="tabpanel" aria-labelledby="account-tab-recovery-email" hidden={activeTab !== 'recovery-email'} className="settings-panel">
+      <ChangeEmail onChanged={() => { clearOtpSession(OTP_SESSION_KEY); setOtp(''); setDestination(''); setOtpStatus('idle') }} />
+    </div>
+    <section id="account-panel-session" role="tabpanel" aria-labelledby="account-tab-session" hidden={activeTab !== 'session'} className="card settings-section">
+      <header className="settings-section-header">
+        <h3>Session</h3>
+        <p>Sign out when you finish using a shared phone or computer.</p>
+      </header>
+      <div className="settings-row">
+        <div className="settings-row-text"><span className="settings-row-label">Name</span></div>
+        <div className="settings-row-control settings-row-value">{staffName || 'Staff account'}</div>
+      </div>
+      <div className="settings-row">
+        <div className="settings-row-text"><span className="settings-row-label">Contact email</span></div>
+        <div className="settings-row-control settings-row-value">{contactEmail || user?.email || 'No contact email'}</div>
+      </div>
+      {branch && <div className="settings-row">
+        <div className="settings-row-text"><span className="settings-row-label">Branch</span></div>
+        <div className="settings-row-control settings-row-value">{branch}</div>
+      </div>}
+      <footer className="settings-section-footer">
+        <span>You’ll need your username and password to sign in again.</span>
+        <button type="button" className="btn btn-danger" onClick={signOut}><LogOut size={16} /> Sign out</button>
+      </footer>
     </section>
+    </div>
     {passwordChanged && <div className="modal-overlay account-security-success-overlay" role="presentation">
       <section className="account-security-success-dialog" role="alertdialog" aria-modal="true" aria-labelledby="password-success-title">
         <span className="account-security-success-icon"><CheckCircle2 size={32} /></span>

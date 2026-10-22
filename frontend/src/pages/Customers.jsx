@@ -1,15 +1,17 @@
 import { format } from "date-fns";
-import { Edit2, Gift, Phone, Search, Trash2, X } from "lucide-react";
+import { Edit2, Gift, Phone, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { useAuth } from "../context/AuthContext";
 import { getCustomersPage } from "../services/api/operationsApi";
-import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
+import { useShowPageLoader, InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
+import RowActionsMenu from "../components/RowActionsMenu";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
-import { DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
+import { useSearchPending, SearchStatusIcon, useChangedRows, DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
+import Pagination from "../components/Pagination";
 import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
 import useActiveBranches from "../hooks/useActiveBranches";
 
@@ -19,6 +21,7 @@ export default function Customers() {
   const isAdmin = role === "admin";
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const showPageLoader = useShowPageLoader(loading);
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -75,6 +78,7 @@ export default function Customers() {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [search]);
+  const searching = useSearchPending(search, searchQuery, customers);
 
   // 🔥 RESET PAGE WHEN SEARCH CHANGES
   // 🔥 LOAD DATA ON START + PAGE CHANGE
@@ -150,6 +154,7 @@ export default function Customers() {
     rewards: (customer) => customer.loyaltyRewards?.length || 0,
     added: (customer) => new Date(customer.created_at).getTime(),
   });
+  const changedRows = useChangedRows(filtered);
 
   const rewardLabel = (reward) => {
     if (!reward) return "No issued reward";
@@ -159,16 +164,16 @@ export default function Customers() {
     return `${benefit} · ${reward.status}`;
   };
 
-  if (loading) return <PageLoader label="Loading customers…" />;
+  if (showPageLoader) return <PageLoader label="Loading customers…" />;
   if (loadError) return <PageError message={loadError} onRetry={loadCustomers} />;
 
   return (
     <>
       <TableToolbar>
         <div className="search-box">
-          <Search />
+          <SearchStatusIcon searching={searching} />
           <input
-            placeholder="Search customers..."
+            placeholder="Search customers…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -177,7 +182,7 @@ export default function Customers() {
 
       {refreshing && <div className="section-fetch-state"><InlineSkeleton label="Refreshing customers…" /></div>}
 
-      <DataTable ariaLabel="Customers">
+      <DataTable ariaLabel="Customers" busy={refreshing || searching}>
             <thead>
               <tr>
                 <SortableHeader label="Name" column="name" sort={sort} onSort={requestSort} />
@@ -194,7 +199,7 @@ export default function Customers() {
                 <EmptyState colSpan={isAdmin ? 7 : 6} message="No customers found" />
               ) : (
                 sortedRows.map((c) => (
-                  <tr key={c.id}>
+                  <tr key={c.id} className={changedRows.has(c.id) ? "row-updated" : undefined}>
                     <td data-card-primary data-label="Customer"
                       style={{ fontWeight: 600, color: "var(--text-primary)" }}
                     >
@@ -216,7 +221,7 @@ export default function Customers() {
                     <td data-label="Issued rewards">
                       <button
                         type="button"
-                        className="btn btn-sm"
+                        className={`btn btn-sm reward-link ${c.loyaltyRewards?.length ? "" : "is-empty"}`}
                         onClick={() => setRewardCustomer(c)}
                         style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: 210 }}
                         title="View this customer's issued loyalty rewards"
@@ -231,24 +236,19 @@ export default function Customers() {
                       {format(new Date(c.created_at), "MMM d, yyyy")}
                     </td>
                     <td data-card-actions data-label="Actions">
-                      <div style={{ display: "flex", gap: 4 }}>
+                      <div className="row-actions">
                         <button
-                          className="btn-icon"
+                          type="button"
+                          className="btn btn-sm btn-secondary"
                           onClick={() => openEdit(c)}
-                          title="Edit customer"
                           aria-label={`Edit ${c.name}`}
                         >
-                          <Edit2 size={16} /><span className="mobile-action-label">Edit</span>
+                          <Edit2 size={14} aria-hidden="true" /> Edit
                         </button>
-                        <button
-                          className="btn-icon"
-                          onClick={() => setCustomerToDelete(c)}
-                          style={{ color: "var(--danger)" }}
-                          title="Archive customer"
-                          aria-label={`Archive ${c.name}`}
-                        >
-                          <Trash2 size={16} /><span className="mobile-action-label">Archive</span>
-                        </button>
+                        <RowActionsMenu
+                          label={`More actions for ${c.name}`}
+                          items={[{ key: "archive", label: "Archive customer", icon: Trash2, tone: "danger", onSelect: () => setCustomerToDelete(c) }]}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -256,86 +256,15 @@ export default function Customers() {
               )}
             </tbody>
       </DataTable>
-      <div className="system-pagination" style={{ textAlign: "center" }}>
-          <div
-            className="system-pagination-controls"
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              gap: 6,
-              marginBottom: 8,
-            }}
-          >
-            {/* FIRST */}
-            <button
-              className="btn btn-sm"
-              disabled={page === 0}
-              onClick={() => setPage(0)}
-            >
-              «
-            </button>
-
-            {/* PREVIOUS */}
-            <button
-              className="btn btn-sm"
-              disabled={page === 0}
-              onClick={() => setPage((p) => Math.max(p - 1, 0))}
-            >
-              ‹
-            </button>
-
-            {/* PAGE NUMBERS */}
-            {Array.from({ length: Math.min(totalPages, 3) }).map((_, offset) => {
-              const start = Math.min(Math.max(page - 1, 0), Math.max(totalPages - 3, 0));
-              const pageIndex = start + offset;
-              return (
-                <button
-                  key={pageIndex}
-                  onClick={() => setPage(pageIndex)}
-                  style={{
-                    minWidth: 36,
-                    height: 36,
-                    borderRadius: 8,
-                    background: pageIndex === page ? "#1e293b" : "transparent",
-                    color: pageIndex === page ? "#fff" : "#94a3b8",
-                    fontWeight: 600,
-                  }}
-                >
-                  {pageIndex + 1}
-                </button>
-              );
-            })}
-
-            {/* NEXT */}
-            <button
-              className="btn btn-sm"
-              disabled={page + 1 >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              ›
-            </button>
-
-            {/* LAST */}
-            <button
-              className="btn btn-sm"
-              disabled={page + 1 >= totalPages}
-              onClick={() => setPage(totalPages - 1)}
-            >
-              »
-            </button>
-          </div>
-
-          {/* RANGE TEXT */}
-          <div style={{ fontSize: 13, color: "#94a3b8" }}>
-            {totalCount === 0
-              ? "0 of 0"
-              : `${page * PAGE_SIZE + 1}–${Math.min(
-                  (page + 1) * PAGE_SIZE,
-                  totalCount,
-                )} out of ${totalCount}`}
-          </div>
-      </div>
+      <Pagination
+        page={page}
+        totalPages={totalPages}
+        totalCount={totalCount}
+        pageSize={PAGE_SIZE}
+        onPageChange={setPage}
+        label="Customer pages"
+        itemLabel="customers"
+      />
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>

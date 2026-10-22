@@ -1,14 +1,20 @@
 import { format } from "date-fns";
 import {
   ArrowRight,
+  Banknote,
   CheckCircle2,
   ChevronDown,
+  CircleCheckBig,
+  CircleX,
   Clock,
+  Inbox,
   LayoutGrid,
   List,
   Loader2,
+  LoaderCircle,
   Mail,
   Minus,
+  PackageCheck,
   Plus,
   RotateCcw,
   Search,
@@ -23,10 +29,13 @@ import { useRealtime } from "../lib/useRealtime";
 import { sendEmail, sendSms } from "../services/api/notificationApi";
 import { cancelBranchOrder, collectBranchOrderPayment, createBranchOrder, getOrdersPage, lookupCustomerByPhone, settleAndReleaseBranchOrder, transitionAllOrderServiceItems, transitionBranchOrder } from "../services/api/operationsApi";
 import { useAuth } from "../context/AuthContext";
-import { InlineSkeleton, PageError, PageLoader, TableSkeleton } from "../components/AsyncState";
+import { useShowPageLoader, InlineSkeleton, PageError, PageLoader, TableSkeleton } from "../components/AsyncState";
 import LoadingButton from "../components/LoadingButton";
 import InfoNote from "../components/InfoNote";
 import ConfirmDialog from "../components/ConfirmDialog";
+import Pagination from "../components/Pagination";
+import RowActionsMenu from "../components/RowActionsMenu";
+import { useSearchPending, SearchStatusIcon, useChangedRows } from "../components/DataView";
 import { isValidPhilippineMobile } from "../utils/validation";
 import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
 import { getAvailableOrderAddons, resolveBranchId, retainAvailableOrderAddons } from "../utils/orderAddons";
@@ -47,11 +56,11 @@ const STATUS_LABELS = {
   cancelled: "Cancelled",
 };
 const STATUS_ICONS = {
-  received: "\uD83D\uDCE5",
-  on_process: "\u2699\uFE0F",
-  ready: "\u2705",
-  released: "\uD83D\uDCE6",
-  cancelled: "\u274C",
+  received: <Inbox size={15} />,
+  on_process: <LoaderCircle size={15} />,
+  ready: <PackageCheck size={15} />,
+  released: <CircleCheckBig size={15} />,
+  cancelled: <CircleX size={15} />,
 };
 
 function serviceItemsForDisplay(order) {
@@ -76,7 +85,7 @@ function OrderServicesDetail({ order, id }) {
           <span className="order-services-detail-eyebrow">Order services</span>
           <strong>{order.order_number}</strong>
         </div>
-        <span className="order-services-total">{items.length} service{items.length === 1 ? "" : "s"}</span>
+        <span className="order-services-detail-count">{items.length} service{items.length === 1 ? "" : "s"}</span>
       </div>
       <div className="order-services-detail-grid">
         {items.map((item, index) => (
@@ -235,6 +244,7 @@ export default function Orders() {
   const [branchRecords, setBranchRecords] = useState([]);
   const [soapItems, setSoapItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const showPageLoader = useShowPageLoader(loading);
   const [loadError, setLoadError] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
@@ -264,6 +274,7 @@ export default function Orders() {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [searchInput]);
+  const searching = useSearchPending(searchInput, searchQuery, orders);
 
   useEffect(() => {
     if (settings?.defaultview) {
@@ -988,7 +999,8 @@ export default function Orders() {
 
   const filtered = orders;
 
-  if (loading) return <PageLoader label="Loading orders…" />;
+  const changedRows = useChangedRows(filtered);
+  if (showPageLoader) return <PageLoader label="Loading orders…" />;
   if (loadError) return <PageError message={loadError} onRetry={loadData} />;
 
   return (
@@ -1014,9 +1026,9 @@ export default function Orders() {
         </div>
         <div className="garment-toolbar-actions">
           <div className="search-box">
-            <Search />
+            <SearchStatusIcon searching={searching} />
             <input
-              placeholder="Search orders..."
+              placeholder="Search orders…"
               aria-label="Search by order number or customer name"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
@@ -1196,22 +1208,18 @@ export default function Orders() {
             <table className="orders-table">
               <thead>
                 <tr>
-                  <th>Order #</th>
+                  <th>Order</th>
                   <th>Customer</th>
-                  {isAdmin && <th className="orders-column-branch">Branch</th>}
-                  <th className="orders-column-weight">Services</th>
+                  <th>Services</th>
                   <th>Status</th>
-                  <th className="orders-column-eta">Estimated Ready</th>
-                  <th className="orders-column-payment">Payment</th>
-                  <th>Amount</th>
-                  <th className="orders-column-date">Date</th>
-                  <th>Actions</th>
+                  <th className="orders-column-amount">Amount</th>
+                  <th className="orders-column-actions">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={isAdmin ? 10 : 9} className="empty-state">
+                    <td colSpan={6} className="empty-state">
                       <p>{searchInput || filter !== "all" ? "No orders match the current search or status filter." : "No orders have been created yet."}</p>
                       {(searchInput || filter !== "all") && (
                         <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setSearchInput(""); changeStatusFilter("all"); }}>
@@ -1221,24 +1229,23 @@ export default function Orders() {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((order) => (
+                  filtered.map((order) => {
+                    const isFinal = ["released", "cancelled"].includes(order.status);
+                    const balance = Math.max(0, Number(order.total_price || 0) - Number(order.amount_paid || 0));
+                    const previousStage = PROCESS_FLOW[PROCESS_FLOW.indexOf(order.status) - 1];
+                    const isUpdating = updatingOrderId === order.id;
+                    return (
                     <Fragment key={order.id}>
-                    <tr className={`orders-table-row ${expandedServicesOrderId === order.id ? "services-expanded" : ""}`}>
-                      <td
-                        style={{
-                          fontWeight: 600,
-                          color: "var(--text-primary)",
-                        }}
-                      >
-                        {order.order_number}
+                    <tr className={`orders-table-row ${expandedServicesOrderId === order.id ? "services-expanded" : ""} ${changedRows.has(order.id) ? "row-updated" : ""}`}>
+                      <td data-label="Order" className="orders-cell-order">
+                        <span className="order-number">{order.order_number}</span>
+                        <span className="orders-cell-sub">{format(new Date(order.created_at), "MMM d, h:mm a")}</span>
                       </td>
-                      <td>{order.customers?.name || "Walk-in"}</td>
-                      {isAdmin && (
-                        <td className="orders-column-branch" style={{ fontSize: 13 }}>
-                          {order.branch || "Unassigned"}
-                        </td>
-                      )}
-                      <td className="orders-column-weight">
+                      <td data-label="Customer">
+                        <span className="orders-cell-main">{order.customers?.name || "Walk-in"}</span>
+                        {isAdmin && <span className="orders-cell-sub">{order.branch || "Unassigned"}</span>}
+                      </td>
+                      <td data-label="Services">
                         <button
                           type="button"
                           className="order-services-trigger"
@@ -1257,264 +1264,98 @@ export default function Orders() {
                           <ChevronDown size={15} aria-hidden="true" />
                         </button>
                       </td>
-                      <td>
-                        <div className="status-track">
-                          <div className="status-dots">
-                            {PROCESS_FLOW.map((s, i) => {
-                              const currentIdx = order.status === "released" ? PROCESS_FLOW.length - 1 : PROCESS_FLOW.indexOf(order.status);
-                              const isDone = i <= currentIdx;
-                              return (
-                                <div
-                                  key={s}
-                                  className="status-dot-group"
-                                  title={STATUS_LABELS[s]}
-                                >
-                                  {i > 0 && (
-                                    <div
-                                      className={`status-line ${isDone ? "filled" : ""}`}
-                                    />
-                                  )}
-                                  <div
-                                    className={`status-dot ${isDone ? "filled" : ""} ${i === currentIdx ? "current" : ""}`}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <div className="status-track-label">
-                            <span className={`badge badge-${order.status}`}>
-                              {STATUS_LABELS[order.status]}
+                      <td data-label="Status">
+                        <span className={`badge badge-${order.status}`}>{STATUS_LABELS[order.status]}</span>
+                        {!isFinal && (
+                          <>
+                            <span className={`orders-cell-sub order-eta ${isOrderOverdue(order) ? "is-overdue" : ""}`}>
+                              {isOrderOverdue(order) ? <TriangleAlert size={12} aria-hidden="true" /> : <Clock size={12} aria-hidden="true" />}
+                              <span>{isOrderOverdue(order) ? "Overdue · " : "Ready "}{formatOrderEta(order)}</span>
                             </span>
-                            {PROCESS_FLOW.includes(order.status) && order.status !== "ready" && (
-                              <button
-                                className="status-next-btn"
-                                disabled={updatingOrderId === order.id}
-                                onClick={() => advanceStatus(order)}
-                                title={order.status === "received" ? "Start Processing" : "Mark Ready for Pickup"}
-                              >
-                                {updatingOrderId === order.id ? <Loader2 size={14} className="button-spinner" /> : <ArrowRight size={14} />}
-                              </button>
+                            {order.eta_revised_at && (
+                              <span className="order-eta-revised" title="The estimate was revised after a stage correction">ETA updated</span>
                             )}
-                            {PROCESS_FLOW.includes(order.status) && order.status !== "received" && (
-                              <button
-                                className="status-next-btn status-undo-btn"
-                                disabled={updatingOrderId === order.id}
-                                onClick={() => openCorrection(order, PROCESS_FLOW[PROCESS_FLOW.indexOf(order.status) - 1])}
-                                title={`Correct back to ${STATUS_LABELS[PROCESS_FLOW[PROCESS_FLOW.indexOf(order.status) - 1]]}`}
-                              >
-                                <RotateCcw size={13} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="order-eta-cell orders-column-eta">
-                        {['released', 'cancelled'].includes(order.status) ? (
-                          <span className="order-eta-unavailable">—</span>
-                        ) : (
-                          <div className="order-eta-content">
-                            <span className="order-eta-primary">
-                              <Clock size={15} aria-hidden="true" />
-                              {formatOrderEta(order)}
-                            </span>
-                            {(isOrderOverdue(order) || order.eta_revised_at) && (
-                              <div className="order-eta-meta">
-                                {isOrderOverdue(order) && <span className="order-eta-warning"><TriangleAlert size={13} /> Overdue</span>}
-                                {order.eta_revised_at && <span className="order-eta-revised">ETA updated</span>}
-                              </div>
-                            )}
-                          </div>
+                          </>
                         )}
                       </td>
-                      <td className="orders-column-payment">
-                        <span className={`badge badge-${order.payment_status}`}>
-                          {order.payment_status}
+                      <td data-label="Amount" className="orders-column-amount">
+                        <span className="orders-cell-main orders-amount">
+                          {"₱"}
+                          {(Number(order.total_price) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
+                        <span className={`badge badge-${order.payment_status}`}>{order.payment_status}</span>
                       </td>
-                      <td
-                        style={{
-                          fontWeight: 600,
-                          color: "var(--text-primary)",
-                        }}
-                      >
-                        {"\u20B1"}
-                        {(Number(order.total_price) || 0).toLocaleString(
-                          undefined,
-                          {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          },
-                        )}
-                      </td>
-                      <td className="orders-column-date" style={{ color: "var(--text-muted)", fontSize: 13 }}>
-                        {format(new Date(order.created_at), "MMM d, h:mm a")}
-                      </td>
-                      <td>
+                      <td data-card-actions className="orders-column-actions">
                         <div className="orders-row-actions">
-                          {!['released', 'cancelled'].includes(order.status) && Number(order.amount_paid || 0) < Number(order.total_price || 0) && (
+                          {PROCESS_FLOW.includes(order.status) && order.status !== "ready" && (
                             <button
-                              className="btn-icon"
-                              title="Record additional payment"
-                              aria-label={`Record payment for ${order.order_number}`}
-                              onClick={() => openAdditionalPayment(order)}
+                              type="button"
+                              className="btn btn-sm btn-primary"
+                              disabled={isUpdating}
+                              onClick={() => advanceStatus(order)}
                             >
-                              <Plus size={16} /><span className="mobile-action-label">Payment</span>
+                              {isUpdating ? <Loader2 size={14} className="button-spinner" /> : <ArrowRight size={14} aria-hidden="true" />}
+                              {order.status === "received" ? "Start processing" : "Mark ready"}
                             </button>
                           )}
                           {order.status === "ready" && (
-                            <button className="btn-icon" title="Release order after pickup/payment" aria-label={`Release ${order.order_number}`} onClick={() => updateStatus(order, "released")}>
-                              <CheckCircle2 size={16} /><span className="mobile-action-label">Release</span>
-                            </button>
-                          )}
-                          {!['released', 'cancelled'].includes(order.status) && (
                             <button
-                              className="btn-icon"
-                              title="Cancel order"
-                              aria-label={`Cancel ${order.order_number}`}
-                              onClick={() => openCancellation(order)}
-                              style={{ color: "var(--danger)" }}
+                              type="button"
+                              className="btn btn-sm btn-primary"
+                              disabled={isUpdating}
+                              aria-label={`Release ${order.order_number}`}
+                              onClick={() => updateStatus(order, "released")}
                             >
-                              <X size={16} /><span className="mobile-action-label">Cancel</span>
+                              {isUpdating ? <Loader2 size={14} className="button-spinner" /> : <CheckCircle2 size={14} />}
+                              {balance > 0 ? "Collect & release" : "Release"}
                             </button>
                           )}
+                          <RowActionsMenu
+                            label={`More actions for ${order.order_number}`}
+                            items={[
+                              ...(!isFinal && balance > 0
+                                ? [{ key: "payment", label: "Record payment", icon: Banknote, onSelect: () => openAdditionalPayment(order) }]
+                                : []),
+                              ...(PROCESS_FLOW.includes(order.status) && order.status !== "received"
+                                ? [{ key: "move-back", label: `Move back to ${STATUS_LABELS[previousStage]}`, icon: RotateCcw, disabled: isUpdating, onSelect: () => openCorrection(order, previousStage) }]
+                                : []),
+                              ...(!isFinal
+                                ? [{ key: "cancel", label: "Cancel order", icon: X, tone: "danger", onSelect: () => openCancellation(order) }]
+                                : []),
+                            ]}
+                          />
+                          {isFinal && <span className="orders-cell-sub">No actions</span>}
                         </div>
                       </td>
                     </tr>
                     {expandedServicesOrderId === order.id && (
                       <tr className="order-services-expanded-row">
-                        <td colSpan={isAdmin ? 10 : 9}>
+                        <td colSpan={6}>
                           <OrderServicesDetail order={order} id={`order-services-table-${order.id}`} />
                         </td>
                       </tr>
                     )}
                     </Fragment>
-                  ))
+                    );
+                  })
                 )}
               </tbody>
             </table>
             {tableLoading && (
               <div className="orders-table-loading" role="status" aria-live="polite">
-                <TableSkeleton label="Loading orders…" rows={5} columns={isAdmin ? 7 : 6} />
+                <TableSkeleton label="Loading orders…" rows={5} columns={6} />
               </div>
             )}
           </div>
-            <div className="system-pagination" style={{ textAlign: "center" }}>
-                {/* PAGINATION BUTTONS */}
-                <div
-                  className="system-pagination-controls"
-                  style={{
-                    display: "flex",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    gap: 6,
-                    marginBottom: 8,
-                  }}
-                >
-                  {/* FIRST */}
-                  <button
-                    className="btn btn-sm"
-                    disabled={page === 0}
-                    onClick={() => goToPage(0)}
-                    style={{
-                      opacity: page === 0 ? 0.4 : 1,
-                      padding: "6px 10px",
-                    }}
-                  >
-                    «
-                  </button>
-
-                  {/* PREVIOUS */}
-                  <button
-                    className="btn btn-sm"
-                    disabled={page === 0}
-                    onClick={() => goToPage(page - 1)}
-                    style={{
-                      opacity: page === 0 ? 0.4 : 1,
-                      padding: "6px 10px",
-                    }}
-                  >
-                    ‹
-                  </button>
-
-                  {/* PAGE NUMBERS */}
-                  {(() => {
-                    const pages = [];
-
-                    if (totalPages === 0) return null;
-
-                    let start = Math.max(0, page - 1);
-                    let end = Math.min(totalPages, start + 3);
-
-                    if (end - start < 3) {
-                      start = Math.max(0, end - 3);
-                    }
-
-                    for (let i = start; i < end; i++) {
-                      const isActive = i === page;
-
-                      pages.push(
-                        <button
-                          key={i}
-                          onClick={() => goToPage(i)}
-                          style={{
-                            minWidth: 36,
-                            height: 36,
-                            borderRadius: 8,
-                            border: isActive
-                              ? "1px solid #64748b"
-                              : "1px solid transparent",
-                            background: isActive ? "#1e293b" : "transparent",
-                            color: isActive ? "#fff" : "#94a3b8",
-                            fontWeight: 600,
-                            transition: "all 0.2s ease",
-                            cursor: "pointer",
-                          }}
-                        >
-                          {i + 1}
-                        </button>,
-                      );
-                    }
-
-                    return pages;
-                  })()}
-
-                  {/* NEXT */}
-                  <button
-                    className="btn btn-sm"
-                    disabled={page + 1 >= totalPages}
-                    onClick={() => goToPage(page + 1)}
-                    style={{
-                      opacity: page + 1 >= totalPages ? 0.4 : 1,
-                      padding: "6px 10px",
-                    }}
-                  >
-                    ›
-                  </button>
-
-                  {/* LAST */}
-                  <button
-                    className="btn btn-sm"
-                    disabled={page + 1 >= totalPages}
-                    onClick={() => goToPage(totalPages - 1)}
-                    style={{
-                      opacity: page + 1 >= totalPages ? 0.4 : 1,
-                      padding: "6px 10px",
-                    }}
-                  >
-                    »
-                  </button>
-                </div>
-
-                {/* RANGE TEXT */}
-                <div style={{ fontSize: 13, color: "#94a3b8" }}>
-                  {totalCount === 0
-                      ? "0 of 0"
-                      : `${page * PAGE_SIZE + 1}–${Math.min(
-                          (page + 1) * PAGE_SIZE,
-                          totalCount,
-                        )} out of ${totalCount}`}
-                </div>
-            </div>
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              totalCount={totalCount}
+              pageSize={PAGE_SIZE}
+              onPageChange={goToPage}
+              label="Orders pages"
+              itemLabel="orders"
+            />
         </div>
       )}
 

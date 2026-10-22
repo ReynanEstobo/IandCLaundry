@@ -31,7 +31,7 @@ import {
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { generateAiForecast, generateDecisionSupport } from "../services/geminiService";
-import { InlineSkeleton, LoadingVisual, PageError, PageLoader } from "../components/AsyncState";
+import { useShowPageLoader, InlineSkeleton, LoadingVisual, PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from '../components/LoadingButton'
 import { analyticsPeriod, chartTooltipDate, dailyChartLabel, paymentChartData } from '../utils/chartDates'
 import { recordedPaymentAmount } from '../utils/businessForecast'
@@ -135,22 +135,35 @@ function SubFilter({ value, onChange, options, disabled = false }) {
   );
 }
 
-function OperationalList({ icon, title, accent, empty, items }) {
+// A short operational list. Ranked lists number their rows; plain lists (such
+// as dates) do not. Long lists show `limit` rows until the reader expands them.
+function OperationalList({ icon, title, accent, empty, items, limit = items.length, ranked = true }) {
+  const [expanded, setExpanded] = useState(false);
+  const visibleItems = expanded ? items : items.slice(0, limit);
   return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", background: "var(--bg-card)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid var(--border-light)", color: accent }}>
+    <section className="operational-list" style={{ "--list-accent": accent }}>
+      <header className="operational-list-header">
         {icon}
-        <span style={{ color: "var(--text-primary)", fontSize: 13, fontWeight: 750 }}>{title}</span>
-      </div>
-      <div style={{ padding: "6px 14px 10px" }}>
-        {items.length ? items.map((item, index) => (
-          <div key={item} style={{ display: "flex", gap: 9, alignItems: "flex-start", padding: "9px 0", borderBottom: index + 1 === items.length ? "none" : "1px solid var(--border-light)", fontSize: 13, color: "var(--text-secondary)" }}>
-            <span style={{ flex: "0 0 auto", width: 20, height: 20, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 11, fontWeight: 700, color: accent, background: `${accent}14` }}>{index + 1}</span>
-            <span style={{ lineHeight: 1.45 }}>{item}</span>
-          </div>
-        )) : <div style={{ padding: "12px 0", fontSize: 13, color: "var(--text-muted)" }}>{empty}</div>}
-      </div>
-    </div>
+        <h4>{title}</h4>
+      </header>
+      {items.length ? (
+        <>
+          <ol className={`operational-list-items ${ranked ? "is-ranked" : ""} ${expanded ? "is-expanded" : ""}`}>
+            {visibleItems.map((item, index) => (
+              <li key={item}>
+                {ranked && <span className="operational-list-rank">{index + 1}</span>}
+                <span>{item}</span>
+              </li>
+            ))}
+          </ol>
+          {items.length > limit && (
+            <button type="button" className="operational-list-more" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
+              {expanded ? "Show less" : `Show all ${items.length}`}
+            </button>
+          )}
+        </>
+      ) : <p className="operational-list-empty">{empty}</p>}
+    </section>
   );
 }
 
@@ -172,6 +185,7 @@ export default function Analytics() {
   const [forecastData, setForecastData] = useState([]);
 
   const [loading, setLoading] = useState(true);
+  const showPageLoader = useShowPageLoader(loading);
   const [filterLoading, setFilterLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [hasLoadedAnalytics, setHasLoadedAnalytics] = useState(false);
@@ -683,7 +697,7 @@ export default function Analytics() {
           averageOrderValue: stats.avgOrderValue || 0,
           operationalSignals: [
             ...operationalSummary.topServices.map((service) => `Service ${service.name}: ${service.orders} requests, ₱${service.revenue.toLocaleString()} in service sales.`),
-            ...operationalSummary.topBranches.map((branchMetric) => `Branch ${branchMetric.name}: ${branchMetric.orders} orders created, ₱${branchMetric.revenue.toLocaleString()} received.`),
+            ...operationalSummary.topBranches.map((branchMetric) => `Branch ${branchMetric.name}: ${branchMetric.orders} ${branchMetric.orders === 1 ? "order" : "orders"} created, ₱${branchMetric.revenue.toLocaleString()} received.`),
             ...operationalSummary.staffPerformance.map((staff) => `${staff.name}: ${staff.completed} released, ${staff.created} created orders.`),
             ...operationalSummary.lowStockItems.map((item) => `Low stock: ${item.name} has ${item.current_stock} ${item.unit} left at ${item.branch || "the selected branch"}.`),
             `Repeat customers in the selected scope: ${operationalSummary.repeatCustomers}.`,
@@ -962,7 +976,7 @@ Rules:
     }
   }
 
-  if (loading) return <PageLoader label="Preparing analytics…" />;
+  if (showPageLoader) return <PageLoader label="Preparing analytics…" />;
   if (loadError) return <PageError message={loadError} onRetry={() => loadAnalytics(false)} />;
 
   return (
@@ -1043,7 +1057,7 @@ Rules:
 
         <div className="analytics-report-actions">
           <button type="button" onClick={downloadReportCsv} className="analytics-report-button" disabled={filterLoading} title="Download the formatted management spreadsheet">
-            <Download size={16} /> Export CSV
+            <Download size={16} /> Download Excel
           </button>
           <button type="button" onClick={printReport} className="analytics-report-button primary" disabled={filterLoading}>
             <Printer size={16} /> Print / PDF
@@ -1109,37 +1123,44 @@ Rules:
         <div className="card-header" style={{ marginBottom: 20, alignItems: "flex-start" }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 5 }}>
-              <div style={{ width: 34, height: 34, borderRadius: 10, display: "grid", placeItems: "center", color: "#fff", background: "linear-gradient(135deg, #0ea5e9, #2563eb)" }}>
+              <div className="settings-card-icon">
                 <TrendingUp size={18} />
               </div>
               <h3 style={{ margin: 0 }}>Operational Performance</h3>
             </div>
-            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Service leaders are ranked by recorded sales, with request counts shown for context; branch sales, staff completions, repeat customers, and turnaround are also summarized for this scope.</p>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Services, branches, and staff ranked by recorded sales for the selected period.</p>
           </div>
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#38bdf8", background: "color-mix(in srgb, #0ea5e9 14%, var(--bg-card))", borderRadius: 999, padding: "6px 10px" }}>Live operational summary</span>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 18 }}>
+        <div className="stats-grid" style={{ marginBottom: 18 }}>
           {[
-            { label: "New Customers", value: operationalSummary.newCustomerTotal, icon: Users, color: "#0ea5e9", bg: "#e0f2fe" },
-            { label: "Repeat Customers", value: operationalSummary.repeatCustomers, icon: Users, color: "#0284c7", bg: "#e0f2fe" },
-            { label: "Released Orders", value: operationalSummary.completedOrders, icon: ShoppingBag, color: "#10b981", bg: "#dcfce7" },
-            { label: "Average Turnaround", value: operationalSummary.averageTurnaroundHours == null ? "—" : `${operationalSummary.averageTurnaroundHours.toFixed(1)}h`, icon: Timer, color: "#8b5cf6", bg: "#f3e8ff" },
+            { label: "New customers", value: operationalSummary.newCustomerTotal, icon: Users },
+            { label: "Repeat customers", value: operationalSummary.repeatCustomers, icon: Users },
+            { label: "Released orders", value: operationalSummary.completedOrders, icon: ShoppingBag },
+            {
+              label: "Average turnaround",
+              value: operationalSummary.averageTurnaroundHours == null
+                ? "—"
+                : operationalSummary.averageTurnaroundHours >= 48
+                  ? `${(operationalSummary.averageTurnaroundHours / 24).toFixed(1)} days`
+                  : `${operationalSummary.averageTurnaroundHours.toFixed(1)} h`,
+              icon: Timer,
+            },
           ].map((metric) => {
             const Icon = metric.icon;
-            return <div key={metric.label} style={{ border: "1px solid var(--border)", borderRadius: 12, padding: 16, background: "var(--bg-secondary)" }}>
-              <div style={{ width: 32, height: 32, borderRadius: 9, display: "grid", placeItems: "center", color: metric.color, background: `color-mix(in srgb, ${metric.color} 16%, var(--bg-card))`, marginBottom: 12 }}><Icon size={17} /></div>
-              <div style={{ fontSize: 24, lineHeight: 1, fontWeight: 750, color: "var(--text-primary)", marginBottom: 7 }}>{metric.value}</div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{metric.label}</div>
+            return <div key={metric.label} className="stat-card">
+              <div className="stat-icon"><Icon size={16} /></div>
+              <div className="stat-value">{metric.value}</div>
+              <div className="stat-label">{metric.label}</div>
             </div>;
           })}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(245px, 1fr))", gap: 14 }}>
+        <div className="operational-lists">
           <OperationalList icon={<TrendingUp size={17} />} title="High-Performing Services" accent="#8b5cf6" empty="No service data yet" items={operationalSummary.topServices.map((service) => `${service.name} · ${service.orders} service requests · ₱${service.revenue.toLocaleString()}`)} />
-          <OperationalList icon={<Building2 size={17} />} title="Top Branches" accent="#0ea5e9" empty="No branch data yet" items={operationalSummary.topBranches.map((branchMetric) => `${branchMetric.name} · ${branchMetric.orders} orders created · ₱${branchMetric.revenue.toLocaleString()}`)} />
+          <OperationalList icon={<Building2 size={17} />} title="Top Branches" accent="#0ea5e9" empty="No branch data yet" items={operationalSummary.topBranches.map((branchMetric) => `${branchMetric.name} · ${branchMetric.orders} ${branchMetric.orders === 1 ? "order" : "orders"} created · ₱${branchMetric.revenue.toLocaleString()}`)} />
           <OperationalList icon={<Users size={17} />} title="Staff Productivity" accent="#10b981" empty="No staff activity yet" items={operationalSummary.staffPerformance.slice(0, 3).map((staff) => `${staff.name} · ${staff.completed} released / ${staff.created} handled`)} />
-          <OperationalList icon={<Users size={17} />} title="Daily New Customers" accent="#0284c7" empty="No new customer profiles in this scope" items={operationalSummary.dailyNewCustomers.map((item) => `${format(new Date(`${item.date}T00:00:00`), "MMM d, yyyy")} · ${item.count} new customer${item.count === 1 ? "" : "s"}`)} />
+          <OperationalList icon={<Users size={17} />} title="Daily New Customers" accent="#0284c7" empty="No new customer profiles in this scope" ranked={false} limit={7} items={[...operationalSummary.dailyNewCustomers].reverse().map((item) => `${format(new Date(`${item.date}T00:00:00`), "MMM d, yyyy")} · ${item.count} new customer${item.count === 1 ? "" : "s"}`)} />
         </div>
       </div>
 
@@ -1157,7 +1178,7 @@ Rules:
           onClick={regenerateAiOutputs}
           disabled={manualAiRefresh || forecastLoading || aiLoading || loading}
           loading={manualAiRefresh}
-          loadingLabel="Regenerating..."
+          loadingLabel="Regenerating…"
         >
           <RefreshCw size={15} className={manualAiRefresh ? "analytics-ai-refreshing" : ""} />
           {manualAiRefresh ? "Regenerating…" : "Regenerate AI outputs"}
@@ -1200,6 +1221,7 @@ Rules:
               <Area
                 type="monotone"
                 dataKey="revenue"
+                name="Cash received"
                 stroke="#10b981"
                 fill="#10b981"
                 fillOpacity={0.2}
@@ -1208,6 +1230,7 @@ Rules:
               <Area
                 type="monotone"
                 dataKey="expenses"
+                name="Expenses"
                 stroke="#ef4444"
                 fill="#ef4444"
                 fillOpacity={0.2}
@@ -1305,11 +1328,7 @@ Rules:
         {/* AI DSS */}
         <div
           className="card"
-          style={{
-            gridColumn: "1 / -1",
-            border: "1px solid color-mix(in srgb, #8b5cf6 40%, var(--border))",
-            background: "linear-gradient(135deg, color-mix(in srgb, #8b5cf6 9%, var(--bg-card)), var(--bg-card))",
-          }}
+          style={{ gridColumn: "1 / -1" }}
         >
           <div className="card-header">
             <h3
@@ -1322,19 +1341,6 @@ Rules:
               <Lightbulb size={18} style={{ color: "#7c3aed" }} />
               Decision Support Options
             </h3>
-
-            <span
-              style={{
-                background: "color-mix(in srgb, #8b5cf6 17%, var(--bg-card))",
-                color: "#a78bfa",
-                padding: "5px 10px",
-                borderRadius: 8,
-                fontSize: 11,
-                fontWeight: 600,
-              }}
-            >
-              Optional actions with the signals behind them
-            </span>
           </div>
 
           <div
