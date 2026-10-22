@@ -669,14 +669,15 @@ table tbody tr:last-child td { border-bottom: 0; }
 .staff-dss-overview .admin-dss-restock-button { width: 100%; justify-content: center; margin: 0; grid-column: auto; }
 .staff-dss-ok { margin: 0 12px 12px; background: var(--success-light); color: var(--success); }
 
-/* Dashboard KPI cards (admin and staff): no outline; the surface shadow
-   carries them. Analytics' cards and the AI Decision Support card are untouched. */
-.staff-dashboard-stats .stat-card { border-color: transparent; }
+/* Light mode only: dashboard KPI cards (admin and staff) have no outline; the
+   surface shadow carries them. Dark mode keeps every card's border. */
+:root:not([data-theme="dark"]) .staff-dashboard-stats .stat-card { border-color: transparent; }
 
-/* Every card has no outline, outer containers and the cards inside them
-   alike. Two exceptions keep their borders: the AI Decision Support card and
-   Analytics' Operational Performance section (its card, lists and tiles). */
-:is(.card, .settings-card, .data-table-card, .audit-section-card, .notification-audit-card,
+/* Light mode only: every card has no outline, outer containers and the cards
+   inside them alike. Two exceptions keep their borders: the AI Decision
+   Support card and Analytics' Operational Performance section (its card,
+   lists and tiles). Dark mode keeps all card borders. */
+:root:not([data-theme="dark"]) :is(.card, .settings-card, .data-table-card, .audit-section-card, .notification-audit-card,
   .dashboard-overview-card, .page-header-card, .change-email-card, .account-security-card,
   .account-security-session-card, .stat-card, .kanban-column, .kanban-card, .staff-kanban-card,
   .staff-dss-overview, .dashboard-suggestion, .order-services-detail, .orders-table-wrapper,
@@ -684,7 +685,7 @@ table tbody tr:last-child td { border-bottom: 0; }
   .landing-footer-contact-card):not(.dashboard-ai-card):not(:has(.operational-lists)) {
   border-color: transparent;
 }
-.card:has(.operational-lists) .stat-card { border-color: var(--border); }
+:root:not([data-theme="dark"]) .card:has(.operational-lists) .stat-card { border-color: var(--border); }
 
 /* Decision support cards take the KPI card design: white, no outline, the
    same surface shadow. Dark mode keeps a thin border, because there the
