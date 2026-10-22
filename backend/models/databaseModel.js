@@ -29,6 +29,64 @@ const ADMIN_ONLY_TABLES = new Set(['inventory_categories', 'ai_forecasts', 'sms_
 // in another table's selection, e.g. `orders` with `*, creator:staff(*)`.
 const RESTRICTED_EMBED_PATTERN = /(?:^|[\s,(:])(?:staff|sms_log|ai_forecasts)\s*[(!]/
 
+// Supabase returns at most "Max rows" per request (1000 by default, in the
+// project's API settings) and silently drops the rest. Reads that ask for
+// every matching row are fetched page by page so a growing history is never
+// cut short. READ_PAGE_SIZE must not exceed the project's Max rows setting.
+const READ_PAGE_SIZE = 1000
+const READ_CONCURRENCY = 6
+
+// `buildQuery({ from, to, count, head, stableOrder })` must return a fresh
+// select query. A result smaller than one page is returned exactly as before,
+// at the same cost. A full first page means more rows may follow: they are
+// counted, then every page is re-read with `id` as the final sort key (so
+// pages neither overlap nor skip rows) and joined back together.
+// `rowOrderIsFree` marks a read whose rows are re-sorted afterwards, so its
+// first page can already use the stable order and does not need re-reading.
+async function selectEveryRow(buildQuery, requestedCount, { rowOrderIsFree = false } = {}) {
+  const first = await buildQuery({ from: 0, to: READ_PAGE_SIZE - 1, count: requestedCount, stableOrder: rowOrderIsFree })
+  if (first.error || (first.data || []).length < READ_PAGE_SIZE) {
+    return { data: first.data, error: first.error, count: first.count ?? null }
+  }
+
+  const readPage = index => buildQuery({ from: index * READ_PAGE_SIZE, to: (index + 1) * READ_PAGE_SIZE - 1, stableOrder: true })
+  // Start the opening stable pages while the rows are being counted.
+  const [counted, ...openingPages] = await Promise.all([
+    requestedCount ? first : buildQuery({ count: 'exact', head: true }),
+    rowOrderIsFree ? first : readPage(0),
+    readPage(1),
+  ])
+  if (counted.error) return { data: null, error: counted.error, count: null }
+  const total = Number(counted.count)
+
+  const pageCount = Number.isFinite(total) ? Math.max(Math.ceil(total / READ_PAGE_SIZE), openingPages.length) : openingPages.length
+  const pages = [...openingPages, ...new Array(pageCount - openingPages.length)]
+  let nextPage = openingPages.length
+  async function readPages() {
+    while (nextPage < pageCount) {
+      const index = nextPage++
+      pages[index] = await readPage(index)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(READ_CONCURRENCY, pageCount - openingPages.length) }, readPages))
+  // Rows saved after the count can extend the set past the last planned page.
+  while (!pages.at(-1).error && (pages.at(-1).data || []).length === READ_PAGE_SIZE) {
+    pages.push(await readPage(pages.length))
+  }
+  const failed = pages.find(page => page.error)
+  if (failed) return { data: null, error: failed.error, count: null }
+
+  // A row saved while the pages were being read can shift into the next page.
+  const seen = new Set()
+  const data = pages.flatMap(page => page.data || []).filter(row => {
+    if (row?.id === undefined || row?.id === null) return true
+    if (seen.has(row.id)) return false
+    seen.add(row.id)
+    return true
+  })
+  return { data, error: null, count: requestedCount ? total : null }
+}
+
 function hasRecordIdFilter(filters = []) {
   return filters.some(({ type, column, value }) => type === 'eq' && column === 'id' && value !== undefined && value !== null && value !== '')
 }
@@ -300,7 +358,7 @@ export async function execute(table, request, identity) {
   if (['insert', 'update'].includes(request.operation)) {
     request = { ...request, payload: validateResourcePayload(table, request.payload, request.operation) }
   }
-  const { operation, selection = '*', filters, orders = [], range, limit, payload, count, single, returning } = request
+  const { operation, selection = '*', filters, orders = [], range, limit, payload, count, head, single, returning } = request
   if (operation === 'delete' && PROTECTED_TRANSACTION_TABLES.has(table)) {
     throw Object.assign(new Error('This transaction record cannot be deleted. Use the appropriate cancellation or correction workflow so the audit trail and inventory history remain accurate.'), { status: 400 })
   }
@@ -325,13 +383,35 @@ export async function execute(table, request, identity) {
     if (audit.error) return { data: null, error: audit.error, count: null }
     return { data: archived.data || [], error: null, count: archived.data?.length || 0 }
   }
-  let query = database.from(table)
   // Supabase's order() cannot express a portable CASE status priority. Fetch
   // the filtered order set, sort it once here, then apply pagination below.
-  const sortOrderListInMemory = table === 'orders' && operation === 'select' && !single
+  const sortOrderListInMemory = table === 'orders' && operation === 'select' && !single && !head
 
+  // A read without its own range or limit means "every matching row" (the
+  // in-memory order sort also needs the whole set), so read it in pages.
+  if (operation === 'select' && !single && !head && (sortOrderListInMemory || (!range && !limit))) {
+    const result = await selectEveryRow(({ from, to, count: countMode, head: countOnly, stableOrder }) => {
+      let page = database.from(table).select(selection, countMode ? { count: countMode, head: countOnly } : undefined)
+      if (SOFT_DELETABLE_TABLES.has(table)) page = page.is('deleted_at', null)
+      page = applyFilters(page, filters)
+      if (countOnly) return page
+      if (!sortOrderListInMemory) orders.forEach(({ column, options }) => { page = page.order(column, options) })
+      if (stableOrder) page = page.order('id', { ascending: true })
+      return page.range(from, to)
+    }, count, { rowOrderIsFree: sortOrderListInMemory })
+    if (sortOrderListInMemory && !result.error && Array.isArray(result.data)) {
+      const sorted = [...result.data].sort(compareOrdersForList)
+      if (range) result.data = sorted.slice(range.from, range.to + 1)
+      else if (limit) result.data = sorted.slice(0, limit)
+      else result.data = sorted
+    }
+    return result
+  }
+
+  let query = database.from(table)
   if (operation === 'select') {
-    query = query.select(selection, count ? { count } : undefined)
+    // `head` returns only the count, without downloading any rows.
+    query = query.select(selection, count || head ? { count, head } : undefined)
     if (SOFT_DELETABLE_TABLES.has(table)) query = query.is('deleted_at', null)
   }
   if (operation === 'insert') query = query.insert(payload)
@@ -339,19 +419,13 @@ export async function execute(table, request, identity) {
   if (operation === 'delete') query = query.delete()
   query = applyFilters(query, filters)
   if (operation !== 'select' && returning) query = query.select(selection)
-  if (!sortOrderListInMemory) orders.forEach(({ column, options }) => { query = query.order(column, options) })
-  if (range && !sortOrderListInMemory) query = query.range(range.from, range.to)
-  if (limit && !sortOrderListInMemory) query = query.limit(limit)
+  orders.forEach(({ column, options }) => { query = query.order(column, options) })
+  if (range) query = query.range(range.from, range.to)
+  if (limit) query = query.limit(limit)
   if (single === 'single') query = query.single()
   if (single === 'maybeSingle') query = query.maybeSingle()
 
   const result = await query
-  if (sortOrderListInMemory && !result.error && Array.isArray(result.data)) {
-    const sorted = [...result.data].sort(compareOrdersForList)
-    if (range) result.data = sorted.slice(range.from, range.to + 1)
-    else if (limit) result.data = sorted.slice(0, limit)
-    else result.data = sorted
-  }
   return { data: result.data, error: result.error, count: result.count }
 }
 

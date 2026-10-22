@@ -9,7 +9,7 @@ onSessionChange(session => {
 
 class QueryBuilder {
   constructor(table) { this.table = table; this.request = { operation: 'select', selection: '*', filters: [], orders: [] } }
-  select(selection = '*', options = {}) { this.request.selection = selection; this.request.count = options.count; if (this.request.operation !== 'select') this.request.returning = true; return this }
+  select(selection = '*', options = {}) { this.request.selection = selection; this.request.count = options.count; if (options.head) this.request.head = true; if (this.request.operation !== 'select') this.request.returning = true; return this }
   insert(payload) { this.request.operation = 'insert'; this.request.payload = payload; return this }
   update(payload) { this.request.operation = 'update'; this.request.payload = payload; return this }
   delete() { this.request.operation = 'delete'; return this }

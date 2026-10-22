@@ -45,11 +45,28 @@ export function useRealtime(tables, onChanged) {
     // Cloudflare Worker deliberately does not keep a Node event stream alive.
     // A light background poll keeps every data screen current in production
     // without interrupting the page or showing a full-screen loader.
-    pollingTimer.current = setInterval(() => onChangedRef.current?.(), 30_000)
+    // A hidden tab skips its polls (nobody is looking at it, and many idle
+    // tabs would otherwise keep reloading full histories), then refreshes once
+    // as soon as it is shown again, so what appears on screen is never stale.
+    let missedPoll = false
+    pollingTimer.current = setInterval(() => {
+      if (document.hidden) {
+        missedPoll = true
+        return
+      }
+      onChangedRef.current?.()
+    }, 30_000)
+    const refreshWhenShown = () => {
+      if (document.hidden || !missedPoll) return
+      missedPoll = false
+      onChangedRef.current?.()
+    }
+    document.addEventListener('visibilitychange', refreshWhenShown)
 
     return () => {
       if (refreshTimer.current) clearTimeout(refreshTimer.current)
       if (pollingTimer.current) clearInterval(pollingTimer.current)
+      document.removeEventListener('visibilitychange', refreshWhenShown)
       supabase.removeChannel(channel)
     }
   }, [tables.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
