@@ -1301,6 +1301,269 @@ td .btn-danger.btn-sm:hover:not(:disabled) { background: var(--danger-light); bo
 .login-back-btn { color: var(--text-secondary); }
 .login-forgot-password, .login-forgot-password a { color: var(--primary); }
 
+/* ---------- Sign-in page ----------
+   One rounded card: the form on a white side, the brand on a blue side whose
+   curved edge flows into the form. The page always renders light, so it sets
+   its own light tokens even when the last user chose dark mode. */
+.login-page-wrapper.login-screen {
+  --primary: #0b6fa4;
+  --primary-hover: #095b87;
+  --on-primary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-input: #ffffff;
+  --text-primary: #10273d;
+  --text-secondary: #46566a;
+  --text-muted: #66768a;
+  --border: #e1e7ee;
+  --border-strong: #c9d3de;
+  --focus-ring: 0 0 0 3px rgba(11, 111, 164, 0.22);
+  color-scheme: light;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 4vh, 40px) clamp(12px, 4vw, 40px);
+  overflow-y: auto;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(46, 167, 224, 0.14), transparent 42%),
+    radial-gradient(circle at 92% 96%, rgba(11, 111, 164, 0.12), transparent 40%),
+    #edf3f8;
+  color: var(--text-primary);
+}
+.login-shell {
+  display: flex;
+  width: min(1120px, 100%);
+  height: min(700px, 100%);
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 24px;
+  background: var(--bg-card);
+  box-shadow: 0 32px 64px -28px rgba(10, 54, 92, 0.32), 0 0 0 1px rgba(10, 54, 92, 0.04);
+  animation: loginShellIn 420ms var(--ease-out) both;
+}
+@keyframes loginShellIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Form side */
+.login-form-side {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 0 0 44%;
+  flex-direction: column;
+  min-width: 360px;
+  min-height: 0;
+  padding: clamp(22px, 4.5vh, 40px) clamp(24px, 4vw, 52px);
+  overflow-y: auto;
+  background: var(--bg-card);
+}
+.login-form-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.login-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* The logo artwork fades to transparent at its edges; a navy tile behind it
+   turns it into a solid app icon. */
+.login-brand-logo { width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; background: #16285a; object-fit: cover; box-shadow: 0 6px 14px -6px rgba(10, 40, 90, 0.55); }
+.login-brand span { color: var(--text-primary); font-size: 16px; font-weight: 700; letter-spacing: -0.01em; white-space: nowrap; }
+.login-screen .login-back-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 7px 10px;
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  transition: color 120ms ease, background-color 120ms ease;
+}
+.login-screen .login-back-btn:hover:not(:disabled) { background: #eef5fa; color: var(--primary); }
+.login-screen .login-back-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.login-screen .login-form-wrapper {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  max-width: 400px;
+  max-height: none;
+  margin: 0 auto;
+  padding: clamp(18px, 4vh, 36px) 0;
+  animation: none;
+}
+.login-screen .login-card-header { display: block; margin: 0 0 clamp(18px, 3.4vh, 30px); }
+.login-screen .login-card-header h1 { margin: 0; color: var(--text-primary); font-size: clamp(26px, 2.4vw, 30px); font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; }
+.login-screen .login-card-header p { margin: 6px 0 0; color: var(--primary); font-size: 15px; font-weight: 500; }
+.login-screen .login-error-enhanced { margin-bottom: 18px; border-radius: 10px; }
+
+/* Underlined fields, as in a paper form */
+.login-screen .login-form { gap: clamp(14px, 2.4vh, 22px); }
+.login-screen .login-field label { margin-bottom: 2px; color: var(--text-muted); font-size: 12.5px; font-weight: 500; }
+.login-screen .login-input {
+  min-height: 44px;
+  padding: 10px 34px 10px 28px;
+  border: 0;
+  border-bottom: 1.5px solid var(--border-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 15px;
+  box-shadow: none;
+  transform: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.login-screen .login-input:hover:not(:focus):not(:disabled) { border-bottom-color: #93a7ba; background: transparent; }
+.login-screen .login-input:focus { border-bottom-color: var(--primary); box-shadow: 0 1.5px 0 var(--primary); background: transparent; outline: none; transform: none; }
+.login-screen .login-input::placeholder { color: #9aa8b6; opacity: 1; }
+.login-screen .login-input:focus::placeholder { opacity: 0.6; transform: none; }
+.login-screen .login-input:-webkit-autofill,
+.login-screen .login-input:-webkit-autofill:hover,
+.login-screen .login-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text-primary);
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+  caret-color: var(--text-primary);
+}
+.login-screen .login-input-icon { left: 2px; color: #9aa8b6; }
+.login-screen .login-input-wrap:focus-within .login-input-icon { color: var(--primary); }
+.login-screen .login-eye-btn { right: 0; padding: 6px; border-radius: 6px; color: #9aa8b6; }
+.login-screen .login-eye-btn:hover:not(:disabled) { color: var(--primary); }
+.login-screen .login-eye-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+.login-options { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.login-screen .login-remember-me { color: var(--text-secondary); font-weight: 500; }
+.login-screen .login-remember-me input { accent-color: var(--primary); }
+.login-screen .login-forgot-password { padding: 2px 0; color: var(--primary); font-size: 13px; font-weight: 600; text-decoration: none; }
+.login-screen .login-forgot-password:hover:not(:disabled) { color: var(--primary-hover); text-decoration: underline; text-underline-offset: 3px; }
+.login-screen .login-forgot-password:focus-visible { border-radius: 4px; outline: 2px solid var(--primary); outline-offset: 2px; }
+.login-screen .login-remember-hint { margin: -6px 0 0; color: var(--text-muted); font-size: 11.5px; line-height: 1.45; }
+
+.login-screen .login-submit-btn {
+  min-height: 48px;
+  margin-top: clamp(2px, 1vh, 8px);
+  padding: 12px;
+  border-radius: 12px;
+  background: linear-gradient(100deg, #0b6fa4 0%, #1a8fcf 55%, #2ea7e0 100%);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: 0 12px 24px -12px rgba(11, 111, 164, 0.75);
+  transition: transform 140ms var(--ease-out), box-shadow 180ms ease, filter 180ms ease;
+}
+.login-screen .login-submit-btn:hover:not(:disabled) { background: linear-gradient(100deg, #0b6fa4 0%, #1a8fcf 55%, #2ea7e0 100%); filter: brightness(1.06); box-shadow: 0 16px 28px -12px rgba(11, 111, 164, 0.85); transform: none; }
+.login-screen .login-submit-btn:active:not(:disabled) { transform: scale(0.98); }
+.login-screen .login-submit-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+
+.login-screen .login-card-footer { margin: 0; padding: 0; border: 0; color: var(--text-muted); font-size: 12px; text-align: center; }
+
+/* Brand side */
+.login-brand-panel {
+  position: relative;
+  flex: 1 1 56%;
+  min-width: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: linear-gradient(160deg, #0a5b8a 0%, #0b6fa4 30%, #1a8fcf 66%, #39b6ee 100%);
+  color: #ffffff;
+}
+.login-brand-panel::before,
+.login-brand-panel::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.07);
+}
+.login-brand-panel::before { right: -110px; bottom: -150px; width: 420px; height: 420px; }
+.login-brand-panel::after { right: 18%; bottom: 6%; width: 120px; height: 120px; background: rgba(255, 255, 255, 0.05); }
+.login-brand-curve { position: absolute; top: 0; left: -1px; z-index: 2; width: clamp(96px, 17%, 180px); height: 100%; fill: var(--bg-card); }
+.login-brand-wave { display: none; }
+
+.login-brand-copy { position: absolute; top: clamp(34px, 9%, 72px); left: 30%; right: 8%; z-index: 3; }
+.login-brand-copy p { margin: 0; }
+.login-brand-name { font-size: clamp(30px, 3vw, 40px); font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; text-shadow: 0 2px 16px rgba(4, 40, 70, 0.25); }
+.login-brand-copy .login-brand-tagline { max-width: 30ch; margin-top: 10px; color: rgba(255, 255, 255, 0.84); font-size: 14.5px; line-height: 1.5; }
+
+.login-brand-mascot {
+  position: absolute;
+  right: 9%;
+  bottom: 7%;
+  z-index: 3;
+  width: min(62%, 400px);
+  height: auto;
+  filter: drop-shadow(0 26px 30px rgba(4, 40, 70, 0.35));
+  animation: loginFloat 6s ease-in-out infinite;
+}
+
+.login-brand-streaks { position: absolute; top: 9%; right: 9%; z-index: 1; width: 90px; height: 70px; }
+.login-brand-streaks i { position: absolute; display: block; height: 3px; border-radius: 3px; background: rgba(255, 255, 255, 0.5); transform: rotate(-52deg); transform-origin: left center; }
+.login-brand-streaks i:nth-child(1) { left: 20px; bottom: 6px; width: 64px; }
+.login-brand-streaks i:nth-child(2) { left: 44px; bottom: 2px; width: 40px; background: rgba(255, 255, 255, 0.32); }
+.login-brand-streaks i:nth-child(3) { left: 0; bottom: 0; width: 26px; background: rgba(255, 255, 255, 0.28); }
+
+.login-brand-bubbles i {
+  position: absolute;
+  z-index: 3;
+  display: block;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 30%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.1) 55%, rgba(255, 255, 255, 0.04));
+  animation: loginFloat 7s ease-in-out infinite;
+}
+/* The first bubble sits on the curve, half over the form, like the reference glow. */
+.login-brand-bubbles i:nth-child(1) { top: 16%; left: 2%; width: 92px; height: 92px; border: 0; background: radial-gradient(circle at 40% 40%, rgba(57, 182, 238, 0.28), rgba(57, 182, 238, 0.1) 70%); animation-duration: 9s; }
+.login-brand-bubbles i:nth-child(2) { top: 40%; left: 30%; width: 34px; height: 34px; animation-delay: -2s; }
+.login-brand-bubbles i:nth-child(3) { top: 34%; right: 12%; width: 22px; height: 22px; animation-delay: -4s; }
+.login-brand-bubbles i:nth-child(4) { bottom: 14%; left: 34%; width: 18px; height: 18px; animation-delay: -1s; }
+.login-brand-bubbles i:nth-child(5) { top: 56%; right: 5%; width: 44px; height: 44px; animation-delay: -5s; }
+
+@keyframes loginFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-shell, .login-brand-mascot, .login-brand-bubbles i { animation: none; }
+}
+
+/* Short desktop windows: tighter rhythm, the hint goes first. */
+@media (max-height: 620px) {
+  .login-screen .login-form-wrapper { padding: 12px 0; }
+  .login-screen .login-card-header { margin-bottom: 14px; }
+  .login-screen .login-card-header h1 { font-size: 24px; }
+  .login-screen .login-form { gap: 12px; }
+}
+@media (max-height: 540px) {
+  .login-screen .login-remember-hint { display: none; }
+}
+
+/* Tablets: a narrower brand side with a smaller mascot. */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .login-form-side { flex-basis: 52%; }
+  .login-brand-copy { left: 26%; }
+  .login-brand-tagline { display: none; }
+  .login-brand-mascot { right: 6%; width: min(78%, 340px); }
+}
+
+/* Phones: the brand side becomes a short band above the form, with a wave
+   along its lower edge instead of the side curve. */
+@media (max-width: 767px) {
+  .login-page-wrapper.login-screen { padding: 0; background: var(--bg-card); }
+  .login-shell { flex-direction: column; width: 100%; height: 100%; border-radius: 0; box-shadow: none; animation: none; }
+  .login-brand-panel { display: block; flex: 0 0 auto; order: -1; height: clamp(124px, 22vh, 190px); }
+  .login-brand-curve, .login-brand-copy, .login-brand-streaks, .login-brand-panel::after { display: none; }
+  .login-brand-wave { position: absolute; right: 0; bottom: -1px; left: 0; z-index: 4; display: block; width: 100%; height: 26px; fill: var(--bg-card); }
+  .login-brand-mascot { right: 50%; bottom: 14px; width: auto; height: 82%; transform: translateX(50%); animation: none; }
+  .login-brand-bubbles i:nth-child(1) { top: -30px; left: -24px; width: 110px; height: 110px; background: rgba(255, 255, 255, 0.08); }
+  .login-brand-bubbles i:nth-child(2) { top: 22%; left: 18%; }
+  .login-brand-bubbles i:nth-child(3) { top: 18%; right: 20%; }
+  .login-brand-bubbles i:nth-child(4) { bottom: 34%; left: 30%; }
+  .login-brand-bubbles i:nth-child(5) { top: 44%; right: 12%; width: 30px; height: 30px; }
+  /* Overlaps the band by 2px so no sub-pixel seam shows under the wave. */
+  .login-form-side { flex: 1 1 auto; min-width: 0; margin-top: -2px; padding: 16px 20px 18px; }
+  .login-screen .login-form-wrapper { justify-content: flex-start; padding: 18px 0; }
+  .login-screen .login-card-header h1 { font-size: 26px; }
+}
+@media (max-width: 767px) and (max-height: 640px) {
+  .login-brand-panel { display: none; }
+}
+
 /* ---------- Motion ----------
    Buttons answer the press immediately; dialogs open quickly from almost-full
    size. Transitions name their properties so layout never animates. */

@@ -53,29 +53,24 @@ export default function Login() {
 
   return (
     <div className="login-page-wrapper login-screen">
-      <div className="login-left-panel">
-        <div className="login-left-circle login-left-circle-1" />
-        <div className="login-left-circle login-left-circle-2" />
-        <div className="login-left-circle login-left-circle-3" />
-        <img src="/assets/Rectangle.png" width={1024} height={1024} alt="I&C Laundry" className="login-left-logo" />
-        <div className="login-left-text">
-          <h1>I&C Laundry</h1>
-          <p>Orders, customers, and inventory for every I&C Laundry branch.</p>
-        </div>
-      </div>
-
-      <div className="login-right-panel">
-        <div className="login-grid-bg" />
-        <div className="login-form-wrapper">
-          <button onClick={() => navigate('/')} className="login-back-btn" disabled={loading}>
-            <ArrowLeft size={15} /> Back to Home
-          </button>
-          <div className="login-card-enhanced">
-            <div className="login-card-header">
-              <div className="login-card-icon"><img src="/assets/Rectangle.png" width={1024} height={1024} alt="I&C Laundry" /></div>
-              <div><h2>Welcome back</h2><p>Sign in to I&C Laundry dashboard</p></div>
+      <div className="login-shell">
+        <section className="login-form-side">
+          <div className="login-form-top">
+            <div className="login-brand">
+              <img src="/assets/Rectangle.png" width={1024} height={1024} alt="" className="login-brand-logo" />
+              <span>I&C Laundry</span>
             </div>
-            {error && <div className="login-error-enhanced"><AlertCircle size={15} />{error}</div>}
+            <button type="button" onClick={() => navigate('/')} className="login-back-btn" disabled={loading}>
+              <ArrowLeft size={15} /> Back to Home
+            </button>
+          </div>
+
+          <div className="login-form-wrapper">
+            <div className="login-card-header">
+              <h1>Welcome back</h1>
+              <p>Sign in to I&C Laundry dashboard</p>
+            </div>
+            {error && <div className="login-error-enhanced" role="alert"><AlertCircle size={15} />{error}</div>}
             <form onSubmit={handleSubmit} className="login-form" autoComplete="on">
               <div className="login-field">
                 <label htmlFor="login-username">Account ID or Username</label>
@@ -120,30 +115,47 @@ export default function Login() {
                   </button>
                 </div>
               </div>
-              <label className="login-remember-me">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  disabled={loading}
-                  onChange={(event) => {
-                    const checked = event.target.checked
-                    setRememberMe(checked)
-                    if (!checked) setRememberedLogin('')
-                  }}
-                />
-                <span>Remember me on this device</span>
-              </label>
+              <div className="login-options">
+                <label className="login-remember-me">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    disabled={loading}
+                    onChange={(event) => {
+                      const checked = event.target.checked
+                      setRememberMe(checked)
+                      if (!checked) setRememberedLogin('')
+                    }}
+                  />
+                  <span>Remember me on this device</span>
+                </label>
+                <button type="button" className="login-forgot-password" disabled={loading} onClick={() => navigate('/forgot-password')}>Forgot password?</button>
+              </div>
               <p className="login-remember-hint">
                 Your account is remembered by this system; your password is protected by your browser's password manager.
               </p>
               <LoadingButton type="submit" className="login-submit-btn" loading={loading} loadingLabel="Signing in…">Sign In</LoadingButton>
-              <div className="login-card-footer login-forgot-row">
-                <button type="button" className="login-forgot-password" disabled={loading} onClick={() => navigate('/forgot-password')}>Forgot password?</button>
-              </div>
             </form>
-            <div className="login-card-footer">Powered by I&C Laundry &copy; {new Date().getFullYear()}</div>
           </div>
-        </div>
+
+          <p className="login-card-footer">Powered by I&C Laundry &copy; {new Date().getFullYear()}</p>
+        </section>
+
+        <aside className="login-brand-panel">
+          <svg className="login-brand-curve" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 0H84C52 14 30 28 36 48C42 68 74 78 58 100H0Z" />
+          </svg>
+          <svg className="login-brand-wave" viewBox="0 0 100 20" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 20V9C22 21 42 1 64 7C80 11 90 13 100 6V20Z" />
+          </svg>
+          <span className="login-brand-streaks" aria-hidden="true"><i /><i /><i /></span>
+          <span className="login-brand-bubbles" aria-hidden="true"><i /><i /><i /><i /><i /></span>
+          <div className="login-brand-copy">
+            <p className="login-brand-name">I&C Laundry</p>
+            <p className="login-brand-tagline">Orders, customers, and inventory for every I&C Laundry branch.</p>
+          </div>
+          <img src="/assets/login-mascot.webp" width={640} height={563} alt="" className="login-brand-mascot" />
+        </aside>
       </div>
     </div>
   )
