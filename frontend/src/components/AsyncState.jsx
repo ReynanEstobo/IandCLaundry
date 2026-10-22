@@ -122,11 +122,33 @@ export function PageError({ message = "We could not load this page.", onRetry })
   );
 }
 
+// A tab opened from an older version of the app (left open across an update,
+// restored or duplicated) can ask for page files that no longer exist.
+const OUTDATED_PAGE_ERROR = /dynamically imported module|Importing a module script failed|Unable to preload CSS|ChunkLoadError/i;
+const UPDATE_RELOAD_KEY = "ic-laundry-update-reload";
+
+// Reloads to pick up the current version, at most once in a short window so a
+// file that is truly missing shows the error instead of reloading forever.
+function reloadForUpdate() {
+  try {
+    if (Date.now() - Number(sessionStorage.getItem(UPDATE_RELOAD_KEY) || 0) < 15_000) return false;
+    sessionStorage.setItem(UPDATE_RELOAD_KEY, String(Date.now()));
+  } catch { /* storage unavailable: reload once anyway */ }
+  window.location.reload();
+  return true;
+}
+
 export class AppErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { error: null }; }
-  static getDerivedStateFromError(error) { return { error }; }
-  componentDidCatch(error) { console.error("Application render error:", error); }
+  constructor(props) { super(props); this.state = { error: null, updating: false }; }
+  static getDerivedStateFromError(error) { return { error, updating: OUTDATED_PAGE_ERROR.test(String(error?.message || error)) }; }
+  componentDidCatch(error) {
+    if (this.state.updating && reloadForUpdate()) return;
+    if (this.state.updating) this.setState({ updating: false });
+    console.error("Application render error:", error);
+  }
   render() {
+    // While the newer version loads, show the usual loader rather than an error.
+    if (this.state.updating) return <PageLoader label="Loading the latest version…" />;
     if (this.state.error) return <PageError message="An unexpected screen error occurred. Refresh the page or try again." onRetry={() => this.setState({ error: null })} />;
     return this.props.children;
   }

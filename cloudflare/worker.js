@@ -188,12 +188,28 @@ async function api(request, env) {
   return json({ error: 'Endpoint not found' }, 404)
 }
 
+// The app page is never stored by the browser, so a duplicated, restored or
+// long-open tab always loads the current version. A built file under /assets/
+// that does not exist (asked for by an older version) is "not found" rather
+// than the app page, so the app can tell it needs to reload.
+async function serveAsset(request, env) {
+  const response = await env.ASSETS.fetch(request)
+  const isPage = (response.headers.get('content-type') || '').includes('text/html')
+  if (!isPage) return response
+  if (new URL(request.url).pathname.startsWith('/assets/')) {
+    return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
+  }
+  const headers = new Headers(response.headers)
+  headers.set('Cache-Control', 'no-store')
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
+}
+
 export default {
   async fetch(request, env) {
     configureRuntimeEnv(env)
     try {
       const isApi = new URL(request.url).pathname.startsWith('/api/')
-      const response = isApi ? await api(request, env) : await env.ASSETS.fetch(request)
+      const response = isApi ? await api(request, env) : await serveAsset(request, env)
       return secure(response, isApi)
       } catch (error) {
         console.error('Worker request failed:', error?.message || error)
