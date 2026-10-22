@@ -111,7 +111,7 @@ export default function ForgotPassword() {
   return <main className="auth-page">
     <div className="auth-shell">
       <div className="auth-brand">
-        <img src="/assets/Rectangle.png" alt="" />
+        <img src="/assets/Rectangle.png" width={1024} height={1024} alt="" />
         <span>I&amp;C Laundry</span>
       </div>
       <section className="auth-card" aria-labelledby="forgot-password-title">
@@ -133,7 +133,7 @@ export default function ForgotPassword() {
         <form onSubmit={submit} className={`login-form forgot-password-form ${verified ? 'is-verified' : codeRequested ? 'is-code-requested' : 'is-username-entry'}`}>
           {!codeRequested && <div className="login-field">
             <label htmlFor="forgot-password-identifier">Username</label>
-            <div className="login-input-wrap"><KeyRound size={15} className="login-input-icon" /><input id="forgot-password-identifier" ref={identifierInput} className="login-input" value={identifier} disabled={loading} onChange={event => setIdentifier(event.target.value)} placeholder="Enter your username" required /></div>
+            <div className="login-input-wrap"><KeyRound size={15} className="login-input-icon" /><input autoComplete="username" spellCheck={false} id="forgot-password-identifier" ref={identifierInput} className="login-input" value={identifier} disabled={loading} onChange={event => setIdentifier(event.target.value)} placeholder="Enter your username" required /></div>
           </div>}
           {(!codeRequested || !verified) && <>
             {codeRequested && <div className="forgot-password-account-summary"><span>Recovery requested for</span><strong>{identifier}</strong></div>}

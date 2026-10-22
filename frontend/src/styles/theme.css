@@ -849,6 +849,15 @@ table tbody tr:last-child td { border-bottom: 0; }
 @media (prefers-reduced-motion: reduce) {
   .search-box-spinner { animation-duration: 2s; }
 }
+.skip-link {
+  position: fixed; top: 12px; left: 12px; z-index: 2000;
+  padding: 10px 16px; border-radius: var(--radius);
+  background: var(--bg-card); color: var(--text-primary); font-weight: 600;
+  box-shadow: var(--shadow-surface, 0 4px 16px rgba(16, 24, 40, 0.16));
+  transform: translateY(calc(-100% - 24px));
+}
+.skip-link:focus-visible { transform: none; }
+#main-content:focus { outline: none; }
 .visually-hidden {
   position: absolute;
   width: 1px;

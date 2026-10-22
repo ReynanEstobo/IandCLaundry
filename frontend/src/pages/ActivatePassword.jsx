@@ -36,7 +36,7 @@ export default function ActivatePassword() {
     <main className="auth-page">
       <div className="auth-shell">
         <div className="auth-brand">
-          <img src="/assets/Rectangle.png" alt="" />
+          <img src="/assets/Rectangle.png" width={1024} height={1024} alt="" />
           <span>I&amp;C Laundry</span>
         </div>
         <section className="auth-card" aria-labelledby="activate-title">

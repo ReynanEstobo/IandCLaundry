@@ -89,6 +89,10 @@ export default function Layout() {
 
   return (
     <div className={`app-layout ${collapsed ? "sidebar-collapsed" : ""} ${role === "admin" ? "admin-layout" : "staff-layout"}`}>
+      {/* Keyboard users can jump past the sidebar; focusing directly keeps the URL hash (used by Settings tabs) intact. */}
+      <a className="skip-link" href="#main-content" onClick={(event) => { event.preventDefault(); document.getElementById("main-content")?.focus(); }}>
+        Skip to main content
+      </a>
       {/* Mobile overlay */}
       {mobileOpen && (
         <div className="sidebar-overlay" onClick={() => setMobileOpen(false)} />
@@ -159,7 +163,7 @@ export default function Layout() {
         </div>
       </aside>
 
-      <main className="main-content">
+      <main id="main-content" className="main-content" tabIndex={-1}>
         <header className="top-bar">
           <div className="top-bar-title">
             <button

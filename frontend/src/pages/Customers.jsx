@@ -1,6 +1,7 @@
 import { format } from "date-fns";
 import { Edit2, Gift, Phone, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import useEscapeToClose from "../components/useEscapeToClose";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
@@ -164,6 +165,8 @@ export default function Customers() {
     return `${benefit} · ${reward.status}`;
   };
 
+  useEscapeToClose(showModal, () => setShowModal(false));
+  useEscapeToClose(Boolean(rewardCustomer), () => setRewardCustomer(null));
   if (showPageLoader) return <PageLoader label="Loading customers…" />;
   if (loadError) return <PageError message={loadError} onRetry={loadCustomers} />;
 
@@ -172,7 +175,7 @@ export default function Customers() {
       <TableToolbar>
         <div className="search-box">
           <SearchStatusIcon searching={searching} />
-          <input
+          <input aria-label="Search customers" autoComplete="off"
             placeholder="Search customers…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -268,10 +271,10 @@ export default function Customers() {
 
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="customer-modal-title" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div>
-                <h3>Edit Customer</h3>
+                <h3 id="customer-modal-title">Edit Customer</h3>
                 <p>{isAdmin
                   ? "Update the customer’s contact details. New customers are created when an order is placed."
                   : "Update the customer’s name. Phone numbers and email addresses can only be changed by an administrator."}</p>
@@ -284,8 +287,8 @@ export default function Customers() {
               <div className="modal-body">
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Full Name *</label>
-                    <input
+                    <label htmlFor="customer-name">Full Name *</label>
+                    <input id="customer-name" autoComplete="off"
                       className="form-control"
                       placeholder="Juan Dela Cruz"
                       value={form.name}
@@ -296,8 +299,8 @@ export default function Customers() {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Phone Number *</label>
-                    <input
+                    <label htmlFor="customer-phone">Phone Number *</label>
+                    <input id="customer-phone" autoComplete="off"
                       className={`form-control ${!isAdmin ? "is-readonly" : ""}`}
                       placeholder="09171234567"
                       value={form.phone}
@@ -315,8 +318,8 @@ export default function Customers() {
                   </div>
                 </div>
                 <div className="form-group">
-                  <label>Email (optional)</label>
-                  <input
+                  <label htmlFor="customer-email">Email (optional)</label>
+                  <input id="customer-email" autoComplete="off" spellCheck={false}
                     className={`form-control ${!isAdmin ? "is-readonly" : ""}`}
                     type="email"
                     placeholder="email@example.com"
@@ -331,8 +334,8 @@ export default function Customers() {
                 </div>
                 {isAdmin && (
                   <div className="form-group">
-                    <label>Branch *</label>
-                    <select
+                    <label htmlFor="customer-branch">Branch *</label>
+                    <select id="customer-branch"
                       className="form-control"
                       value={form.branch}
                       onChange={(e) =>
@@ -369,10 +372,10 @@ export default function Customers() {
       )}
       {rewardCustomer && (
         <div className="modal-overlay" onClick={() => setRewardCustomer(null)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 620 }}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="reward-modal-title" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 620 }}>
             <div className="modal-header">
               <div>
-                <h3 style={{ display: "flex", alignItems: "center", gap: 8 }}><Gift size={20} /> Issued Rewards</h3>
+                <h3 id="reward-modal-title" style={{ display: "flex", alignItems: "center", gap: 8 }}><Gift size={20} /> Issued Rewards</h3>
                 <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>{rewardCustomer.name} · {rewardCustomer.phone}</p>
               </div>
               <button className="btn-icon" onClick={() => setRewardCustomer(null)} aria-label="Close issued rewards"><X size={20} /></button>

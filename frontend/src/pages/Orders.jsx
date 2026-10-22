@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import useEscapeToClose from "../components/useEscapeToClose";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
@@ -1000,6 +1001,13 @@ export default function Orders() {
   const filtered = orders;
 
   const changedRows = useChangedRows(filtered);
+  useEscapeToClose(showModal, () => setShowModal(false));
+  useEscapeToClose(Boolean(correctionOrder), () => !updatingOrderId && setCorrectionOrder(null));
+  useEscapeToClose(showAdditionalPaymentModal, () => !recordingPayment && setShowAdditionalPaymentModal(false));
+  useEscapeToClose(showPaymentModal, () => updatingOrderId !== selectedOrder?.id && setShowPaymentModal(false));
+  useEscapeToClose(Boolean(cancellingOrder), () => !isCancelling && setCancellingOrder(null));
+  // Registered last so it sits on top: its own Escape handler closes it, and this keeps the dialog beneath open.
+  useEscapeToClose(Boolean(manualPickupReminder), () => setManualPickupReminder(null));
   if (showPageLoader) return <PageLoader label="Loading orders…" />;
   if (loadError) return <PageError message={loadError} onRetry={loadData} />;
 
@@ -1027,7 +1035,7 @@ export default function Orders() {
         <div className="garment-toolbar-actions">
           <div className="search-box">
             <SearchStatusIcon searching={searching} />
-            <input
+            <input autoComplete="off"
               placeholder="Search orders…"
               aria-label="Search by order number or customer name"
               value={searchInput}
@@ -1391,7 +1399,7 @@ export default function Orders() {
             </p>
             <form onSubmit={confirmCorrection}>
               <label htmlFor="correction-reason">Reason for correction</label>
-              <textarea
+              <textarea autoComplete="off"
                 id="correction-reason"
                 className="form-control"
                 value={correctionReason}
@@ -1415,10 +1423,10 @@ export default function Orders() {
       {/* Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="order-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="order-modal" role="dialog" aria-modal="true" aria-labelledby="order-modal-title" onClick={(e) => e.stopPropagation()}>
             <div className="order-modal-header">
               <div>
-                <h3>{editing ? "Edit Order" : "New Order"}</h3>
+                <h3 id="order-modal-title">{editing ? "Edit Order" : "New Order"}</h3>
                 <p>
                   {editing
                     ? `Order #${editing.order_number}`
@@ -1440,8 +1448,8 @@ export default function Orders() {
                   <div className="form-row">
                     {false && serviceTypes.length > 0 && (
                       <div className="form-group">
-                        <label>Service Type *</label>
-                        <select
+                        <label htmlFor="order-service-type">Service Type *</label>
+                        <select id="order-service-type"
                           className="form-control"
                           value={form.service_type_id}
                           onChange={(e) => setForm((f) => ({ ...f, service_type_id: e.target.value }))}
@@ -1457,8 +1465,8 @@ export default function Orders() {
                       </div>
                     )}
                     <div className="form-group">
-                      <label>Phone Number *</label>
-                      <input
+                      <label htmlFor="order-customer-phone">Phone Number *</label>
+                      <input id="order-customer-phone" autoComplete="off"
                         className="form-control"
                         placeholder="09171234567"
                         type="tel"
@@ -1505,8 +1513,8 @@ export default function Orders() {
                       </div>
                     </div>
                     <div className="form-group">
-                      <label>Customer Name *</label>
-                      <input
+                      <label htmlFor="order-customer-name">Customer Name *</label>
+                      <input id="order-customer-name" autoComplete="off"
                         className={`form-control ${phoneMatch?.id ? "is-readonly" : ""}`}
                         placeholder="Juan Dela Cruz"
                         value={form.customer_name}
@@ -1523,8 +1531,8 @@ export default function Orders() {
                     </div>
                     {isAdmin && (
                       <div className="form-group">
-                        <label>Branch *</label>
-                        <select
+                        <label htmlFor="order-branch">Branch *</label>
+                        <select id="order-branch"
                           className="form-control"
                           value={form.branch}
                           onChange={(e) =>
@@ -1546,8 +1554,8 @@ export default function Orders() {
                       order confirmation is sent to the verified address. */}
                   {!editing && form.customer_phone.length >= 11 && (
                     <div className="form-group">
-                      <label>Customer Email (optional)</label>
-                      <input
+                      <label htmlFor="order-customer-email">Customer Email (optional)</label>
+                      <input id="order-customer-email" autoComplete="off" spellCheck={false}
                         className={`form-control ${phoneMatch?.email ? "is-readonly" : ""}`}
                         type="email"
                         placeholder="email@example.com"
@@ -1595,15 +1603,15 @@ export default function Orders() {
                       return <div key={index} className="pricing-card" style={{ marginBottom: 10 }}>
                         <div className="form-row">
                           <div className="form-group" style={{ flex: 2 }}>
-                            <label>Service {index + 1} *</label>
-                            <select className={`form-control ${editing && !['received'].includes(editing.status) ? 'is-readonly' : ''}`} value={item.service_type_id} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { service_type_id: event.target.value, weight_kg: '', quantity: '1' })} required>
+                            <label htmlFor={`order-item-${index}-service`}>Service {index + 1} *</label>
+                            <select id={`order-item-${index}-service`} className={`form-control ${editing && !['received'].includes(editing.status) ? 'is-readonly' : ''}`} value={item.service_type_id} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { service_type_id: event.target.value, weight_kg: '', quantity: '1' })} required>
                               <option value="">Select service</option>
                               {serviceTypes.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
                             </select>
                           </div>
                           {inputLabel && <div className="form-group">
-                            <label>{inputLabel} *</label>
-                            <input className={`form-control ${editing && !['received'].includes(editing.status) ? 'is-readonly' : ''}`} type="number" step="0.1" min="0.1" value={item.weight_kg} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { weight_kg: event.target.value })} required />
+                            <label htmlFor={`order-item-${index}-amount`}>{inputLabel} *</label>
+                            <input id={`order-item-${index}-amount`} autoComplete="off" className={`form-control ${editing && !['received'].includes(editing.status) ? 'is-readonly' : ''}`} type="number" step="0.1" min="0.1" value={item.weight_kg} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { weight_kg: event.target.value })} required />
                           </div>}
                           <div className="form-group" style={{ alignSelf: 'end' }}>
                             <button type="button" className="btn btn-secondary btn-sm" onClick={() => removeServiceItem(index)} disabled={form.items.length === 1 || Boolean(editing && !['received'].includes(editing.status))}>Remove</button>
@@ -1644,6 +1652,7 @@ export default function Orders() {
                               <button
                                 type="button"
                                 className="addon-btn"
+                                aria-label={`Remove one ${item.name}`}
                                 onClick={() => updateAddon(item.id, -1)}
                               >
                                 <Minus size={14} />
@@ -1655,6 +1664,7 @@ export default function Orders() {
                             <button
                               type="button"
                               className="addon-btn addon-btn-add"
+                              aria-label={`Add one ${item.name}`}
                               onClick={() => updateAddon(item.id, 1)}
                               disabled={noStock || qty >= item.current_stock}
                             >
@@ -1788,8 +1798,8 @@ export default function Orders() {
                   </div>}
                   <div className="form-row">
                     <div className="form-group">
-                      <label>Method</label>
-                      <select
+                      <label htmlFor="order-payment-method">Method</label>
+                      <select id="order-payment-method"
                         className="form-control is-readonly"
                         value={form.payment_method}
                         disabled
@@ -1799,8 +1809,8 @@ export default function Orders() {
                       <span className="form-hint is-readonly-hint">Read-only · Cash is the only accepted payment method.</span>
                     </div>
                     <div className="form-group">
-                      <label>Amount Paid Now (₱)</label>
-                      <input
+                      <label htmlFor="order-amount-paid">Amount Paid Now (₱)</label>
+                      <input id="order-amount-paid" autoComplete="off"
                         className={`form-control ${editing ? "is-readonly" : ""}`}
                         type="number"
                         step="0.01"
@@ -1880,10 +1890,10 @@ export default function Orders() {
       )}
       {showAdditionalPaymentModal && (
         <div className="modal-overlay" onClick={() => !recordingPayment && setShowAdditionalPaymentModal(false)}>
-          <div className="order-modal" onClick={(event) => event.stopPropagation()}>
+          <div className="order-modal" role="dialog" aria-modal="true" aria-labelledby="additional-payment-title" onClick={(event) => event.stopPropagation()}>
             <div className="order-modal-header">
               <div>
-                <h3>Record Additional Payment</h3>
+                <h3 id="additional-payment-title">Record Additional Payment</h3>
                 <p style={{ margin: "4px 0 0", color: "var(--text-muted)", fontSize: 13 }}>Order #{selectedOrder?.order_number}</p>
               </div>
               <button className="btn-icon" disabled={recordingPayment} onClick={() => setShowAdditionalPaymentModal(false)} aria-label="Close payment dialog">
@@ -1899,15 +1909,15 @@ export default function Orders() {
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label>Method</label>
-                  <select className="form-control is-readonly" value={additionalPayment.paymentMethod} disabled>
+                  <label htmlFor="additional-payment-method">Method</label>
+                  <select id="additional-payment-method" className="form-control is-readonly" value={additionalPayment.paymentMethod} disabled>
                     <option value="cash">Cash</option>
                   </select>
                   <span className="form-hint is-readonly-hint">Read-only · Cash is the only accepted payment method.</span>
                 </div>
                 <div className="form-group">
-                  <label>Amount to Add (₱)</label>
-                  <input className="form-control" type="number" min="0.01" step="0.01" inputMode="decimal" autoFocus value={additionalPayment.amount} disabled={recordingPayment} onChange={(event) => setAdditionalPayment((current) => ({ ...current, amount: event.target.value }))} placeholder="0.00" />
+                  <label htmlFor="additional-payment-amount">Amount to Add (₱)</label>
+                  <input id="additional-payment-amount" autoComplete="off" className="form-control" type="number" min="0.01" step="0.01" inputMode="decimal" autoFocus value={additionalPayment.amount} disabled={recordingPayment} onChange={(event) => setAdditionalPayment((current) => ({ ...current, amount: event.target.value }))} placeholder="0.00" />
                 </div>
               </div>
               <InfoNote compact title="Auditable payment entry">This adds a separate, auditable payment entry. The original payment will not be changed.</InfoNote>
@@ -1944,11 +1954,12 @@ export default function Orders() {
           className="modal-overlay"
           onClick={() => updatingOrderId !== selectedOrder?.id && setShowPaymentModal(false)}
         >
-          <div className="order-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="order-modal" role="dialog" aria-modal="true" aria-labelledby="complete-payment-title" onClick={(e) => e.stopPropagation()}>
             <div className="order-modal-header">
-              <h3>Complete Payment</h3>
+              <h3 id="complete-payment-title">Complete Payment</h3>
               <button
                 className="btn-icon"
+                aria-label="Close payment"
                 disabled={updatingOrderId === selectedOrder?.id}
                 onClick={() => setShowPaymentModal(false)}
               >
@@ -2012,8 +2023,8 @@ export default function Orders() {
                 <span>Used inventory is returned to <b>{cancellingOrder.branch || "this branch"}</b>. Payments are retained for audit purposes; issue a refund or correction separately when needed.</span>
               </div>
               <div className="form-group">
-                <label>Cancellation reason *</label>
-                <textarea autoFocus className="form-control" rows={4} disabled={isCancelling} value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} placeholder="Explain why this order is being cancelled" />
+                <label htmlFor="cancellation-reason">Cancellation reason *</label>
+                <textarea id="cancellation-reason" autoComplete="off" autoFocus className="form-control" rows={4} disabled={isCancelling} value={cancellationReason} onChange={(event) => setCancellationReason(event.target.value)} placeholder="Explain why this order is being cancelled" />
               </div>
             </div>
             <div className="order-modal-footer">

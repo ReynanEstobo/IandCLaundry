@@ -341,10 +341,10 @@ export default function Settings() {
                 {recoveryEmailMissing && <div className="otp-email-missing" role="alert">No recovery email is bound to your account. Use <strong>Change Bound Email</strong> below to add one before requesting an OTP.</div>}
                 {otpDestination && <div className="account-security-notice" style={{ marginBottom: 14 }}><MailCheck size={16} /><span>Code sent to <strong>{otpDestination}</strong>. It expires in 10 minutes.</span></div>}
                 <div className="form-group">
-                  <label>Email Verification Code</label>
+                  <label htmlFor="settings-password-otp">Email Verification Code</label>
                   <div className="settings-input-wrapper">
                     <KeyRound size={16} className="settings-input-icon" />
-                    <input className={`form-control otp-verification-input ${passwordOtpStatus}`} inputMode="numeric" maxLength={6} disabled={!otpDestination || pwLoading || passwordOtpStatus === "valid" || passwordOtpStatus === "checking"} value={passwordOtp} onChange={(e) => { const code = e.target.value.replace(/\D/g, ''); setPasswordOtp(code); setPasswordOtpStatus("idle"); setPasswordOtpMessage(""); if (code.length === 6) void verifyPasswordOtp(code); }} placeholder="6-digit code" aria-invalid={passwordOtpStatus === "invalid"} required style={{ paddingLeft: 38, textAlign: 'center', letterSpacing: 5, fontWeight: 700 }} />
+                    <input id="settings-password-otp" autoComplete="one-time-code" spellCheck={false} className={`form-control otp-verification-input ${passwordOtpStatus}`} inputMode="numeric" maxLength={6} disabled={!otpDestination || pwLoading || passwordOtpStatus === "valid" || passwordOtpStatus === "checking"} value={passwordOtp} onChange={(e) => { const code = e.target.value.replace(/\D/g, ''); setPasswordOtp(code); setPasswordOtpStatus("idle"); setPasswordOtpMessage(""); if (code.length === 6) void verifyPasswordOtp(code); }} placeholder="6-digit code" aria-invalid={passwordOtpStatus === "invalid"} required style={{ paddingLeft: 38, textAlign: 'center', letterSpacing: 5, fontWeight: 700 }} />
                   </div>
                   {passwordOtpStatus === "checking" && <p className="otp-verification-checking" role="status">Checking OTP…</p>}
                   {passwordOtpMessage && <p className="otp-verification-message" role="alert">{passwordOtpMessage}</p>}
@@ -352,10 +352,10 @@ export default function Settings() {
                 {passwordOtpStatus === "valid" && <div className="otp-verification-success" role="status">OTP verified. You can now set a new password.</div>}
                 <div className="form-row">
                   <div className="form-group">
-                    <label>New Password</label>
+                    <label htmlFor="settings-new-password">New Password</label>
                     <div className="settings-input-wrapper">
                       <Lock size={16} className="settings-input-icon" />
-                      <input
+                      <input id="settings-new-password" autoComplete="new-password"
                         className="form-control"
                         type={showNew ? "text" : "password"}
                         placeholder="Strong password"
@@ -377,10 +377,10 @@ export default function Settings() {
                     </div>
                   </div>
                   <div className="form-group">
-                    <label>Confirm New Password</label>
+                    <label htmlFor="settings-confirm-password">Confirm New Password</label>
                     <div className="settings-input-wrapper">
                       <Lock size={16} className="settings-input-icon" />
-                      <input
+                      <input id="settings-confirm-password" autoComplete="new-password"
                         className="form-control"
                         type={showConfirm ? "text" : "password"}
                         placeholder="Re-enter new password"
@@ -463,7 +463,7 @@ export default function Settings() {
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
-                <input id="setting-default-processing" className="form-control" type="number" min="1" value={defaultProcessingMinutes} onChange={(e) => setDefaultProcessingMinutes(e.target.value)} />
+                <input autoComplete="off" id="setting-default-processing" className="form-control" type="number" min="1" value={defaultProcessingMinutes} onChange={(e) => setDefaultProcessingMinutes(e.target.value)} />
                 <span>min</span>
               </div>
             </div>
@@ -475,7 +475,7 @@ export default function Settings() {
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
-                <input id="setting-undo-window" className="form-control" type="number" min="1" value={statusUndoSeconds} onChange={(e) => setStatusUndoSeconds(e.target.value)} />
+                <input autoComplete="off" id="setting-undo-window" className="form-control" type="number" min="1" value={statusUndoSeconds} onChange={(e) => setStatusUndoSeconds(e.target.value)} />
                 <span>sec</span>
               </div>
             </div>
@@ -487,7 +487,7 @@ export default function Settings() {
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
-                <input id="setting-eta-buffer" className="form-control" type="number" min="1" value={etaBufferMinutes} onChange={(e) => setEtaBufferMinutes(e.target.value)} />
+                <input autoComplete="off" id="setting-eta-buffer" className="form-control" type="number" min="1" value={etaBufferMinutes} onChange={(e) => setEtaBufferMinutes(e.target.value)} />
                 <span>min</span>
               </div>
             </div>
@@ -499,7 +499,7 @@ export default function Settings() {
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
-                <input id="setting-eta-history" className="form-control" type="number" min="1" value={etaMinCompletedOrders} onChange={(e) => setEtaMinCompletedOrders(e.target.value)} />
+                <input autoComplete="off" id="setting-eta-history" className="form-control" type="number" min="1" value={etaMinCompletedOrders} onChange={(e) => setEtaMinCompletedOrders(e.target.value)} />
                 <span>orders</span>
               </div>
             </div>
@@ -547,7 +547,7 @@ export default function Settings() {
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
-                <input id="setting-discount-milestone" className="form-control" type="number" min="1" value={loyaltyDiscountMilestone} onChange={(e) => setLoyaltyDiscountMilestone(e.target.value)} />
+                <input autoComplete="off" id="setting-discount-milestone" className="form-control" type="number" min="1" value={loyaltyDiscountMilestone} onChange={(e) => setLoyaltyDiscountMilestone(e.target.value)} />
                 <span>order #</span>
               </div>
             </div>
@@ -559,7 +559,7 @@ export default function Settings() {
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
-                <input id="setting-discount-percent" className="form-control" type="number" min="1" max="100" value={loyaltyDiscountPercent} onChange={(e) => setLoyaltyDiscountPercent(e.target.value)} />
+                <input autoComplete="off" id="setting-discount-percent" className="form-control" type="number" min="1" max="100" value={loyaltyDiscountPercent} onChange={(e) => setLoyaltyDiscountPercent(e.target.value)} />
                 <span>%</span>
               </div>
             </div>
@@ -571,7 +571,7 @@ export default function Settings() {
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
-                <input id="setting-free-load-milestone" className="form-control" type="number" min="2" value={loyaltyFreeLoadMilestone} onChange={(e) => setLoyaltyFreeLoadMilestone(e.target.value)} />
+                <input autoComplete="off" id="setting-free-load-milestone" className="form-control" type="number" min="2" value={loyaltyFreeLoadMilestone} onChange={(e) => setLoyaltyFreeLoadMilestone(e.target.value)} />
                 <span>order #</span>
               </div>
             </div>
@@ -583,7 +583,7 @@ export default function Settings() {
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
-                <input id="setting-reward-expiry" className="form-control" type="number" min="1" value={loyaltyRewardExpiryDays} onChange={(e) => setLoyaltyRewardExpiryDays(e.target.value)} />
+                <input autoComplete="off" id="setting-reward-expiry" className="form-control" type="number" min="1" value={loyaltyRewardExpiryDays} onChange={(e) => setLoyaltyRewardExpiryDays(e.target.value)} />
                 <span>days</span>
               </div>
             </div>

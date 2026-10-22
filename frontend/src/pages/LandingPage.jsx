@@ -674,7 +674,7 @@ export default function LandingPage() {
           <div
             className={`landing-hero-image ${heroVisible ? "animate-in-right" : ""}`}
           >
-            <img src="/assets/image%2046.png" alt="I&C Laundry mascot" />
+            <img src="/assets/image%2046.png" width={1024} height={1024} fetchPriority="high" alt="I&C Laundry mascot" />
           </div>
         </div>
       </section>
@@ -736,7 +736,7 @@ export default function LandingPage() {
                   style={{ animationDelay: `${parseInt(item.num) * 0.15}s` }}
                 >
                   <div className="landing-step-icon">
-                    <img src={item.img} alt={item.alt} />
+                    <img src={item.img} width={100} height={100} loading="lazy" alt={item.alt} />
                   </div>
                   <div className="landing-step-number">{item.num}</div>
                   <h3>{item.title}</h3>
@@ -765,7 +765,7 @@ export default function LandingPage() {
             <form className="track-form" onSubmit={handleTrack}>
               <div className="track-input-wrap">
                 <Package size={18} className="track-input-icon" />
-                <input
+                <input aria-label="Order number" autoComplete="off" spellCheck={false}
                   type="text"
                   placeholder="Enter order number (e.g. IC-20260327-1234)"
                   value={trackOrderId}
@@ -974,8 +974,8 @@ export default function LandingPage() {
               </div>
               <div className="landing-form-row">
                 <div className="landing-form-group">
-                  <label>Name</label>
-                  <input
+                  <label htmlFor="contact-name">Name</label>
+                  <input id="contact-name" autoComplete="name"
                     type="text"
                     name="name"
                     placeholder="Your Name"
@@ -986,8 +986,8 @@ export default function LandingPage() {
                   />
                 </div>
                 <div className="landing-form-group">
-                  <label>Email</label>
-                  <input
+                  <label htmlFor="contact-email">Email</label>
+                  <input id="contact-email" autoComplete="email" spellCheck={false}
                     type="email"
                     name="email"
                     placeholder="Your Email"
@@ -1000,8 +1000,8 @@ export default function LandingPage() {
               </div>
               <div className="landing-form-row">
                 <div className="landing-form-group">
-                  <label>Phone</label>
-                  <input
+                  <label htmlFor="contact-phone">Phone</label>
+                  <input id="contact-phone" autoComplete="tel"
                     type="tel"
                     name="phone"
                     placeholder="09171234567"
@@ -1014,8 +1014,8 @@ export default function LandingPage() {
                   />
                 </div>
                 <div className="landing-form-group">
-                  <label>Address</label>
-                  <input
+                  <label htmlFor="contact-address">Address</label>
+                  <input id="contact-address" autoComplete="street-address"
                     type="text"
                     name="address"
                     placeholder="Your Address"
@@ -1026,8 +1026,8 @@ export default function LandingPage() {
                 </div>
               </div>
               <div className="landing-form-group">
-                <label>Message</label>
-                <textarea
+                <label htmlFor="contact-message">Message</label>
+                <textarea id="contact-message" autoComplete="off"
                   name="message"
                   placeholder="Your Message"
                   rows="4"
@@ -1137,7 +1137,7 @@ export default function LandingPage() {
       <LandingChatbot settings={settings} services={services} onServicesChange={setServices} />
       {/* 🔝 Back to Top Button */}
       {showTopBtn && (
-        <button className="back-to-top" onClick={scrollToTop}>
+        <button className="back-to-top" aria-label="Back to top" onClick={scrollToTop}>
           <ChevronUp size={18} />
         </button>
       )}

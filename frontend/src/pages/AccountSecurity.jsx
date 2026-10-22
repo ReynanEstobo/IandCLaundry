@@ -1,5 +1,5 @@
 import { CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, MailCheck, ShieldCheck } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { apiFetch } from '../services/api/client'
@@ -18,12 +18,18 @@ const ACCOUNT_TABS = [
   { id: 'session', label: 'Session', icon: LogOut },
 ]
 
+function tabFromHash() {
+  const id = window.location.hash.replace('#account-', '')
+  return ACCOUNT_TABS.some(tab => tab.id === id) ? id : ACCOUNT_TABS[0].id
+}
+
 function PasswordField({ label, value, onChange, visible, onToggle, placeholder, disabled }) {
+  const fieldId = useId()
   return <div className="login-field">
-    <label>{label}</label>
+    <label htmlFor={fieldId}>{label}</label>
     <div className="login-input-wrap">
       <LockKeyhole size={15} className="login-input-icon" />
-      <input className="login-input login-input-password" type={visible ? 'text' : 'password'} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} minLength={12} placeholder={placeholder} autoComplete="new-password" required />
+      <input id={fieldId} className="login-input login-input-password" type={visible ? 'text' : 'password'} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} minLength={12} placeholder={placeholder} autoComplete="new-password" required />
       <button type="button" className="login-eye-btn" disabled={disabled} onClick={onToggle} aria-label={visible ? `Hide ${label}` : `Show ${label}`}>
         {visible ? <EyeOff size={15} /> : <Eye size={15} />}
       </button>
@@ -47,7 +53,12 @@ export default function AccountSecurity() {
   const [passwordChanged, setPasswordChanged] = useState(false)
   const [visible, setVisible] = useState({ next: false, confirmation: false })
   const cooldown = useOtpCooldown(OTP_COOLDOWN_KEY)
-  const [activeTab, setActiveTab] = useState(ACCOUNT_TABS[0].id)
+  // One tab is shown at a time; the URL hash keeps it linkable.
+  const [activeTab, setActiveTab] = useState(tabFromHash)
+  const selectTab = tabId => {
+    setActiveTab(tabId)
+    window.history.replaceState(window.history.state, '', `#account-${tabId}`)
+  }
 
   async function requestCode() {
     setSendingCode(true)
@@ -108,13 +119,13 @@ export default function AccountSecurity() {
     if (event.key === 'End') next = ACCOUNT_TABS[ACCOUNT_TABS.length - 1]
     if (!next) return
     event.preventDefault()
-    setActiveTab(next.id)
+    selectTab(next.id)
     document.getElementById(`account-tab-${next.id}`)?.focus()
   }
   return <div className="account-security-page settings-layout">
     <div className="settings-tabs" role="tablist" aria-label="Account sections" aria-orientation="vertical" onKeyDown={handleTabKeyDown}>
       {ACCOUNT_TABS.map(({ id, label, icon: Icon }) => (
-        <button key={id} type="button" role="tab" id={`account-tab-${id}`} className="settings-tab" aria-selected={activeTab === id} aria-controls={`account-panel-${id}`} tabIndex={activeTab === id ? 0 : -1} onClick={() => setActiveTab(id)}>
+        <button key={id} type="button" role="tab" id={`account-tab-${id}`} className="settings-tab" aria-selected={activeTab === id} aria-controls={`account-panel-${id}`} tabIndex={activeTab === id ? 0 : -1} onClick={() => selectTab(id)}>
           <Icon size={16} aria-hidden="true" /> {label}
         </button>
       ))}
@@ -131,13 +142,13 @@ export default function AccountSecurity() {
           <MailCheck size={16} /> {destination ? cooldown.label : 'Send verification code'}
         </LoadingButton>
         {cooldown.remaining > 0 && <p className="otp-cooldown-notice" role="status">{cooldown.message}</p>}
-        {recoveryEmailMissing && <div className="otp-email-missing" role="alert">No recovery email is bound to your account. Open the <button type="button" className="login-forgot-password" onClick={() => setActiveTab('recovery-email')}>Recovery email</button> tab to add one before requesting an OTP.</div>}
+        {recoveryEmailMissing && <div className="otp-email-missing" role="alert">No recovery email is bound to your account. Open the <button type="button" className="login-forgot-password" onClick={() => selectTab('recovery-email')}>Recovery email</button> tab to add one before requesting an OTP.</div>}
         {destination && <div className="account-security-notice"><MailCheck size={16} /><span>Code sent to <strong>{destination}</strong>. It expires in 10 minutes.</span></div>}
         <div className="login-field" style={{ marginTop: 16 }}>
-          <label>Email verification code</label>
+          <label htmlFor="account-security-otp">Email verification code</label>
           <div className="login-input-wrap">
             <KeyRound size={15} className="login-input-icon" />
-            <input className={`login-input account-security-otp otp-verification-input ${otpStatus}`} inputMode="numeric" maxLength={6} value={otp} disabled={!destination || saving || otpStatus === 'valid' || otpStatus === 'checking'} onChange={event => { const code = event.target.value.replace(/\D/g, ''); setOtp(code); setOtpStatus('idle'); setOtpMessage(''); if (code.length === 6) void verifyCode(code) }} placeholder="000000" aria-invalid={otpStatus === 'invalid'} required />
+            <input id="account-security-otp" autoComplete="one-time-code" spellCheck={false} className={`login-input account-security-otp otp-verification-input ${otpStatus}`} inputMode="numeric" maxLength={6} value={otp} disabled={!destination || saving || otpStatus === 'valid' || otpStatus === 'checking'} onChange={event => { const code = event.target.value.replace(/\D/g, ''); setOtp(code); setOtpStatus('idle'); setOtpMessage(''); if (code.length === 6) void verifyCode(code) }} placeholder="000000" aria-invalid={otpStatus === 'invalid'} required />
           </div>
           {otpStatus === 'checking' && <p className="otp-verification-checking" role="status">Checking OTP…</p>}
           {otpMessage && <p className="otp-verification-message" role="alert">{otpMessage}</p>}

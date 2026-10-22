@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, RotateCcw, X } from "lucide-react";
 import LoadingButton from './LoadingButton'
+import useEscapeToClose from './useEscapeToClose'
 
 /** A keyboard-accessible in-app confirmation dialog; never uses window.confirm. */
 export default function ConfirmDialog({
@@ -13,6 +14,7 @@ export default function ConfirmDialog({
   onConfirm,
   onClose,
 }) {
+  useEscapeToClose(open, () => !loading && onClose());
   if (!open) return null;
   const isRestore = variant === "restore";
   const isPrimary = variant === "primary";

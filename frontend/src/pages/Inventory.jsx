@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import useEscapeToClose from "../components/useEscapeToClose";
 import toast from "react-hot-toast";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
@@ -256,6 +257,8 @@ export default function Inventory() {
   });
   const changedRows = useChangedRows(filtered);
 
+  useEscapeToClose(showModal, () => setShowModal(false));
+  useEscapeToClose(Boolean(showRestock), () => setShowRestock(null));
   if (showPageLoader) return <PageLoader label="Loading inventory…" />;
   if (loadError) return <PageError message={loadError} onRetry={loadData} />;
 
@@ -274,7 +277,7 @@ export default function Inventory() {
           <div className="search-box">
             <SearchStatusIcon searching={searching} />
 
-            <input
+            <input aria-label="Search items" autoComplete="off"
               placeholder="Search items…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -283,7 +286,7 @@ export default function Inventory() {
 
           {/* ADMIN ONLY BRANCH FILTER */}
           {role === "admin" && (
-            <select
+            <select aria-label="Filter by branch"
               className="form-control"
               value={branchFilter}
               onChange={(e) => { setBranchFilter(e.target.value); setPage(0); }}
@@ -500,10 +503,10 @@ export default function Inventory() {
       {/* Add/Edit Item Modal */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="inventory-modal-title" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div>
-                <h3>{editing ? "Edit Item" : "Add Item"}</h3>
+                <h3 id="inventory-modal-title">{editing ? "Edit Item" : "Add Item"}</h3>
                 <p>Set the item’s branch, measuring unit, and stock threshold.</p>
               </div>
               <button className="btn-icon" type="button" aria-label="Close inventory item form" onClick={() => setShowModal(false)}>
@@ -514,8 +517,8 @@ export default function Inventory() {
               <div className="modal-body">
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Item Name *</label>
-                    <input
+                    <label htmlFor="inventory-item-name">Item Name *</label>
+                    <input id="inventory-item-name" autoComplete="off"
                       className="form-control"
                       placeholder="e.g. Ariel Powder"
                       value={form.name}
@@ -531,9 +534,9 @@ export default function Inventory() {
                   {/* ADMIN ONLY BRANCH ASSIGNMENT */}
                   {role === "admin" && (
                     <div className="form-group">
-                      <label>Assigned Branch *</label>
+                      <label htmlFor="inventory-item-branch">Assigned Branch *</label>
 
-                      <select
+                      <select id="inventory-item-branch"
                         className={`form-control ${editing ? "is-readonly" : ""}`}
                         value={form.branch}
                         disabled={Boolean(editing)}
@@ -556,9 +559,9 @@ export default function Inventory() {
 
                   {/* UNIT */}
                   <div className="form-group">
-                    <label>Unit</label>
+                    <label htmlFor="inventory-item-unit">Unit</label>
 
-                    <select
+                    <select id="inventory-item-unit"
                       className={`form-control ${editing ? "is-readonly" : ""}`}
                       value={form.unit}
                       disabled={Boolean(editing)}
@@ -583,8 +586,8 @@ export default function Inventory() {
                 </div>
                 <div className="form-row">
                   <div className="form-group">
-                    <label>Current Stock *</label>
-                    <input
+                    <label htmlFor="inventory-current-stock">Current Stock *</label>
+                    <input id="inventory-current-stock" autoComplete="off"
                       className={`form-control ${editing ? "is-readonly" : ""}`}
                       type="number"
                       min="0"
@@ -603,8 +606,8 @@ export default function Inventory() {
                     {editing && <span className="form-hint is-readonly-hint">Read-only · Use Restock to increase stock. Order usage and cancellations update it automatically.</span>}
                   </div>
                   <div className="form-group">
-                    <label>Minimum Stock Level</label>
-                    <input
+                    <label htmlFor="inventory-minimum-stock">Minimum Stock Level</label>
+                    <input id="inventory-minimum-stock" autoComplete="off"
                       className="form-control"
                       type="number"
                       min="0"
@@ -622,8 +625,8 @@ export default function Inventory() {
                 </div>
                 {!editing && <div className="form-row">
                   <div className="form-group">
-                    <label>Total Initial Stock Cost (₱)</label>
-                    <input
+                    <label htmlFor="inventory-initial-cost">Total Initial Stock Cost (₱)</label>
+                    <input id="inventory-initial-cost" autoComplete="off"
                       className="form-control"
                       type="number"
                       min="0"
@@ -664,12 +667,15 @@ export default function Inventory() {
         <div className="modal-overlay" onClick={() => setShowRestock(null)}>
           <div
             className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="restock-modal-title"
             style={{ maxWidth: 400 }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="modal-header">
               <div>
-                <h3>Restock {showRestock.name}</h3>
+                <h3 id="restock-modal-title">Restock {showRestock.name}</h3>
                 <p>Record the quantity received and optional purchase details.</p>
               </div>
               <button className="btn-icon" type="button" aria-label="Close restock form" disabled={restocking} onClick={() => setShowRestock(null)}>
@@ -691,8 +697,8 @@ export default function Inventory() {
                   </strong>
                 </p>
                 <div className="form-group">
-                  <label>Quantity to Add *</label>
-                  <input
+                  <label htmlFor="restock-quantity">Quantity to Add *</label>
+                  <input id="restock-quantity" autoComplete="off"
                     className="form-control"
                     type="number"
                     step="0.01"
@@ -704,8 +710,8 @@ export default function Inventory() {
                   />
                 </div>
                 <div className="form-group">
-                  <label>Total Cost (₱)</label>
-                  <input
+                  <label htmlFor="restock-cost">Total Cost (₱)</label>
+                  <input id="restock-cost" autoComplete="off"
                     className="form-control"
                     type="number"
                     step="0.01"

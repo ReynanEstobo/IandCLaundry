@@ -291,9 +291,9 @@ I&C Laundry`,
 
             <form onSubmit={handleSendEmail}>
               <div className="form-group">
-                <label>Recipient Email *</label>
+                <label htmlFor="email-recipient">Recipient Email *</label>
 
-                <input
+                <input id="email-recipient" autoComplete="off" spellCheck={false}
                   className="form-control"
                   type="email"
                   placeholder="customer@email.com"
@@ -309,9 +309,9 @@ I&C Laundry`,
               </div>
 
               <div className="form-group">
-                <label>Subject *</label>
+                <label htmlFor="email-subject">Subject *</label>
 
-                <input
+                <input id="email-subject" autoComplete="off"
                   className="form-control"
                   placeholder="e.g. Your laundry is ready!"
                   value={emailForm.subject}
@@ -326,9 +326,9 @@ I&C Laundry`,
               </div>
 
               <div className="form-group">
-                <label>Message *</label>
+                <label htmlFor="email-message">Message *</label>
 
-                <textarea
+                <textarea id="email-message" autoComplete="off"
                   className="form-control"
                   rows={6}
                   placeholder="Type your message…"

@@ -985,7 +985,7 @@ Rules:
       <div className="analytics-filter-toolbar">
         {/* DATE FILTER */}
         <div className="analytics-date-filter">
-          <input
+          <input autoComplete="off"
             type="date"
             value={customRange.start || ""}
             aria-label="Start date"
@@ -997,7 +997,7 @@ Rules:
 
           <span className="analytics-date-divider">→</span>
 
-          <input
+          <input autoComplete="off"
             type="date"
             value={customRange.end || ""}
             aria-label="End date"

@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import { Edit2, Eye, EyeOff, KeyRound, Plus, Search, Trash2, X } from "lucide-react";
 
 import { useCallback, useEffect, useState } from "react";
+import useEscapeToClose from "../components/useEscapeToClose";
 
 import toast from "react-hot-toast";
 
@@ -304,6 +305,8 @@ export default function Staff() {
   // ─────────────────────────────────────
   // LOADING
   // ─────────────────────────────────────
+  useEscapeToClose(showModal, () => setShowModal(false));
+  useEscapeToClose(Boolean(issuedCredentials), () => setIssuedCredentials(null));
   if (showPageLoader) return <PageLoader label="Loading staff…" />;
   if (loadError) return <PageError message={loadError} onRetry={loadStaff} />;
 
@@ -315,7 +318,7 @@ export default function Staff() {
         <div className="search-box">
           <Search />
 
-          <input
+          <input aria-label="Search staff" autoComplete="off"
             placeholder="Search staff…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -435,11 +438,11 @@ export default function Staff() {
       {/* MODAL */}
       {showModal && (
         <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="staff-modal-title" onClick={(e) => e.stopPropagation()}>
             {/* HEADER */}
             <div className="modal-header">
               <div>
-                <h3>{editing ? "Edit Account" : "Add Account"}</h3>
+                <h3 id="staff-modal-title">{editing ? "Edit Account" : "Add Account"}</h3>
                 <p>Configure identity, access role, and branch assignment.</p>
               </div>
 
@@ -455,9 +458,9 @@ export default function Staff() {
                 <div className="form-row">
                   {/* FULL NAME */}
                   <div className="form-group">
-                    <label>Full Name *</label>
+                    <label htmlFor="staff-full-name">Full Name *</label>
 
-                    <input
+                    <input id="staff-full-name" autoComplete="off"
                       className="form-control"
                       placeholder="Juan Dela Cruz"
                       value={form.full_name}
@@ -474,9 +477,9 @@ export default function Staff() {
 
                   {/* PHONE */}
                   <div className="form-group">
-                    <label>Phone Number</label>
+                    <label htmlFor="staff-phone">Phone Number</label>
 
-                    <input
+                    <input id="staff-phone" autoComplete="off"
                       className="form-control"
                       placeholder="09171234567"
                       value={form.phone}
@@ -496,7 +499,7 @@ export default function Staff() {
 
                 {/* EMAIL */}
                 <div className="form-group">
-                  <label>
+                  <label htmlFor="staff-email">
                     Contact email{form.role === "admin" ? " *" : " "}
                     <span
                       style={{
@@ -509,7 +512,7 @@ export default function Staff() {
                     </span>
                   </label>
 
-                  <input
+                  <input id="staff-email" autoComplete="off" spellCheck={false}
                     className="form-control"
                     type="email"
                     placeholder="staff@example.com"
@@ -529,9 +532,9 @@ export default function Staff() {
                 <div className="form-row">
                   {/* POSITION */}
                   <div className="form-group">
-                    <label>Position</label>
+                    <label htmlFor="staff-position">Position</label>
 
-                    <input
+                    <input id="staff-position" autoComplete="off"
                       className="form-control"
                       placeholder="e.g. Cashier, Washer"
                       value={form.position}
@@ -547,9 +550,9 @@ export default function Staff() {
 
                   {/* Administrators are global; a branch selector only applies to staff. */}
                   {form.role === "staff" && <div className="form-group">
-                    <label>Assigned Branch *</label>
+                    <label htmlFor="staff-branch">Assigned Branch *</label>
 
-                    <select
+                    <select id="staff-branch"
                       className="form-control"
                       value={form.branch}
                       onChange={(e) =>
@@ -571,9 +574,9 @@ export default function Staff() {
 
                 {/* ROLE */}
                 <div className="form-group">
-                  <label>Role *</label>
+                  <label htmlFor="staff-role">Role *</label>
 
-                  <select
+                  <select id="staff-role"
                     className="form-control"
                     value={form.role}
                     onChange={(e) =>
@@ -697,10 +700,10 @@ export default function Staff() {
       )}
       {issuedCredentials && (
         <div className="modal-overlay" onClick={() => setIssuedCredentials(null)}>
-          <div className="modal" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 480 }}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="credentials-modal-title" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 480 }}>
             <div className="modal-header">
-              <h3>{issuedCredentials.role === "admin" ? "Administrator" : "Staff"} credentials created</h3>
-              <button className="btn-icon" onClick={() => setIssuedCredentials(null)}><X size={20} /></button>
+              <h3 id="credentials-modal-title">{issuedCredentials.role === "admin" ? "Administrator" : "Staff"} credentials created</h3>
+              <button className="btn-icon" aria-label="Close credentials" onClick={() => setIssuedCredentials(null)}><X size={20} /></button>
             </div>
             <div className="modal-body">
               <p style={{ marginTop: 0, color: "var(--text-muted)", lineHeight: 1.55 }}>

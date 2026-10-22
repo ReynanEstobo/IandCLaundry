@@ -57,7 +57,7 @@ export default function Login() {
         <div className="login-left-circle login-left-circle-1" />
         <div className="login-left-circle login-left-circle-2" />
         <div className="login-left-circle login-left-circle-3" />
-        <img src="/assets/Rectangle.png" alt="I&C Laundry" className="login-left-logo" />
+        <img src="/assets/Rectangle.png" width={1024} height={1024} alt="I&C Laundry" className="login-left-logo" />
         <div className="login-left-text">
           <h1>I&C Laundry</h1>
           <p>Orders, customers, and inventory for every I&C Laundry branch.</p>
@@ -72,16 +72,16 @@ export default function Login() {
           </button>
           <div className="login-card-enhanced">
             <div className="login-card-header">
-              <div className="login-card-icon"><img src="/assets/Rectangle.png" alt="I&C Laundry" /></div>
+              <div className="login-card-icon"><img src="/assets/Rectangle.png" width={1024} height={1024} alt="I&C Laundry" /></div>
               <div><h2>Welcome back</h2><p>Sign in to I&C Laundry dashboard</p></div>
             </div>
             {error && <div className="login-error-enhanced"><AlertCircle size={15} />{error}</div>}
             <form onSubmit={handleSubmit} className="login-form" autoComplete="on">
               <div className="login-field">
-                <label>Account ID or Username</label>
+                <label htmlFor="login-username">Account ID or Username</label>
                 <div className="login-input-wrap">
                   <UserRound size={15} className="login-input-icon" />
-                  <input
+                  <input id="login-username" spellCheck={false}
                     className="login-input"
                     type="text"
                     name="username"
@@ -98,10 +98,10 @@ export default function Login() {
                 </div>
               </div>
               <div className="login-field">
-                <label>Password</label>
+                <label htmlFor="login-password">Password</label>
                 <div className="login-input-wrap">
                   <Lock size={15} className="login-input-icon" />
-                  <input
+                  <input id="login-password"
                     className="login-input login-input-password"
                     type={showPassword ? 'text' : 'password'}
                     name="password"

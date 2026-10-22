@@ -111,7 +111,7 @@ export default function LandingChatbot({ settings, services = [], onServicesChan
   return <div className="laundry-chat">
     {open && <section id="laundry-chat-panel" className="laundry-chat-panel" role="dialog" aria-modal="false" aria-labelledby="laundry-chat-title" onKeyDown={event => { if (event.key === 'Escape') close(); }}>
       <header className="laundry-chat-header">
-        <div className="laundry-chat-avatar"><img src="/assets/Rectangle.png" alt="I&C Laundry" /></div>
+        <div className="laundry-chat-avatar"><img src="/assets/Rectangle.png" width={1024} height={1024} alt="I&C Laundry" /></div>
         <div><h2 id="laundry-chat-title">I&C Laundry assistant</h2><p><span className="laundry-chat-status" /> Your automated FAQ guide</p></div>
         <button type="button" onClick={close} aria-label="Close chat"><X size={21} /></button>
       </header>
@@ -124,11 +124,11 @@ export default function LandingChatbot({ settings, services = [], onServicesChan
           {message.map && <a href="https://www.google.com/maps/search/?api=1&query=Paz+Street+Brgy+7+Balayan+Batangas" target="_blank" rel="noopener noreferrer">Find the area on Google Maps ↗</a>}
           {message.facebook && <a className="laundry-chat-facebook-link" href="https://web.facebook.com/profile.php?id=100089597336119" target="_blank" rel="noopener noreferrer"><FacebookIcon size={14} title="" /> Open I and C Laundry Hub on Facebook ↗</a>}
         </div>)}
-        {isTyping && <div className="laundry-chat-typing" role="status" aria-label="I&C Laundry assistant is typing"><img src="/assets/Rectangle.png" alt="" /><div><span>I&C assistant is replying</span><p><i /><i /><i /></p></div></div>}
+        {isTyping && <div className="laundry-chat-typing" role="status" aria-label="I&C Laundry assistant is typing"><img src="/assets/Rectangle.png" width={1024} height={1024} alt="" /><div><span>I&C assistant is replying</span><p><i /><i /><i /></p></div></div>}
       </div>
       <div className="laundry-chat-suggestions"><span className="laundry-chat-topics-label">Explore a quick question</span><div className="laundry-chat-topics" aria-label="Suggested questions" onPointerDown={startTopicDrag} onPointerMove={moveTopicDrag} onPointerUp={finishTopicDrag} onPointerCancel={finishTopicDrag} onClickCapture={event => { if (topicDrag.current.suppressClick) { event.preventDefault(); event.stopPropagation(); } }}>{topics.map((topic, index) => { const Icon = topicIcons[index]; return <button type="button" key={topic} onClick={() => ask(topic)} disabled={isTyping}><Icon size={14} aria-hidden="true" />{topic}<ArrowUpRight className="laundry-chat-topic-arrow" size={13} aria-hidden="true" /></button>; })}</div></div>
       <form className="laundry-chat-form" onSubmit={event => { event.preventDefault(); ask(draft); }}>
-        <input ref={input} aria-label="Your question" placeholder="Ask a quick question…" maxLength={300} value={draft} onChange={event => setDraft(event.target.value)} />
+        <input autoComplete="off" ref={input} aria-label="Your question" placeholder="Ask a quick question…" maxLength={300} value={draft} onChange={event => setDraft(event.target.value)} />
         <button type="submit" disabled={!draft.trim() || isTyping} aria-label="Send question"><Send size={19} /></button>
       </form>
       <p className="laundry-chat-note">For personal order concerns, contact our team.</p>
