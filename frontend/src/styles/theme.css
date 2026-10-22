@@ -28,12 +28,12 @@
   --violet: #6a4fa3;
   --violet-light: #f2eefa;
 
-  --bg-body: #f5f5f2;
+  --bg-body: #f9fafb;
   --bg-card: #ffffff;
-  --bg-secondary: #f2f2ee;
-  --bg-sidebar: #fbfbf9;
+  --bg-secondary: #f4f6f8;
+  --bg-sidebar: #ffffff;
   --bg-input: #ffffff;
-  --bg-hover: #f0f0ec;
+  --bg-hover: #eef1f4;
   --surface: var(--bg-card);
 
   --text-primary: #1b1d1f;
@@ -261,7 +261,7 @@ button, a, input, select, textarea, label, [role="button"] { touch-action: manip
    floating above the warm page background. Dark mode stays flat, where
    shadows barely show and borders carry the separation. */
 :root:not([data-theme="dark"]) {
-  --shadow-surface: 0 1px 2px rgba(24, 22, 16, 0.04), 0 4px 14px rgba(24, 22, 16, 0.06);
+  --shadow-surface: 0 1px 3px rgba(16, 24, 40, 0.07), 0 6px 18px rgba(16, 24, 40, 0.09);
 }
 :root:not([data-theme="dark"]) :is(.card, .settings-card, .data-table-card, .audit-section-card,
   .notification-audit-card, .dashboard-overview-card, .page-header-card, .dashboard-ai-card,
@@ -668,6 +668,60 @@ table tbody tr:last-child td { border-bottom: 0; }
 .staff-dss-overview .admin-dss-alert { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
 .staff-dss-overview .admin-dss-restock-button { width: 100%; justify-content: center; margin: 0; grid-column: auto; }
 .staff-dss-ok { margin: 0 12px 12px; background: var(--success-light); color: var(--success); }
+
+/* Dashboard KPI cards (admin and staff): no outline; the surface shadow
+   carries them. Analytics' cards and the AI Decision Support card are untouched. */
+.staff-dashboard-stats .stat-card { border-color: transparent; }
+
+/* Every card has no outline, outer containers and the cards inside them
+   alike. Two exceptions keep their borders: the AI Decision Support card and
+   Analytics' Operational Performance section (its card, lists and tiles). */
+:is(.card, .settings-card, .data-table-card, .audit-section-card, .notification-audit-card,
+  .dashboard-overview-card, .page-header-card, .change-email-card, .account-security-card,
+  .account-security-session-card, .stat-card, .kanban-column, .kanban-card, .staff-kanban-card,
+  .staff-dss-overview, .dashboard-suggestion, .order-services-detail, .orders-table-wrapper,
+  .skeleton-card, .auth-card, .login-card-enhanced, .pricing-card, .track-card,
+  .landing-footer-contact-card):not(.dashboard-ai-card):not(:has(.operational-lists)) {
+  border-color: transparent;
+}
+.card:has(.operational-lists) .stat-card { border-color: var(--border); }
+
+/* Decision support cards take the KPI card design: white, no outline, the
+   same surface shadow. Dark mode keeps a thin border, because there the
+   cards share the panel colour and have no shadow to separate them. */
+.staff-dss-overview :is(.staff-dss-metric, .staff-dss-revenue, .staff-dss-alert-group, .staff-dss-ok) {
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--bg-card);
+}
+:root:not([data-theme="dark"]) .staff-dss-overview :is(.staff-dss-metric, .staff-dss-revenue, .staff-dss-alert-group, .staff-dss-ok) {
+  box-shadow: var(--shadow-surface);
+}
+[data-theme="dark"] .staff-dss-overview :is(.staff-dss-metric, .staff-dss-revenue, .staff-dss-alert-group, .staff-dss-ok) {
+  border-color: var(--border);
+}
+/* Revenue trend pill: only as wide as its text. */
+.staff-dss-overview .staff-dss-revenue .forecast-trend { align-self: flex-start; }
+/* "Review stock" uses the same button as "Review Inventory" in Suggestions
+   & Alerts: card background, firm outline, normal text, btn-sm size. */
+.staff-dss-overview .admin-dss-restock-button {
+  min-height: 34px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  box-shadow: none;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+/* One hover for "Review stock" and the low-stock pager's Previous / Next
+   (replacing the pager's legacy purple hover). */
+@media (hover: hover) and (pointer: fine) {
+  .staff-dss-overview :is(.admin-dss-restock-button, .overview-pagination-button):hover:not(:disabled) {
+    border-color: var(--border-strong);
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+}
 
 /* Suggestions: one list, tone carried by the icon rather than the whole row. */
 .dashboard-suggestion {
