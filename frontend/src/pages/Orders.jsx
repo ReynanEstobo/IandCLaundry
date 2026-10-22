@@ -77,46 +77,44 @@ function serviceItemsForDisplay(order) {
   }];
 }
 
+// The services of one order as a compact sub-table: one row per service with
+// its add-ons beneath it. The order number is on the row/card it opens from.
 function OrderServicesDetail({ order, id }) {
   const items = serviceItemsForDisplay(order);
   return (
     <section id={id} className="order-services-detail" aria-label={`Services in order ${order.order_number}`}>
-      <div className="order-services-detail-heading">
-        <div>
-          <span className="order-services-detail-eyebrow">Order services</span>
-          <strong>{order.order_number}</strong>
+      <div className="order-services-table" role="table" aria-label={`Services in order ${order.order_number}`}>
+        <div className="order-services-row order-services-head" role="row">
+          <span role="columnheader">Service</span>
+          <span role="columnheader">Weight</span>
+          <span role="columnheader">Loads</span>
+          <span role="columnheader">Subtotal</span>
         </div>
-        <span className="order-services-detail-count">{items.length} service{items.length === 1 ? "" : "s"}</span>
-      </div>
-      <div className="order-services-detail-grid">
         {items.map((item, index) => (
-          <article className="order-service-detail-card" key={item.id || `${order.id}-${index}`}>
-            <div className="order-service-detail-topline">
-              <div className="order-service-detail-name">
-                <span className="order-service-number">{index + 1}</span>
+          <div className="order-services-row" role="row" key={item.id || `${order.id}-${index}`}>
+            <span className="order-services-name" role="cell">
+              <span className="order-service-number" aria-hidden="true">{index + 1}</span>
+              <span>
                 <strong>{item.service_name_snapshot || "Laundry service"}</strong>
-              </div>
-              <span className={`badge badge-${item.status || order.status}`}>
-                {STATUS_LABELS[item.status || order.status] || item.status || order.status}
+                {item.order_item_addons?.length > 0 && (
+                  <span className="order-service-addons">
+                    <span className="order-service-addons-title">Add-ons</span>
+                    <ul aria-label={`Add-ons for ${item.service_name_snapshot || "service"}`}>
+                      {item.order_item_addons.map((addon) => (
+                        <li key={addon.id}>
+                          <span>{addon.item_name_snapshot} {"×"} {Number(addon.quantity).toLocaleString()}</span>
+                          <span>{"₱"}{Number(addon.subtotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </span>
+                )}
               </span>
-            </div>
-            <div className="order-service-detail-facts">
-              <span><small>Weight</small><b>{Number(item.weight_kg || 0).toLocaleString()} kg</b></span>
-              <span><small>Loads</small><b>{Number(item.loads || 1).toLocaleString()}</b></span>
-              <span><small>Subtotal</small><b>₱{Number(item.subtotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></span>
-            </div>
-            {item.order_item_addons?.length > 0 && (
-              <div className="order-service-addons" aria-label={`Add-ons for ${item.service_name_snapshot || "service"}`}>
-                <strong className="order-service-addons-title">Add-ons</strong>
-                {item.order_item_addons.map((addon) => (
-                  <div className="order-service-addon-row" key={addon.id}>
-                    <span>{addon.item_name_snapshot} {"\u00D7"} {Number(addon.quantity).toLocaleString()}</span>
-                    <span>{"\u20B1"}{Number(addon.subtotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </article>
+            </span>
+            <span role="cell" data-label="Weight">{Number(item.weight_kg || 0).toLocaleString()} kg</span>
+            <span role="cell" data-label="Loads">{Number(item.loads || 1).toLocaleString()}</span>
+            <span role="cell" data-label="Subtotal">₱{Number(item.subtotal || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
         ))}
       </div>
     </section>
