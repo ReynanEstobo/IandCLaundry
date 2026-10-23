@@ -1053,8 +1053,10 @@ td[data-card-actions]:has(> .row-actions) { white-space: nowrap; }
 .reward-link.is-empty { border-color: transparent; background: transparent; color: var(--text-muted); font-weight: 400; }
 .reward-link.is-empty:hover { border-color: var(--border); background: var(--bg-hover); color: var(--text-secondary); }
 
-/* Phones: each order becomes a card with its actions at the bottom. */
-@media (max-width: 760px) {
+/* Phones, tablets and laptops narrower than the full table (it needs about
+   1060px beside the sidebar): each order becomes a card with its actions at
+   the bottom. */
+@media (max-width: 1365px) {
   .orders-table tbody { grid-template-columns: minmax(0, 1fr); }
   .orders-table tr.orders-table-row > td { min-width: 0; }
   .orders-table-wrapper { overflow: visible; border: 0; }
@@ -1096,6 +1098,91 @@ td[data-card-actions]:has(> .row-actions) { white-space: nowrap; }
   .orders-table .order-services-row > [data-label]::before { content: attr(data-label); color: var(--text-muted); font-size: 11.5px; }
   .garment-filters { overflow-x: auto; flex-wrap: nowrap; max-width: 100%; }
   .garment-filter-btn { white-space: nowrap; flex-shrink: 0; }
+}
+
+/* Tablets and laptops: two order cards per row. A row's open services panel
+   spans both columns, directly under its order. */
+@media (min-width: 761px) and (max-width: 1365px) {
+  .orders-table tbody { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  .orders-table .order-services-expanded-row { grid-column: 1 / -1; }
+}
+
+/* ---------- Tables on tablets and laptops ----------
+   Phones already show each row as a labelled card (below 640px). Up to
+   1279px a full table no longer fits beside the sidebar, so rows become
+   cards there too, two per row. Wider screens keep the table but let its
+   text wrap, instead of forcing every row onto one line and making the table
+   wider than the page. */
+/* Delivery Audit puts the card class on the table itself; on phones it must
+   still give up its table width so the cards fit. */
+@media (max-width: 640px) {
+  table.responsive-card-table { display: block; width: 100%; min-width: 0; }
+}
+@media (min-width: 641px) and (max-width: 1279px) {
+  .card.data-table-card:has(.responsive-card-table) { overflow: visible; border-color: transparent; background: transparent; box-shadow: none; }
+  .responsive-card-table { overflow: visible; border: 0; background: transparent; }
+  .responsive-card-table table, table.responsive-card-table { display: block; width: 100%; min-width: 0; }
+  .responsive-card-table thead { display: none; }
+  .responsive-card-table tbody { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; padding: 0; }
+  .responsive-card-table tbody tr:not(.empty-state-row) { display: grid; gap: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); }
+  .responsive-card-table tbody td { display: grid; grid-template-columns: minmax(96px, .42fr) minmax(0, 1fr); align-items: center; gap: 12px; min-width: 0; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--border-light); white-space: normal; }
+  .responsive-card-table tbody td::before { content: attr(data-label); color: var(--text-muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .responsive-card-table tbody td[data-card-primary] { display: block; padding: 14px; background: var(--primary-50); font-size: 14px; }
+  .responsive-card-table tbody td[data-card-primary]::before, .responsive-card-table tbody td[data-card-actions]::before { display: none; }
+  .responsive-card-table tbody td[data-card-actions] { display: block; padding: 10px 14px; border-bottom: 0; }
+  .responsive-card-table td[data-card-actions] .row-actions { grid-template-columns: minmax(0, 1fr) auto; justify-content: stretch; }
+  .responsive-card-table td[data-card-actions] .row-actions > .btn { min-height: 40px; }
+  .responsive-card-table td[data-card-actions] .row-actions-trigger { width: auto; height: 40px; min-height: 40px; padding: 0 12px; gap: 6px; }
+  .responsive-card-table td[data-card-actions] .row-actions-trigger .mobile-action-label { display: inline; font-size: 13px; font-weight: 500; }
+  .responsive-card-table .empty-state-row { display: block; grid-column: 1 / -1; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); }
+  .responsive-card-table .empty-state-row td { display: block; width: 100%; border: 0; }
+  .responsive-card-table .empty-state-row td::before { display: none; }
+  .audit-description { min-width: 0; }
+}
+@media (min-width: 1280px) {
+  .table-wrapper table { min-width: 100%; }
+  /* A long email may break so its column does not widen the table. */
+  .table-wrapper td[data-label="Email"], .table-wrapper td[data-label="Contact"] { overflow-wrap: anywhere; }
+}
+
+/* The Dashboard's recent orders sit in a narrow column beside the charts, so
+   they stay as cards until the screen is wide enough for the full table. */
+@media (min-width: 1280px) and (max-width: 1599px) {
+  .dashboard-recent-orders .responsive-card-table { overflow: visible; border: 0; background: transparent; }
+  .dashboard-recent-orders .responsive-card-table table { display: block; width: 100%; min-width: 0; }
+  .dashboard-recent-orders .responsive-card-table thead { display: none; }
+  .dashboard-recent-orders .responsive-card-table tbody { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px; }
+  .dashboard-recent-orders .responsive-card-table tbody tr:not(.empty-state-row) { display: grid; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); }
+  .dashboard-recent-orders .responsive-card-table tbody td { display: grid; grid-template-columns: minmax(96px, .42fr) minmax(0, 1fr); align-items: center; gap: 12px; min-width: 0; padding: 10px 14px; border: 0; border-bottom: 1px solid var(--border-light); white-space: normal; }
+  .dashboard-recent-orders .responsive-card-table tbody td::before { content: attr(data-label); color: var(--text-muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .dashboard-recent-orders .responsive-card-table tbody td[data-card-primary] { display: block; padding: 14px; background: var(--primary-50); }
+  .dashboard-recent-orders .responsive-card-table tbody td[data-card-primary]::before { display: none; }
+  .dashboard-recent-orders .responsive-card-table .empty-state-row { display: block; grid-column: 1 / -1; }
+}
+
+/* In card form, a ticked option's amount field stays under its checkbox. */
+.services-checklist td > label + div { grid-column: 2; }
+
+/* ---------- Notifications ---------- */
+.notify-tabs { display: inline-flex; max-width: 100%; margin-bottom: 20px; }
+.notify-email-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; max-width: 900px; }
+/* Phones: the email form and its notes stack, and the three tabs share the
+   width (two-line labels if needed) instead of running off the screen. */
+@media (max-width: 760px) {
+  .notify-email-grid { grid-template-columns: minmax(0, 1fr); }
+  .notify-tabs { display: flex; width: 100%; }
+  .notify-tabs .tab { display: inline-flex; flex: 1 1 0; align-items: center; justify-content: center; min-width: 0; min-height: 40px; padding: 6px 8px; line-height: 1.2; text-align: center; white-space: normal; }
+}
+
+/* ---------- Touch targets ----------
+   On touch screens the small controls get a finger-sized hit area. */
+@media (pointer: coarse), (max-width: 760px) {
+  .reward-link { min-height: 40px; }
+  .analytics-date-input { min-height: 40px; }
+  .analytics-period-option { min-height: 40px; }
+  .settings-eye-btn { right: 0; justify-content: center; width: 38px; height: 40px; }
+  .account-security-form .login-eye-btn { right: 0; justify-content: center; width: 40px; height: 40px; }
+  .app-layout input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; }
 }
 
 /* ---------- Page sections and row actions ---------- */
@@ -1289,6 +1376,21 @@ td .btn-danger.btn-sm:hover:not(:disabled) { background: var(--danger-light); bo
 .landing-footer-contact-item, .landing-footer-contact-item a { color: var(--text-secondary); }
 .landing-footer-contact-item svg { color: var(--text-muted); }
 .landing-footer-contact h4, .landing-footer-contact h3 { text-align: left; }
+
+/* Contact cards never grow past the screen: a grid item's default minimum
+   width is its widest content (the 300px security check), so let them shrink
+   and let the check switch to its compact size on narrow cards. */
+.landing-contact-grid > * { min-width: 0; }
+
+/* Phones: room under the copyright for the floating FAQ and back-to-top
+   buttons, and finger-sized targets on the text-only Facebook links. */
+@media (max-width: 767px) {
+  .landing-footer-bottom { padding-bottom: 88px; }
+}
+@media (pointer: coarse), (max-width: 767px) {
+  .landing-contact-item a,
+  a.landing-footer-contact-item { display: inline-flex; align-items: center; margin: -10px 0; padding: 10px 0; }
+}
 
 /* Sign-in: one calm brand panel, no decorative circles. */
 .login-left-panel { background: var(--primary); }

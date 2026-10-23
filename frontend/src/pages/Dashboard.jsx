@@ -937,7 +937,7 @@ export default function Dashboard() {
             </span>
           )}
         </div>
-        <div className="table-wrapper">
+        <div className="table-wrapper responsive-card-table">
           <table>
             <thead>
               <tr>
@@ -951,7 +951,7 @@ export default function Dashboard() {
             </thead>
             <tbody>
               {recentOrders.length === 0 ? (
-                <tr>
+                <tr className="empty-state-row">
                   <td
                     colSpan={6}
                     style={{
@@ -967,18 +967,20 @@ export default function Dashboard() {
                 recentOrders.map((order) => (
                   <tr key={order.id}>
                     <td
+                      data-card-primary
+                      data-label="Order #"
                       style={{ fontWeight: 600, color: "var(--text-primary)" }}
                     >
                       {order.order_number}
                     </td>
-                    <td>{order.customers?.name || "Walk-in"}</td>
+                    <td data-label="Customer">{order.customers?.name || "Walk-in"}</td>
 
-                    <td>
+                    <td data-label="Status">
                       <span className={getStatusColor(order.status)}>
                         {order.status.replace("_", " ")}
                       </span>
                     </td>
-                    <td>
+                    <td data-label="Estimated Ready">
                       {order.status === "released" ||
                       order.status === "cancelled" ? (
                         "—"
@@ -996,6 +998,7 @@ export default function Dashboard() {
                       )}
                     </td>
                     <td
+                      data-label="Amount"
                       style={{ fontWeight: 600, color: "var(--text-primary)" }}
                     >
                       ₱{Number(order.total_price).toLocaleString()}

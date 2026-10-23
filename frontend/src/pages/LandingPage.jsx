@@ -287,6 +287,8 @@ export default function LandingPage() {
       turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
         sitekey: turnstileSiteKey,
         action: "contact-form",
+        // The standard check is 300px wide; narrow phone cards get the compact one.
+        size: turnstileContainerRef.current.clientWidth < 300 ? "compact" : "normal",
         theme: "auto",
         callback: token => { if (active) { setTurnstileToken(token); setTurnstileErrorCode(""); } },
         "expired-callback": () => { if (active) setTurnstileToken(""); },
@@ -767,7 +769,7 @@ export default function LandingPage() {
                 <Package size={18} className="track-input-icon" />
                 <input aria-label="Order number" autoComplete="off" spellCheck={false}
                   type="text"
-                  placeholder="Enter order number (e.g. IC-20260327-00001234)"
+                  placeholder="e.g. IC-20260327-00001234"
                   value={trackOrderId}
                   onChange={(e) => setTrackOrderId(e.target.value)}
                   required
