@@ -1611,9 +1611,9 @@ export default function Orders() {
                             <label htmlFor={`order-item-${index}-amount`}>{inputLabel} *</label>
                             <input id={`order-item-${index}-amount`} autoComplete="off" className={`form-control ${editing && !['received'].includes(editing.status) ? 'is-readonly' : ''}`} type="number" step="0.1" min="0.1" value={item.weight_kg} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { weight_kg: event.target.value })} required />
                           </div>}
-                          <div className="form-group" style={{ alignSelf: 'end' }}>
-                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => removeServiceItem(index)} disabled={form.items.length === 1 || Boolean(editing && !['received'].includes(editing.status))}>Remove</button>
-                          </div>
+                          {form.items.length > 1 && <div className="form-group" style={{ alignSelf: 'end' }}>
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={() => removeServiceItem(index)} disabled={Boolean(editing && !['received'].includes(editing.status))}>Remove</button>
+                          </div>}
                         </div>
                         {service && <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>{service.processing_type === 'air_dry_only' ? 'Air-dry only' : 'Full service'} · Subtotal: ₱{subtotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>}
                       </div>;
