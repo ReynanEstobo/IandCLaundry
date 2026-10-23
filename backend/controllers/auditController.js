@@ -87,6 +87,16 @@ export async function restoreRecord(body, identity) {
   if (!RESTORABLE_TABLES.has(table) || !id) throw Object.assign(new Error('A valid deleted record is required.'), { status: 400 })
   const { data: before, error: findError } = await database.from(table).select('*').eq('id', id).not('deleted_at', 'is', null).maybeSingle()
   if (findError || !before) throw Object.assign(new Error('Deleted record not found.'), { status: 404, details: findError })
+  // An archived customer's number can be given to a new customer, so a restore
+  // must not create two active customers with the same phone.
+  if (table === 'customers' && before.phone) {
+    const { data: holder, error: holderError } = await database.from('customers')
+      .select('id, name').eq('phone', before.phone).is('deleted_at', null).neq('id', id).limit(1)
+    if (holderError) throw Object.assign(new Error(holderError.message), { status: 400, details: holderError })
+    if (holder?.length) {
+      throw Object.assign(new Error(`This customer cannot be restored because ${holder[0].name} now uses the phone number ${before.phone}.`), { status: 409 })
+    }
+  }
   const { data: after, error: restoreError } = await database.from(table).update({ deleted_at: null, deleted_by_staff_id: null }).eq('id', id).select('*').single()
   if (restoreError) throw Object.assign(new Error(restoreError.message), { status: 400, details: restoreError })
   const { error: auditError } = await database.from('audit_logs').insert({

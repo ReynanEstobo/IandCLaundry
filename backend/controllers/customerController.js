@@ -53,7 +53,13 @@ export async function listVisibleCustomers(identity) {
 
 export async function lookupCustomer(phone, identity) {
   const validPhone = assertPhilippineMobile(phone)
-  const { data, error } = await database.rpc('find_customer_by_phone', { p_phone: validPhone })
+  // Archived customers are not matched: their number is treated as a new
+  // customer, and create_branch_order registers a new record for it.
+  const { data, error } = await database.from('customers')
+    .select('id, name, phone, email')
+    .eq('phone', validPhone)
+    .is('deleted_at', null)
+    .limit(1)
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
   const customer = data?.[0]
   if (!customer) return { exists: false, visible: false, customer: null, loyalty: { nextReward: null } }
