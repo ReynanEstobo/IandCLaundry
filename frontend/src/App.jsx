@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
+import IdleSignOut from './components/IdleSignOut'
 import { AppErrorBoundary, PageLoader } from './components/AsyncState'
 import { supabase } from './lib/supabase'
 import useUserTheme from './hooks/useUserTheme'
@@ -205,6 +206,7 @@ export default function App() {
     <AuthProvider>
       <GlobalDisplayPreferences />
       <TableMouseDragScroll />
+      <IdleSignOut />
       <AppRoutes />
     </AuthProvider>
     </AppErrorBoundary>

@@ -68,8 +68,11 @@ export const supabase = {
       } catch (error) { return { data: { user: null, session: null }, error: { message: error.message } } }
     },
     // Clears the cookies on the server, then signs out every tab of this browser.
-    async signOut() {
-      try { await apiFetch('/api/auth/logout', { method: 'POST' }) } catch { /* still sign out locally */ }
+    // `timeoutMs` bounds how long the screen waits for the server (used by the
+    // automatic sign-out, so it reaches the login page even on a bad network).
+    async signOut({ timeoutMs } = {}) {
+      const signal = timeoutMs && typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(timeoutMs) : undefined
+      try { await apiFetch('/api/auth/logout', { method: 'POST', signal }) } catch { /* still sign out locally */ }
       clearSession()
       return { error: null }
     },

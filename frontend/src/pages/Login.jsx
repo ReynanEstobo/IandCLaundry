@@ -1,8 +1,9 @@
-import { AlertCircle, ArrowLeft, Eye, EyeOff, Lock, UserRound } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Clock, Eye, EyeOff, Lock, UserRound } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import LoadingButton from '../components/LoadingButton'
 import { useAuth } from '../context/AuthContext'
+import { IDLE_LIMIT_LABEL, wasRecentlySignedOutForIdle } from '../services/api/idleTimeout'
 import { getBrowserCredential, getRememberedLogin, saveBrowserCredential, setRememberedLogin } from '../utils/rememberedLogin'
 
 export default function Login() {
@@ -16,6 +17,7 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(Boolean(rememberedIdentifier))
   const userEditedLogin = useRef(false)
+  const [idleNotice] = useState(() => wasRecentlySignedOutForIdle())
 
   useEffect(() => {
     if (!rememberedIdentifier) return undefined
@@ -71,6 +73,7 @@ export default function Login() {
               <p>Sign in to I&C Laundry dashboard</p>
             </div>
             {error && <div className="login-error-enhanced" role="alert"><AlertCircle size={15} />{error}</div>}
+            {idleNotice && !error && <div className="login-notice" role="status"><Clock size={15} />You were signed out after {IDLE_LIMIT_LABEL} without activity. Sign in again to continue.</div>}
             <form onSubmit={handleSubmit} className="login-form" autoComplete="on">
               <div className="login-field">
                 <label htmlFor="login-username">Account ID or Username</label>

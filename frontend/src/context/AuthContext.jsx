@@ -1,8 +1,12 @@
 import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { getStoredSession, restoreSession, startSessionMonitor } from '../services/api/client'
+import { clearIdleNotice, idleStatus, noteIdleSignOut, startIdlePeriod } from '../services/api/idleTimeout'
 
 const AuthContext = createContext({})
+// The automatic sign-out waits at most this long for the server before
+// showing the login page; the next visit finishes it if the server missed it.
+const IDLE_SIGNOUT_WAIT_MS = 4000
 
 export const useAuth = () => useContext(AuthContext)
 
@@ -58,7 +62,15 @@ export function AuthProvider({ children }) {
     let lastAccount
     // The browser never sees tokens; the account and its forced
     // password-change state are what decide a profile reload.
-    const applySession = session => {
+    const applySession = incoming => {
+      let session = incoming
+      // A browser that was closed, asleep or offline for longer than the idle
+      // limit opens signed out instead of reopening the account.
+      if (session && idleStatus().state === 'expired') {
+        noteIdleSignOut()
+        void supabase.auth.signOut({ timeoutMs: IDLE_SIGNOUT_WAIT_MS })
+        session = null
+      }
       const account = session ? `${session.user?.id}:${Boolean(session.hc_must_change_password)}` : null
       if (!active || lastAccount === account) return
       lastAccount = account
@@ -83,11 +95,22 @@ export function AuthProvider({ children }) {
   }, [])
 
   const signIn = async (email, password, remember) => {
+    // The new hour starts before the session arrives, so a stale activity time
+    // from an earlier visit cannot sign the account straight back out.
+    startIdlePeriod()
     const { error } = await supabase.auth.signInWithPassword({ email, password, remember })
     return { error }
   }
 
-  const signOut = async () => {
+  // `reason: 'idle'` is the automatic sign-out; the sign-in page then says why.
+  // Clearing the session sends every signed-in page to /login (ProtectedRoute).
+  const signOut = async ({ reason } = {}) => {
+    if (reason === 'idle') {
+      noteIdleSignOut()
+      await supabase.auth.signOut({ timeoutMs: IDLE_SIGNOUT_WAIT_MS })
+      return
+    }
+    clearIdleNotice()
     await supabase.auth.signOut()
   }
 

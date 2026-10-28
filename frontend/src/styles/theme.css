@@ -1163,6 +1163,9 @@ td[data-card-actions]:has(> .row-actions) { white-space: nowrap; }
 /* In card form, a ticked option's amount field stays under its checkbox. */
 .services-checklist td > label + div { grid-column: 2; }
 
+/* Idle sign-out warning: the countdown keeps a steady width as it ticks. */
+.idle-signout-countdown { font-variant-numeric: tabular-nums; }
+
 /* ---------- Notifications ---------- */
 .notify-tabs { display: inline-flex; max-width: 100%; margin-bottom: 20px; }
 .notify-email-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; max-width: 900px; }
@@ -1494,6 +1497,9 @@ td .btn-danger.btn-sm:hover:not(:disabled) { background: var(--danger-light); bo
 .login-screen .login-card-header h1 { margin: 0; color: var(--text-primary); font-size: clamp(26px, 2.4vw, 30px); font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; }
 .login-screen .login-card-header p { margin: 6px 0 0; color: var(--primary); font-size: 15px; font-weight: 500; }
 .login-screen .login-error-enhanced { margin-bottom: 18px; border-radius: 10px; }
+/* Shown after an automatic sign-out for inactivity. */
+.login-screen .login-notice { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; padding: 11px 14px; border: 1px solid #b9dcef; border-radius: 10px; background: #eef7fc; color: #0b5b87; font-size: 13px; line-height: 1.4; }
+.login-screen .login-notice svg { flex-shrink: 0; }
 
 /* Underlined fields, as in a paper form */
 .login-screen .login-form { gap: clamp(14px, 2.4vh, 22px); }
