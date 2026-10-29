@@ -9,7 +9,7 @@ const env = {
 }
 const staff = { id: 'staff-id', auth_id: 'auth-id', email: 'staff@example.com', username: 'staff.user', role: 'staff', branch: 'Main', branch_id: 'main', deleted_at: null, must_change_password: false }
 
-function mockAuth(t) {
+function mockAuth(t, account = staff) {
   const signedOut = []
   const originalFrom = database.from
   const authDescriptor = Object.getOwnPropertyDescriptor(authClient, 'auth')
@@ -21,8 +21,8 @@ function mockAuth(t) {
   })
   database.from = () => ({
     select() { return this }, is() { return this }, eq() { return this }, ilike() { return this },
-    async limit() { return { data: [{ ...staff }], error: null } },
-    async maybeSingle() { return { data: { ...staff }, error: null } },
+    async limit() { return { data: [{ ...account }], error: null } },
+    async maybeSingle() { return { data: { ...account }, error: null } },
   })
   const session = suffix => ({ access_token: `access-${suffix}`, refresh_token: `refresh-${suffix}`, expires_at: 4102444800, user: { id: staff.auth_id, email: staff.email } })
   Object.defineProperty(authClient, 'auth', { configurable: true, value: {
@@ -110,4 +110,21 @@ test('the cookie authenticates same-site requests only, and signing out clears a
 
   const afterLogout = await call('auth/me')
   assert.equal(afterLogout.response.status, 401)
+})
+
+test('the session says whether a new account is an administrator or staff, so activation addresses it correctly', async t => {
+  mockAuth(t, { ...staff, role: 'admin', must_change_password: true })
+  const signedIn = await call('auth/login', { method: 'POST', body: { identifier: 'staff.user', password: 'temporary-password', remember: false } })
+  assert.equal(signedIn.body.session.hc_must_change_password, true)
+  assert.equal(signedIn.body.session.hc_role, 'admin')
+  // A reloaded or duplicated tab gets the same answer from the cookie.
+  const restored = await call('auth/session', { cookie: 'ic_access=access-login; ic_refresh=refresh-login; ic_remember=0' })
+  assert.equal(restored.body.session.hc_role, 'admin')
+  assert.doesNotMatch(JSON.stringify(restored.body), /access-login|refresh-login/)
+})
+
+test('a staff account is identified as staff', async t => {
+  mockAuth(t, { ...staff, must_change_password: true })
+  const signedIn = await call('auth/login', { method: 'POST', body: { identifier: 'staff.user', password: 'temporary-password' } })
+  assert.equal(signedIn.body.session.hc_role, 'staff')
 })

@@ -1,18 +1,37 @@
-import { Eye, EyeOff, LockKeyhole, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, Eye, EyeOff, LockKeyhole, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import LoadingButton from '../components/LoadingButton'
+import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { passwordPolicyError } from '../utils/validation'
 
+// How the page addresses the account being activated.
+const ACCOUNT_LABELS = { admin: 'administrator', staff: 'staff' }
+
 export default function ActivatePassword() {
   const navigate = useNavigate()
+  const { role, signOut } = useAuth()
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const accountLabel = ACCOUNT_LABELS[role]
+
+  // The temporary password is still signed in here, so going back signs it
+  // out first; otherwise the sign-in page would send the person straight back.
+  async function backToSignIn() {
+    if (saving || leaving) return
+    setLeaving(true)
+    try {
+      await signOut()
+    } finally {
+      navigate('/login', { replace: true })
+    }
+  }
 
   async function submit(event) {
     event.preventDefault()
@@ -35,6 +54,10 @@ export default function ActivatePassword() {
   return (
     <main className="auth-page">
       <div className="auth-shell">
+        <button type="button" className="auth-back" onClick={backToSignIn} disabled={saving || leaving}>
+          <ArrowLeft size={16} aria-hidden="true" />
+          {leaving ? 'Signing out…' : 'Back to sign in'}
+        </button>
         <div className="auth-brand">
           <img src="/assets/Rectangle.png" width={1024} height={1024} alt="" />
           <span>I&amp;C Laundry</span>
@@ -42,7 +65,7 @@ export default function ActivatePassword() {
         <section className="auth-card" aria-labelledby="activate-title">
           <header className="auth-card-header">
             <span className="auth-card-icon"><ShieldCheck size={20} aria-hidden="true" /></span>
-            <h1 id="activate-title">Activate your staff account</h1>
+            <h1 id="activate-title">{accountLabel ? `Activate your ${accountLabel} account` : 'Activate your account'}</h1>
             <p>Create your own private password before using I&amp;C Laundry.</p>
           </header>
           <form onSubmit={submit} className="login-form">

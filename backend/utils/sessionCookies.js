@@ -76,6 +76,9 @@ export function browserSession({ session, ...identity }, remember) {
       expires_at: session.expires_at || tokenExpiry(session.access_token),
       remember,
       hc_must_change_password: Boolean(identity.mustChangePassword),
+      // Lets the activation page address an administrator or a staff member
+      // before the profile is readable (it opens only after activation).
+      hc_role: identity.role || null,
     },
   }
 }

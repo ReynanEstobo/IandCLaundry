@@ -28,7 +28,7 @@ export function AuthProvider({ children }) {
     // signed-in session flag first, otherwise this profile request would be
     // rejected and the required-password screen would never appear.
     if (getStoredSession()?.hc_must_change_password) {
-      setRole('staff')
+      setRole(getStoredSession()?.hc_role || null)
       setStaffName(null)
       setBranch(null)
       setContactEmail(null)
