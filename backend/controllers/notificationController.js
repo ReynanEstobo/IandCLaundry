@@ -60,6 +60,11 @@ function normalizedPayload(body) {
 async function deliver(payload, identity, retryOfId = null) {
   requireActiveStaff(identity)
   const message = normalizedPayload(payload)
+  // A free-form email can go to any address from the shop's Gmail. Composing
+  // one is an administrator screen; staff send only order notifications.
+  if (message.notificationType === 'manual' && identity.role !== 'admin') {
+    throw Object.assign(new Error('Only administrators can send custom emails.'), { status: 403 })
+  }
   if (message.notificationType !== 'manual' && !message.orderId) {
     throw badRequest('Order notifications must include the related order.')
   }
