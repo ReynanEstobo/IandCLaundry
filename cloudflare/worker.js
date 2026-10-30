@@ -47,10 +47,18 @@ function withCookies(response, cookies = []) {
 const sessionJson = ({ payload, cookies }) => withCookies(json(payload), cookies)
 
 async function body(request) {
+  const tooLarge = () => Object.assign(new Error('Request body is too large.'), { status: 413 })
   const contentLength = Number(request.headers.get('content-length') || 0)
-  if (contentLength > 64 * 1024) throw Object.assign(new Error('Request body is too large.'), { status: 413 })
+  if (contentLength > 64 * 1024) throw tooLarge()
+  let raw
   try {
-    const raw = await request.text()
+    raw = await request.text()
+  } catch {
+    throw Object.assign(new Error('Invalid JSON body'), { status: 400 })
+  }
+  // A request sent without Content-Length (chunked) is measured after reading.
+  if (new TextEncoder().encode(raw).length > 64 * 1024) throw tooLarge()
+  try {
     // Several authenticated endpoints, such as requesting a password OTP,
     // deliberately need no client payload. An empty request body is valid and
     // must not be treated as malformed JSON.

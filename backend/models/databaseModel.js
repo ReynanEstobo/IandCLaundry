@@ -20,6 +20,9 @@ const PROTECTED_TRANSACTION_TABLES = new Set([
   'orders', 'payments', 'inventory_usage_log', 'inventory_restocks', 'sms_log',
   'order_items', 'order_item_addons',
 ])
+const WORKFLOW_CREATED_TABLES = new Set([
+  'orders', 'inventory_items', 'inventory_restocks', 'inventory_usage_log',
+])
 
 // Cross-branch reference and reporting data. Staff screens never use these
 // tables directly; inventory category names reach staff only through an
@@ -403,6 +406,13 @@ export async function execute(table, request, identity) {
   }
   if (table === 'payments' && request.operation !== 'select') {
     throw Object.assign(new Error('Payments can only be recorded through the secure collection workflow.'), { status: 403 })
+  }
+  // Orders and inventory records are created only by their secure workflows
+  // (order creation, inventory creation, restocking and order processing),
+  // which keep pricing, stock levels and history consistent. The app never
+  // inserts them through this endpoint.
+  if (WORKFLOW_CREATED_TABLES.has(table) && request.operation === 'insert') {
+    throw Object.assign(new Error('These records can only be created through their secure workflow.'), { status: 403 })
   }
   if (BRANCH_SCOPED_TABLES.has(table)) {
     request = identity.role === 'admin'

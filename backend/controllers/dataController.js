@@ -14,10 +14,19 @@ function validate(table, { operation, payload = {} }) {
   }
 }
 
+// The app never sends a malformed query (an unknown column, table,
+// relationship or filter), and describing one would reveal the database
+// schema. Business-rule, validation and constraint messages are unchanged.
+function publicDatabaseMessage(error) {
+  const code = String(error?.code || '')
+  const isSchemaError = (code.startsWith('42') || /^PGRST[12]\d\d$/.test(code)) && code !== 'PGRST116'
+  return isSchemaError ? 'The request could not be processed.' : error.message
+}
+
 export async function handleData(table, body, identity) {
   validate(table, body)
   const result = await execute(table, body, identity)
-  if (result.error) throw Object.assign(new Error(result.error.message), { status: 400, details: result.error })
+  if (result.error) throw Object.assign(new Error(publicDatabaseMessage(result.error)), { status: 400, details: result.error })
   // Do not broadcast changed record data to other browser sessions.
   if (body.operation !== 'select') events.emit('change', { table })
   return result
