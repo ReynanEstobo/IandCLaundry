@@ -24,6 +24,18 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          # The secret scan below needs the pushed commits' history.
+          fetch-depth: 0
+
+      # Stops the deployment if a pushed commit adds a key, token or password.
+      # Only the commits in this push are scanned: keys leaked before this scan
+      # existed have been rotated, and rescanning them would fail every run.
+      - name: Scan pushed commits for secrets
+        if: github.event_name == 'push'
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -33,6 +45,12 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci
+
+      # Reports known vulnerabilities in production packages without blocking
+      # the deployment; fix any it lists in a following commit.
+      - name: Report vulnerable production dependencies
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
 
       # A failing test stops the job here, so a broken commit never reaches
       # production.
