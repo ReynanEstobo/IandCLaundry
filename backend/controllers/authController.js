@@ -1,6 +1,6 @@
 import { authClient, database, runtimeValue } from '../config/supabase.js'
 import { getStaffProfile } from '../models/databaseModel.js'
-import { createHash, randomInt, timingSafeEqual } from 'node:crypto'
+import { createHash, randomInt } from 'node:crypto'
 import { sendSecurityEmailWithAudit } from '../services/emailAuditService.js'
 import { assertStrongPassword } from '../utils/validation.js'
 
@@ -189,15 +189,18 @@ async function verifyPasswordOtp(identity, code) {
     .limit(1)
     .maybeSingle()
   if (error) throw Object.assign(new Error(error.message), { status: 400 })
-  if (!challenge || new Date(challenge.expires_at) <= new Date() || challenge.attempts >= 5) {
-    throw Object.assign(new Error('Your verification code has expired. Request a new code.'), { status: 400 })
-  }
-  const expected = Buffer.from(challenge.code_hash, 'hex')
-  const actual = Buffer.from(hashOtp(challenge.id, String(code)), 'hex')
-  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
-    await database.from('password_change_otps').update({ attempts: challenge.attempts + 1 }).eq('id', challenge.id)
-    throw Object.assign(new Error('Invalid verification code.'), { status: 400 })
-  }
+  const expired = () => Object.assign(new Error('Your verification code has expired. Request a new code.'), { status: 400 })
+  if (!challenge || new Date(challenge.expires_at) <= new Date() || challenge.attempts >= 5) throw expired()
+  // The database compares the code and counts a wrong try under a row lock,
+  // so guesses sent at the same moment cannot exceed the five-try limit.
+  const { data: outcome, error: checkError } = await database.rpc('check_password_change_otp', {
+    p_challenge_id: challenge.id,
+    p_auth_user_id: identity.user.id,
+    p_code_hash: hashOtp(challenge.id, String(code)),
+  })
+  if (checkError) throw new Error('Unable to check the verification code.')
+  if (outcome === 'expired') throw expired()
+  if (outcome !== 'valid') throw Object.assign(new Error('Invalid verification code.'), { status: 400 })
   return challenge
 }
 
