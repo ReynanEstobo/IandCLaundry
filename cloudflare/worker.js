@@ -92,6 +92,22 @@ const ratePolicies = {
 // so a forged bearer token cannot evade it. Route-specific policies above add
 // stricter limits for sensitive or expensive actions.
 const generalApiPolicy = { limit: 180, windowMs: 60 * 1000 }
+// Costly or sensitive actions are also limited per signed-in account, so one
+// session cannot multiply provider costs by switching networks. Each limit is
+// well above the app's own use: Analytics reuses saved AI results until its
+// data changes, and staff send one email per order event.
+const accountPolicies = {
+  'POST:notifications/email': { limit: 60, windowMs: 15 * 60 * 1000 },
+  'POST:notifications/email/retry': { limit: 20, windowMs: 15 * 60 * 1000 },
+  'POST:notifications/sms': { limit: 30, windowMs: 15 * 60 * 1000 },
+  'POST:ai/generate': { limit: 20, windowMs: 15 * 60 * 1000 },
+  'POST:ai/forecast': { limit: 120, windowMs: 15 * 60 * 1000 },
+  'POST:ai/dss': { limit: 120, windowMs: 15 * 60 * 1000 },
+  'POST:auth/signup': { limit: 20, windowMs: 15 * 60 * 1000 },
+  'POST:staff/provision': { limit: 20, windowMs: 15 * 60 * 1000 },
+  'POST:staff/reset-credentials': { limit: 20, windowMs: 15 * 60 * 1000 },
+  'POST:staff/update': { limit: 20, windowMs: 15 * 60 * 1000 },
+}
 
 async function consumeRateLimit(env, key, policy) {
   const stub = env.RATE_LIMITER.get(env.RATE_LIMITER.idFromName(key))
@@ -133,6 +149,13 @@ async function api(request, env) {
   const method = request.method
 
   await enforceRateLimit(request, env, path)
+  // Authenticates the request, then applies this route's per-account limit.
+  const signedIn = async () => {
+    const identity = await authenticate(request)
+    const policy = accountPolicies[`${method}:${path}`]
+    if (policy) await consumeRateLimit(env, `account:${method}:${path}:${identity.staffId || identity.user.id}`, policy)
+    return identity
+  }
   if (method === 'OPTIONS') return new Response(null, { status: 204 })
   if (method === 'GET' && path === 'health') return json({ status: 'ok' })
   // Worker instances are short-lived, so the Node EventEmitter based local
@@ -147,52 +170,52 @@ async function api(request, env) {
   if (method === 'POST' && path === 'auth/forgot-password/otp') return json(await requestForgotPasswordOtp(await body(request)))
   if (method === 'POST' && path === 'auth/forgot-password/otp/verify') return json(await verifyForgotPasswordOtp(await body(request)))
   if (method === 'PATCH' && path === 'auth/forgot-password') return json(await resetForgottenPassword(await body(request)))
-  if (method === 'POST' && path === 'auth/signup') { requireAdmin(await authenticate(request)); return json(await signUp(await body(request))) }
-  if (method === 'GET' && path === 'auth/me') return json(await getMe(await authenticate(request)))
-  if (method === 'POST' && path === 'auth/email/otp') { const identity = await authenticate(request); return json(await requestEmailChange(await body(request), identity)) }
-  if (method === 'POST' && path === 'auth/email/otp/verify') { const identity = await authenticate(request); return json(await verifyEmailChangeOtp(await body(request), identity)) }
-  if (method === 'PATCH' && path === 'auth/email') { const identity = await authenticate(request); return json(await confirmEmailChange(await body(request), identity)) }
-  if (method === 'POST' && path === 'auth/password/otp') return json(await requestPasswordOtp(await body(request), await authenticate(request)))
-  if (method === 'POST' && path === 'auth/password/otp/verify') return json(await verifyPasswordChangeOtp(await body(request), await authenticate(request)))
-  if (method === 'PATCH' && path === 'auth/password') return json(await updatePassword(await body(request), await authenticate(request)))
-  if (method === 'POST' && path === 'staff/provision') { const identity = await authenticate(request); requireAdmin(identity); return json(await provisionStaff(await body(request), identity)) }
-  if (method === 'POST' && path === 'staff/reset-credentials') { const identity = await authenticate(request); requireAdmin(identity); return json(await resetStaffCredentials(await body(request), identity)) }
-  if (method === 'POST' && path === 'staff/update') { const identity = await authenticate(request); requireAdmin(identity); return json(await updateProvisionedStaff(await body(request), identity)) }
-  if (method === 'POST' && path === 'notifications/email') { const identity = await authenticate(request); return json(await sendAuditedEmail(await body(request), identity)) }
-  if (method === 'GET' && path === 'notifications/email-audit') { const identity = await authenticate(request); return json(await listEmailDeliveryAudit(identity, { page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize') })) }
-  if (method === 'POST' && path === 'notifications/email/retry') { const identity = await authenticate(request); return json(await retryEmailDelivery(await body(request), identity)) }
-  if (method === 'POST' && path === 'notifications/sms') { const identity = await authenticate(request); return json(await sendCustomerSms(await body(request), identity)) }
-  if (method === 'POST' && path === 'ai/generate') { requireAdmin(await authenticate(request)); return json(await generateFromPrompt((await body(request)).prompt)) }
-  if (method === 'POST' && path === 'ai/forecast') { requireAdmin(await authenticate(request)); return json(await generateForecast(await body(request))) }
-  if (method === 'POST' && path === 'ai/dss') { requireAdmin(await authenticate(request)); return json(await generateDecisionSupport(await body(request))) }
+  if (method === 'POST' && path === 'auth/signup') { requireAdmin(await signedIn()); return json(await signUp(await body(request))) }
+  if (method === 'GET' && path === 'auth/me') return json(await getMe(await signedIn()))
+  if (method === 'POST' && path === 'auth/email/otp') { const identity = await signedIn(); return json(await requestEmailChange(await body(request), identity)) }
+  if (method === 'POST' && path === 'auth/email/otp/verify') { const identity = await signedIn(); return json(await verifyEmailChangeOtp(await body(request), identity)) }
+  if (method === 'PATCH' && path === 'auth/email') { const identity = await signedIn(); return json(await confirmEmailChange(await body(request), identity)) }
+  if (method === 'POST' && path === 'auth/password/otp') return json(await requestPasswordOtp(await body(request), await signedIn()))
+  if (method === 'POST' && path === 'auth/password/otp/verify') return json(await verifyPasswordChangeOtp(await body(request), await signedIn()))
+  if (method === 'PATCH' && path === 'auth/password') return json(await updatePassword(await body(request), await signedIn()))
+  if (method === 'POST' && path === 'staff/provision') { const identity = await signedIn(); requireAdmin(identity); return json(await provisionStaff(await body(request), identity)) }
+  if (method === 'POST' && path === 'staff/reset-credentials') { const identity = await signedIn(); requireAdmin(identity); return json(await resetStaffCredentials(await body(request), identity)) }
+  if (method === 'POST' && path === 'staff/update') { const identity = await signedIn(); requireAdmin(identity); return json(await updateProvisionedStaff(await body(request), identity)) }
+  if (method === 'POST' && path === 'notifications/email') { const identity = await signedIn(); return json(await sendAuditedEmail(await body(request), identity)) }
+  if (method === 'GET' && path === 'notifications/email-audit') { const identity = await signedIn(); return json(await listEmailDeliveryAudit(identity, { page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize') })) }
+  if (method === 'POST' && path === 'notifications/email/retry') { const identity = await signedIn(); return json(await retryEmailDelivery(await body(request), identity)) }
+  if (method === 'POST' && path === 'notifications/sms') { const identity = await signedIn(); return json(await sendCustomerSms(await body(request), identity)) }
+  if (method === 'POST' && path === 'ai/generate') { requireAdmin(await signedIn()); return json(await generateFromPrompt((await body(request)).prompt)) }
+  if (method === 'POST' && path === 'ai/forecast') { requireAdmin(await signedIn()); return json(await generateForecast(await body(request))) }
+  if (method === 'POST' && path === 'ai/dss') { requireAdmin(await signedIn()); return json(await generateDecisionSupport(await body(request))) }
   if (method === 'GET' && path === 'public/orders/track') return json(await trackOrder(url.searchParams.get('q')))
-  if (method === 'GET' && path === 'orders/page') return json(await listOrdersPage(Object.fromEntries(url.searchParams), await authenticate(request)))
-  if (method === 'GET' && path === 'customers/page') return json(await listCustomersPage(Object.fromEntries(url.searchParams), await authenticate(request)))
-  if (method === 'GET' && path === 'inventory/page') return json(await listInventoryPage(Object.fromEntries(url.searchParams), await authenticate(request)))
+  if (method === 'GET' && path === 'orders/page') return json(await listOrdersPage(Object.fromEntries(url.searchParams), await signedIn()))
+  if (method === 'GET' && path === 'customers/page') return json(await listCustomersPage(Object.fromEntries(url.searchParams), await signedIn()))
+  if (method === 'GET' && path === 'inventory/page') return json(await listInventoryPage(Object.fromEntries(url.searchParams), await signedIn()))
   if (method === 'GET' && path === 'public/settings') return json(await getPublicSettings())
   if (method === 'GET' && path === 'public/services') return json(await getPublicServices())
   if (method === 'GET' && path === 'public/turnstile-config') return json(getPublicTurnstileConfig())
   if (method === 'POST' && path === 'public/contact') return json(await sendContactMessage(await body(request)))
-  if (method === 'POST' && path === 'orders/create') return json(await createOrder(await body(request), await authenticate(request)))
-  if (method === 'POST' && path === 'orders/transition') return json(await transitionOrder(await body(request), await authenticate(request)))
-  if (method === 'POST' && path === 'orders/items/transition') return json(await transitionOrderItem(await body(request), await authenticate(request)))
-  if (method === 'POST' && path === 'orders/items/transition-all') return json(await transitionAllOrderItems(await body(request), await authenticate(request)))
-  if (method === 'POST' && path === 'orders/collect-payment') return json(await collectOrderPayment(await body(request), await authenticate(request)))
-  if (method === 'POST' && path === 'orders/settle-and-release') return json(await settleAndReleaseOrder(await body(request), await authenticate(request)))
-  if (method === 'POST' && path === 'orders/cancel') return json(await cancelOrder(await body(request), await authenticate(request)))
-  if (method === 'POST' && path === 'inventory/restock') return json(await restockInventory(await body(request), await authenticate(request)))
-  if (method === 'POST' && path === 'inventory/create') return json(await createInventoryItem(await body(request), await authenticate(request)))
-  if (method === 'GET' && path === 'loyalty/rewards') return json(await listLoyaltyRewards(await authenticate(request)))
-  if (method === 'POST' && path === 'loyalty/revoke') return json(await revokeLoyaltyReward(await body(request), await authenticate(request)))
-  if (method === 'GET' && path === 'customers/visible') return json(await listVisibleCustomers(await authenticate(request)))
-  if (method === 'GET' && path === 'customers/lookup') return json(await lookupCustomer(url.searchParams.get('phone'), await authenticate(request)))
-  if (method === 'GET' && (path === 'audit-log' || path === 'recycle-bin')) return json(await listAuditLog(await authenticate(request), {
+  if (method === 'POST' && path === 'orders/create') return json(await createOrder(await body(request), await signedIn()))
+  if (method === 'POST' && path === 'orders/transition') return json(await transitionOrder(await body(request), await signedIn()))
+  if (method === 'POST' && path === 'orders/items/transition') return json(await transitionOrderItem(await body(request), await signedIn()))
+  if (method === 'POST' && path === 'orders/items/transition-all') return json(await transitionAllOrderItems(await body(request), await signedIn()))
+  if (method === 'POST' && path === 'orders/collect-payment') return json(await collectOrderPayment(await body(request), await signedIn()))
+  if (method === 'POST' && path === 'orders/settle-and-release') return json(await settleAndReleaseOrder(await body(request), await signedIn()))
+  if (method === 'POST' && path === 'orders/cancel') return json(await cancelOrder(await body(request), await signedIn()))
+  if (method === 'POST' && path === 'inventory/restock') return json(await restockInventory(await body(request), await signedIn()))
+  if (method === 'POST' && path === 'inventory/create') return json(await createInventoryItem(await body(request), await signedIn()))
+  if (method === 'GET' && path === 'loyalty/rewards') return json(await listLoyaltyRewards(await signedIn()))
+  if (method === 'POST' && path === 'loyalty/revoke') return json(await revokeLoyaltyReward(await body(request), await signedIn()))
+  if (method === 'GET' && path === 'customers/visible') return json(await listVisibleCustomers(await signedIn()))
+  if (method === 'GET' && path === 'customers/lookup') return json(await lookupCustomer(url.searchParams.get('phone'), await signedIn()))
+  if (method === 'GET' && (path === 'audit-log' || path === 'recycle-bin')) return json(await listAuditLog(await signedIn(), {
     page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'),
   }))
-  if (method === 'POST' && path === 'recycle-bin/restore') return json(await restoreRecord(await body(request), await authenticate(request)))
+  if (method === 'POST' && path === 'recycle-bin/restore') return json(await restoreRecord(await body(request), await signedIn()))
 
   const table = resourceRoutes.get(path)
-  if (table && method === 'POST') return json(await handleData(table, await body(request), await authenticate(request)))
+  if (table && method === 'POST') return json(await handleData(table, await body(request), await signedIn()))
   return json({ error: 'Endpoint not found' }, 404)
 }
 

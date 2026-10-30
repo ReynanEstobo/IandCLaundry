@@ -29,6 +29,19 @@ const LOCAL_ROUTE_LIMITS = {
   'POST:notifications/sms': { limit: 30, windowMs: 15 * 60_000 },
   'POST:ai/generate': { limit: 20, windowMs: 15 * 60_000 },
 }
+// Matches the Worker's per-account limits on costly or sensitive actions.
+const LOCAL_ACCOUNT_LIMITS = {
+  'POST:notifications/email': { limit: 60, windowMs: 15 * 60_000 },
+  'POST:notifications/email/retry': { limit: 20, windowMs: 15 * 60_000 },
+  'POST:notifications/sms': { limit: 30, windowMs: 15 * 60_000 },
+  'POST:ai/generate': { limit: 20, windowMs: 15 * 60_000 },
+  'POST:ai/forecast': { limit: 120, windowMs: 15 * 60_000 },
+  'POST:ai/dss': { limit: 120, windowMs: 15 * 60_000 },
+  'POST:auth/signup': { limit: 20, windowMs: 15 * 60_000 },
+  'POST:staff/provision': { limit: 20, windowMs: 15 * 60_000 },
+  'POST:staff/reset-credentials': { limit: 20, windowMs: 15 * 60_000 },
+  'POST:staff/update': { limit: 20, windowMs: 15 * 60_000 },
+}
 
 function consumeLocalLimit(key, policy) {
   const now = Date.now()
@@ -108,6 +121,13 @@ const server = http.createServer(async (request, response) => {
   const path = url.pathname.replace(/^\/api\/?/, '').replace(/\/$/, '')
   try {
     if (url.pathname.startsWith('/api/')) enforceLocalRateLimit(request, request.method, path)
+    // Authenticates the request, then applies this route's per-account limit.
+    const signedIn = async () => {
+      const identity = await authenticate(request)
+      const policy = LOCAL_ACCOUNT_LIMITS[`${request.method}:${path}`]
+      if (policy) consumeLocalLimit(`account:${request.method}:${path}:${identity.staffId || identity.user.id}`, policy)
+      return identity
+    }
     if (request.method === 'POST' && (path === 'auth/login' || path === 'public/contact')) {
       const payload = await readBody(request)
       request.rateLimitedBody = payload
@@ -122,55 +142,55 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && path === 'auth/forgot-password/otp') return write(response, 200, await requestForgotPasswordOtp(await readBody(request)))
     if (request.method === 'POST' && path === 'auth/forgot-password/otp/verify') return write(response, 200, await verifyForgotPasswordOtp(await readBody(request)))
     if (request.method === 'PATCH' && path === 'auth/forgot-password') return write(response, 200, await resetForgottenPassword(await readBody(request)))
-    if (request.method === 'POST' && path === 'auth/signup') { requireAdmin(await authenticate(request)); return write(response, 200, await signUp(await readBody(request))) }
-    if (request.method === 'GET' && path === 'auth/me') return write(response, 200, await getMe(await authenticate(request)))
-    if (request.method === 'POST' && path === 'auth/email/otp') { const identity = await authenticate(request); return write(response, 200, await requestEmailChange(await readBody(request), identity)) }
-    if (request.method === 'POST' && path === 'auth/email/otp/verify') { const identity = await authenticate(request); return write(response, 200, await verifyEmailChangeOtp(await readBody(request), identity)) }
-    if (request.method === 'PATCH' && path === 'auth/email') { const identity = await authenticate(request); return write(response, 200, await confirmEmailChange(await readBody(request), identity)) }
-    if (request.method === 'POST' && path === 'auth/password/otp') return write(response, 200, await requestPasswordOtp(await readBody(request), await authenticate(request)))
-    if (request.method === 'POST' && path === 'auth/password/otp/verify') return write(response, 200, await verifyPasswordChangeOtp(await readBody(request), await authenticate(request)))
-    if (request.method === 'PATCH' && path === 'auth/password') return write(response, 200, await updatePassword(await readBody(request), await authenticate(request)))
-    if (request.method === 'POST' && path === 'staff/provision') { const identity = await authenticate(request); requireAdmin(identity); return write(response, 200, await provisionStaff(await readBody(request), identity)) }
-    if (request.method === 'POST' && path === 'staff/reset-credentials') { const identity = await authenticate(request); requireAdmin(identity); return write(response, 200, await resetStaffCredentials(await readBody(request), identity)) }
-    if (request.method === 'POST' && path === 'staff/update') { const identity = await authenticate(request); requireAdmin(identity); return write(response, 200, await updateProvisionedStaff(await readBody(request), identity)) }
-    if (request.method === 'POST' && path === 'notifications/email') { const identity = await authenticate(request); return write(response, 200, await sendAuditedEmail(await readBody(request), identity)) }
-    if (request.method === 'GET' && path === 'notifications/email-audit') { const identity = await authenticate(request); return write(response, 200, await listEmailDeliveryAudit(identity, { page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize') })) }
-    if (request.method === 'POST' && path === 'notifications/email/retry') { const identity = await authenticate(request); return write(response, 200, await retryEmailDelivery(await readBody(request), identity)) }
-    if (request.method === 'POST' && path === 'notifications/sms') { const identity = await authenticate(request); return write(response, 200, await sendCustomerSms(await readBody(request), identity)) }
-    if (request.method === 'POST' && path === 'ai/generate') { requireAdmin(await authenticate(request)); return write(response, 200, await generateFromPrompt((await readBody(request)).prompt)) }
-    if (request.method === 'POST' && path === 'ai/forecast') { requireAdmin(await authenticate(request)); return write(response, 200, await generateForecast(await readBody(request))) }
-    if (request.method === 'POST' && path === 'ai/dss') { requireAdmin(await authenticate(request)); return write(response, 200, await generateDecisionSupport(await readBody(request))) }
+    if (request.method === 'POST' && path === 'auth/signup') { requireAdmin(await signedIn()); return write(response, 200, await signUp(await readBody(request))) }
+    if (request.method === 'GET' && path === 'auth/me') return write(response, 200, await getMe(await signedIn()))
+    if (request.method === 'POST' && path === 'auth/email/otp') { const identity = await signedIn(); return write(response, 200, await requestEmailChange(await readBody(request), identity)) }
+    if (request.method === 'POST' && path === 'auth/email/otp/verify') { const identity = await signedIn(); return write(response, 200, await verifyEmailChangeOtp(await readBody(request), identity)) }
+    if (request.method === 'PATCH' && path === 'auth/email') { const identity = await signedIn(); return write(response, 200, await confirmEmailChange(await readBody(request), identity)) }
+    if (request.method === 'POST' && path === 'auth/password/otp') return write(response, 200, await requestPasswordOtp(await readBody(request), await signedIn()))
+    if (request.method === 'POST' && path === 'auth/password/otp/verify') return write(response, 200, await verifyPasswordChangeOtp(await readBody(request), await signedIn()))
+    if (request.method === 'PATCH' && path === 'auth/password') return write(response, 200, await updatePassword(await readBody(request), await signedIn()))
+    if (request.method === 'POST' && path === 'staff/provision') { const identity = await signedIn(); requireAdmin(identity); return write(response, 200, await provisionStaff(await readBody(request), identity)) }
+    if (request.method === 'POST' && path === 'staff/reset-credentials') { const identity = await signedIn(); requireAdmin(identity); return write(response, 200, await resetStaffCredentials(await readBody(request), identity)) }
+    if (request.method === 'POST' && path === 'staff/update') { const identity = await signedIn(); requireAdmin(identity); return write(response, 200, await updateProvisionedStaff(await readBody(request), identity)) }
+    if (request.method === 'POST' && path === 'notifications/email') { const identity = await signedIn(); return write(response, 200, await sendAuditedEmail(await readBody(request), identity)) }
+    if (request.method === 'GET' && path === 'notifications/email-audit') { const identity = await signedIn(); return write(response, 200, await listEmailDeliveryAudit(identity, { page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize') })) }
+    if (request.method === 'POST' && path === 'notifications/email/retry') { const identity = await signedIn(); return write(response, 200, await retryEmailDelivery(await readBody(request), identity)) }
+    if (request.method === 'POST' && path === 'notifications/sms') { const identity = await signedIn(); return write(response, 200, await sendCustomerSms(await readBody(request), identity)) }
+    if (request.method === 'POST' && path === 'ai/generate') { requireAdmin(await signedIn()); return write(response, 200, await generateFromPrompt((await readBody(request)).prompt)) }
+    if (request.method === 'POST' && path === 'ai/forecast') { requireAdmin(await signedIn()); return write(response, 200, await generateForecast(await readBody(request))) }
+    if (request.method === 'POST' && path === 'ai/dss') { requireAdmin(await signedIn()); return write(response, 200, await generateDecisionSupport(await readBody(request))) }
     if (request.method === 'GET' && path === 'public/orders/track') return write(response, 200, await trackOrder(url.searchParams.get('q')))
-    if (request.method === 'GET' && path === 'orders/page') return write(response, 200, await listOrdersPage(Object.fromEntries(url.searchParams), await authenticate(request)))
-    if (request.method === 'GET' && path === 'customers/page') return write(response, 200, await listCustomersPage(Object.fromEntries(url.searchParams), await authenticate(request)))
-    if (request.method === 'GET' && path === 'inventory/page') return write(response, 200, await listInventoryPage(Object.fromEntries(url.searchParams), await authenticate(request)))
+    if (request.method === 'GET' && path === 'orders/page') return write(response, 200, await listOrdersPage(Object.fromEntries(url.searchParams), await signedIn()))
+    if (request.method === 'GET' && path === 'customers/page') return write(response, 200, await listCustomersPage(Object.fromEntries(url.searchParams), await signedIn()))
+    if (request.method === 'GET' && path === 'inventory/page') return write(response, 200, await listInventoryPage(Object.fromEntries(url.searchParams), await signedIn()))
     if (request.method === 'GET' && path === 'public/settings') return write(response, 200, await getPublicSettings())
     if (request.method === 'GET' && path === 'public/services') return write(response, 200, await getPublicServices())
     if (request.method === 'GET' && path === 'public/turnstile-config') return write(response, 200, getPublicTurnstileConfig())
     if (request.method === 'POST' && path === 'public/contact') return write(response, 200, await sendContactMessage(request.rateLimitedBody || await readBody(request)))
-    if (request.method === 'POST' && path === 'orders/create') return write(response, 200, await createOrder(await readBody(request), await authenticate(request)))
-    if (request.method === 'POST' && path === 'orders/transition') return write(response, 200, await transitionOrder(await readBody(request), await authenticate(request)))
-    if (request.method === 'POST' && path === 'orders/items/transition') return write(response, 200, await transitionOrderItem(await readBody(request), await authenticate(request)))
-    if (request.method === 'POST' && path === 'orders/items/transition-all') return write(response, 200, await transitionAllOrderItems(await readBody(request), await authenticate(request)))
-    if (request.method === 'POST' && path === 'orders/collect-payment') return write(response, 200, await collectOrderPayment(await readBody(request), await authenticate(request)))
-    if (request.method === 'POST' && path === 'orders/settle-and-release') return write(response, 200, await settleAndReleaseOrder(await readBody(request), await authenticate(request)))
-    if (request.method === 'POST' && path === 'orders/cancel') return write(response, 200, await cancelOrder(await readBody(request), await authenticate(request)))
-    if (request.method === 'POST' && path === 'inventory/restock') return write(response, 200, await restockInventory(await readBody(request), await authenticate(request)))
-    if (request.method === 'POST' && path === 'inventory/create') return write(response, 200, await createInventoryItem(await readBody(request), await authenticate(request)))
-    if (request.method === 'GET' && path === 'loyalty/rewards') return write(response, 200, await listLoyaltyRewards(await authenticate(request)))
-    if (request.method === 'POST' && path === 'loyalty/revoke') return write(response, 200, await revokeLoyaltyReward(await readBody(request), await authenticate(request)))
-    if (request.method === 'GET' && path === 'customers/visible') return write(response, 200, await listVisibleCustomers(await authenticate(request)))
-    if (request.method === 'GET' && path === 'customers/lookup') return write(response, 200, await lookupCustomer(url.searchParams.get('phone'), await authenticate(request)))
+    if (request.method === 'POST' && path === 'orders/create') return write(response, 200, await createOrder(await readBody(request), await signedIn()))
+    if (request.method === 'POST' && path === 'orders/transition') return write(response, 200, await transitionOrder(await readBody(request), await signedIn()))
+    if (request.method === 'POST' && path === 'orders/items/transition') return write(response, 200, await transitionOrderItem(await readBody(request), await signedIn()))
+    if (request.method === 'POST' && path === 'orders/items/transition-all') return write(response, 200, await transitionAllOrderItems(await readBody(request), await signedIn()))
+    if (request.method === 'POST' && path === 'orders/collect-payment') return write(response, 200, await collectOrderPayment(await readBody(request), await signedIn()))
+    if (request.method === 'POST' && path === 'orders/settle-and-release') return write(response, 200, await settleAndReleaseOrder(await readBody(request), await signedIn()))
+    if (request.method === 'POST' && path === 'orders/cancel') return write(response, 200, await cancelOrder(await readBody(request), await signedIn()))
+    if (request.method === 'POST' && path === 'inventory/restock') return write(response, 200, await restockInventory(await readBody(request), await signedIn()))
+    if (request.method === 'POST' && path === 'inventory/create') return write(response, 200, await createInventoryItem(await readBody(request), await signedIn()))
+    if (request.method === 'GET' && path === 'loyalty/rewards') return write(response, 200, await listLoyaltyRewards(await signedIn()))
+    if (request.method === 'POST' && path === 'loyalty/revoke') return write(response, 200, await revokeLoyaltyReward(await readBody(request), await signedIn()))
+    if (request.method === 'GET' && path === 'customers/visible') return write(response, 200, await listVisibleCustomers(await signedIn()))
+    if (request.method === 'GET' && path === 'customers/lookup') return write(response, 200, await lookupCustomer(url.searchParams.get('phone'), await signedIn()))
     if (request.method === 'GET' && (path === 'audit-log' || path === 'recycle-bin')) {
-      return write(response, 200, await listAuditLog(await authenticate(request), {
+      return write(response, 200, await listAuditLog(await signedIn(), {
         page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'),
       }))
     }
-    if (request.method === 'POST' && path === 'recycle-bin/restore') return write(response, 200, await restoreRecord(await readBody(request), await authenticate(request)))
+    if (request.method === 'POST' && path === 'recycle-bin/restore') return write(response, 200, await restoreRecord(await readBody(request), await signedIn()))
 
     const table = resourceRoutes.get(path)
     if (table && request.method === 'POST') {
-      const identity = await authenticate(request)
+      const identity = await signedIn()
       return write(response, 200, await handleData(table, await readBody(request), identity))
     }
     return write(response, 404, { error: 'Endpoint not found' })

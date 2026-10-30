@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import worker from '../cloudflare/worker.js'
-import { database } from '../backend/config/supabase.js'
+import { authClient, database } from '../backend/config/supabase.js'
 import { handleData } from '../backend/controllers/dataController.js'
 import { execute } from '../backend/models/databaseModel.js'
 
@@ -78,4 +78,61 @@ test('request bodies over 64 KB are refused even without a Content-Length header
   }), env)
   assert.equal(response.status, 413)
   assert.equal((await response.json()).error, 'Request body is too large.')
+})
+
+test('costly actions are also limited per signed-in account', async t => {
+  const accounts = {
+    'token-a': { id: 'staff-a', auth_id: 'auth-a', email: 'a@example.com', role: 'staff', branch: 'Main', branch_id: 'branch-a' },
+    'token-b': { id: 'staff-b', auth_id: 'auth-b', email: 'b@example.com', role: 'staff', branch: 'Main', branch_id: 'branch-a' },
+  }
+  const originalFrom = database.from
+  const authDescriptor = Object.getOwnPropertyDescriptor(authClient, 'auth')
+  t.after(() => {
+    database.from = originalFrom
+    Object.defineProperty(authClient, 'auth', authDescriptor)
+  })
+  Object.defineProperty(authClient, 'auth', { configurable: true, value: {
+    async getUser(token) {
+      const account = accounts[token]
+      return account ? { data: { user: { id: account.auth_id, email: account.email } }, error: null } : { data: { user: null }, error: { message: 'invalid' } }
+    },
+  } })
+  database.from = () => {
+    let authId
+    return {
+      select() { return this }, is() { return this },
+      eq(column, value) { if (column === 'auth_id') authId = value; return this },
+      async maybeSingle() { return { data: Object.values(accounts).find(account => account.auth_id === authId) || null, error: null } },
+    }
+  }
+  const consumed = []
+  let lastKey
+  const limiterEnv = {
+    ...env,
+    RATE_LIMITER: {
+      idFromName: key => { lastKey = key; return key },
+      get: () => ({ fetch: async (_url, options) => {
+        consumed.push({ key: lastKey, policy: JSON.parse(options.body) })
+        return Response.json({ allowed: true, retryAfterSeconds: 60 })
+      } }),
+    },
+  }
+  const call = (path, token, method = 'POST') => worker.fetch(new Request(`https://test.iclaundry.local/api/${path}`, {
+    method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'CF-Connecting-IP': '203.0.113.30' },
+    ...(method === 'GET' ? {} : { body: '{}' }),
+  }), limiterEnv)
+  const accountKeys = () => consumed.filter(entry => entry.key.startsWith('account:'))
+
+  await call('notifications/email', 'token-a')
+  await call('notifications/email', 'token-b')
+  await call('notifications/sms', 'token-a')
+  assert.deepEqual(accountKeys(), [
+    { key: 'account:POST:notifications/email:staff-a', policy: { limit: 60, windowMs: 15 * 60 * 1000 } },
+    { key: 'account:POST:notifications/email:staff-b', policy: { limit: 60, windowMs: 15 * 60 * 1000 } },
+    { key: 'account:POST:notifications/sms:staff-a', policy: { limit: 30, windowMs: 15 * 60 * 1000 } },
+  ])
+  // Ordinary signed-in routes and rejected sessions add no per-account counting.
+  await call('auth/me', 'token-a', 'GET')
+  await call('notifications/email', 'not-a-session')
+  assert.equal(accountKeys().length, 3)
 })
