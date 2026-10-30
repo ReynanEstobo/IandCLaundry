@@ -156,6 +156,38 @@ test('staff cannot reach staff profiles or admin-only tables through an embedded
   await execute('orders', { operation: 'select', selection: '*, staff(full_name)' }, admin)
 })
 
+test('staff selections embed only the related records the app uses', async t => {
+  const calls = mockDatabase(t)
+  for (const [table, selection] of [
+    // Another branch's records through a parent that is not branch-scoped.
+    ['branches', 'id, name, orders(order_number, branch_id)'],
+    ['branches', 'id, customers(name, phone)'],
+    ['service_types', 'id, orders(*)'],
+    // Staff profiles through a spread or a foreign-key column.
+    ['orders', 'id, ...staff!created_by_staff_id(full_name, email)'],
+    ['orders', 'id, created_by_staff_id(full_name, email)'],
+    // Foreign-key hints, unknown embeds and malformed selections.
+    ['orders', 'id, customers!orders_customer_id_fkey(name)'],
+    ['inventory_items', 'id, inventory_usage_log(*)'],
+    ['orders', 'id, customers(name'],
+  ]) await assert.rejects(execute(table, { operation: 'select', selection }, staff), /not available to staff/)
+  assert.equal(calls.length, 0)
+
+  // Every embedded selection the app's screens send still works for staff.
+  for (const [table, selection] of [
+    ['orders', '*, customers( name, email ), order_items(id, service_name_snapshot, weight_kg, status)'],
+    ['orders', 'id, order_number, status, estimated_ready_at, total_price, created_at, customers(name, phone), service_types(name)'],
+    ['orders', 'id, order_number, status, payment_status, weight_kg, total_price, estimated_ready_at, created_at, customers(name, phone), service_types(name), order_items(service_name_snapshot, weight_kg, status)'],
+    ['order_items', 'id, order_id, service_name_snapshot, weight_kg, quantity, subtotal, created_at, orders!inner(id, status, branch, branch_id)'],
+    ['payments', 'amount, paid_at, payment_date, order_id, branch, branch_id, orders!inner(id, status, branch, branch_id, service_types(name))'],
+    ['inventory_items', 'id, name, unit, current_stock, minimum_stock, branch_id, inventory_categories(name)'],
+    ['service_addon_items', 'id, branch_id, service_type_id, unit_price, inventory_items(id, name, unit, current_stock, branch, branch_id, deleted_at)'],
+    ['branches', 'id, name'],
+  ]) await execute(table, { operation: 'select', selection }, staff)
+  // Administrators already read every branch, so their selections are unchanged.
+  await execute('branches', { operation: 'select', selection: 'id, name, orders(order_number)' }, admin)
+})
+
 test('updates and deletions must target a specific record id', async t => {
   const calls = mockDatabase(t, [{ id: 'customer-1', name: 'Client', branch: 'Main' }])
   for (const filters of [undefined, [], [{ type: 'eq', column: 'branch', value: 'Main' }], [{ type: 'eq', column: 'id', value: '' }], [{ type: 'in', column: 'id', value: ['customer-1'] }]]) {

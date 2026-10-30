@@ -28,6 +28,58 @@ const ADMIN_ONLY_TABLES = new Set(['inventory_categories', 'ai_forecasts', 'sms_
 // Staff profiles and admin-only tables must not be reachable by embedding them
 // in another table's selection, e.g. `orders` with `*, creator:staff(*)`.
 const RESTRICTED_EMBED_PATTERN = /(?:^|[\s,(:])(?:staff|sms_log|ai_forecasts)\s*[(!]/
+// The only related records the app's screens embed. Each reaches a parent or
+// child of a row already limited to the staff member's branch. Any other embed
+// could reach another branch's records through a shared parent such as
+// `branches`, or staff profiles through a spread (`...staff!fk(...)`) or a
+// foreign-key column (`created_by_staff_id(...)`), so staff selections are
+// limited to these.
+const STAFF_EMBEDS = {
+  orders: new Set(['customers', 'service_types', 'order_items']),
+  order_items: new Set(['orders']),
+  payments: new Set(['orders']),
+  inventory_items: new Set(['inventory_categories']),
+  service_addon_items: new Set(['inventory_items']),
+}
+
+// Splits one level of a PostgREST select list into its items, keeping each
+// embedded resource's own select list intact.
+function selectionItems(selection) {
+  const items = []
+  let depth = 0
+  let current = ''
+  for (const character of selection) {
+    if (character === '(') depth += 1
+    if (character === ')') depth -= 1
+    if (depth < 0) return null
+    if (character === ',' && depth === 0) {
+      items.push(current.trim())
+      current = ''
+    } else {
+      current += character
+    }
+  }
+  if (depth !== 0) return null
+  if (current.trim()) items.push(current.trim())
+  return items
+}
+
+function isAllowedStaffSelection(table, selection) {
+  const items = selectionItems(selection)
+  if (!items) return false
+  return items.every(item => {
+    const open = item.indexOf('(')
+    if (open === -1) return true
+    if (!item.endsWith(')')) return false
+    const head = item.slice(0, open).trim()
+    // An optional `alias:` prefix, the related table's plain name, and an
+    // optional `!inner`; foreign-key hints and spreads never match.
+    const name = head.includes('::') ? head : head.slice(head.lastIndexOf(':') + 1).trim()
+    const target = name.replace(/!inner$/, '')
+    if (!STAFF_EMBEDS[table]?.has(target)) return false
+    return isAllowedStaffSelection(target, item.slice(open + 1, -1))
+  })
+}
 
 // Supabase returns at most "Max rows" per request (1000 by default, in the
 // project's API settings) and silently drops the rest. Reads that ask for
@@ -297,6 +349,9 @@ export async function execute(table, request, identity) {
     }
     if (RESTRICTED_EMBED_PATTERN.test(String(request.selection || ''))) {
       throw Object.assign(new Error('Staff profiles can only be read by administrators.'), { status: 403 })
+    }
+    if (!isAllowedStaffSelection(table, String(request.selection || '*'))) {
+      throw Object.assign(new Error('This selection is not available to staff accounts.'), { status: 403 })
     }
     // Staff may read only their own profile; the full directory is administrative.
     if (table === 'staff' && request.operation === 'select') {
