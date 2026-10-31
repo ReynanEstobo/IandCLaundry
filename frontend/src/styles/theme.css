@@ -1282,6 +1282,7 @@ td .btn-danger.btn-sm:hover:not(:disabled) { background: var(--danger-light); bo
 .ai-source-baseline { background: var(--warning-light); color: var(--warning); }
 .ai-source-note { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 12px; color: var(--text-secondary); font-size: 12px; line-height: 1.45; }
 .ai-source-note > span:last-child { min-width: 0; padding-top: 1px; overflow-wrap: anywhere; }
+.dashboard-ai-card .ai-source-note { margin: 0; }
 .recharts-legend-item-text { color: var(--text-secondary) !important; font-size: 13px; }
 
 /* ---------- Public site ---------- */

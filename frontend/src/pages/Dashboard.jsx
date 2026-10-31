@@ -22,6 +22,7 @@ import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { generateDecisionSupport } from "../services/geminiService";
 import { aiCacheKey, aiServiceErrorReason, dataFingerprint, geminiModelLabel, lastGeminiResult, readAiCache, reusableAiCache, sharedAiRequest, writeAiCache } from "../utils/aiOutputCache";
+import AiSourceNote, { PENDING_AI_META } from "../components/AiSourceNote";
 import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import DashboardCharts from "../components/DashboardCharts";
 import Pagination from "../components/Pagination";
@@ -43,7 +44,7 @@ export default function Dashboard() {
   const [loadError, setLoadError] = useState("");
   const [aiInsights, setAiInsights] = useState("");
   const [currentAIModel, setCurrentAIModel] = useState("");
-  const [aiSourceNote, setAiSourceNote] = useState("");
+  const [aiSourceMeta, setAiSourceMeta] = useState(PENDING_AI_META);
   const [aiLoading, setAiLoading] = useState(false);
   const [chartLoading, setChartLoading] = useState(true);
   const [weeklyData, setWeeklyData] = useState([]);
@@ -355,6 +356,7 @@ export default function Dashboard() {
         const dataVersion = dataFingerprint(dssRequest);
         const cachedEntry = readAiCache(cacheKey);
         let entry = reusableAiCache(cachedEntry, dataVersion);
+        let isCached = Boolean(entry);
         let reason = "";
         if (!entry) {
           let dssResult;
@@ -365,10 +367,12 @@ export default function Dashboard() {
           }
           if (dssResult.source === "gemini" && Array.isArray(dssResult.insights)) {
             entry = { data: dssResult.insights, model: dssResult.model, savedAt: Date.parse(dssResult.generatedAt) || Date.now(), dataVersion };
+            isCached = Boolean(dssResult.cached);
             writeAiCache(cacheKey, entry);
           } else {
             reason = dssResult.reasonMessage || "Gemini did not return decision support.";
             entry = lastGeminiResult(cachedEntry) || { data: Array.isArray(dssResult.insights) ? dssResult.insights : [], baseline: true };
+            isCached = !entry.baseline;
           }
         }
         const normalizedInsights = entry.data
@@ -376,16 +380,14 @@ export default function Dashboard() {
           .join("\n");
         setAiInsights(normalizedInsights || "Operational Recommendation: No decision-support recommendation is available for the current data.");
         setCurrentAIModel(entry.baseline ? "Local baseline" : `Gemini AI · ${geminiModelLabel(entry.model).replace(/^Gemini /, "")}`);
-        setAiSourceNote(entry.baseline
-          ? `Not Gemini output. ${reason}`
-          : reason
-            ? `Showing the last Gemini result from ${new Date(entry.savedAt).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}. Gemini could not refresh it: ${reason}`
-            : "");
+        setAiSourceMeta(entry.baseline
+          ? { ...PENDING_AI_META, source: "baseline", reason }
+          : { source: "gemini", model: entry.model, savedAt: entry.savedAt, isCached, staleData: entry.dataVersion !== dataVersion, reason });
       } catch (error) {
         console.error("AI error:", error);
         setAiInsights("Operational Recommendation: AI insight unavailable. Check live orders and stock before acting. Signal: dashboard data is still available.");
         setCurrentAIModel("Local baseline");
-        setAiSourceNote(`Not Gemini output. ${error.message || "The AI service could not be reached."}`);
+        setAiSourceMeta({ ...PENDING_AI_META, source: "baseline", reason: error.message || "The AI service could not be reached." });
       } finally {
         setAiLoading(false);
       }
@@ -871,7 +873,6 @@ export default function Dashboard() {
             </div>
             <span className="dashboard-ai-model">{currentAIModel || "Preparing analysis"}</span>
           </header>
-          {!aiLoading && aiSourceNote && <p className="ai-source-note"><span>{aiSourceNote}</span></p>}
 
           {/* CONTENT */}
           {aiLoading ? (
@@ -891,6 +892,7 @@ export default function Dashboard() {
           ) : (
             // 🔥 YOUR EXISTING AI CONTENT
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <AiSourceNote meta={aiSourceMeta} label="decision support" />
               {aiInsights
                 .split("\n")
                 .map((line, i) => {
