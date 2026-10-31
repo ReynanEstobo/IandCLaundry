@@ -2,15 +2,97 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { runtimeValue } from '../config/supabase.js'
 
 // Prefer the stable Flash models. Availability can still vary by Gemini
-// project, region, quota, or provider status, so the service has a local
-// deterministic fallback instead of failing the Analytics page.
+// project, region, quota, or provider status, so every model is tried before
+// the service falls back to a local deterministic baseline.
 const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.6-flash']
+// model -> { until, reason }: skip a model only while Google says it will refuse.
 const cooldowns = new Map()
 const responseCache = new Map()
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000
 const MAX_CACHE_ENTRIES = 100
+const ATTEMPT_TIMEOUT_MS = 25_000
+const TOTAL_BUDGET_MS = 50_000
+const RETRY_PAUSE_MS = 1_000
+// Busy, slow, or malformed replies are usually momentary; try those models once more.
+const TRANSIENT_REASONS = new Set(['busy', 'timeout', 'network', 'invalid_response', 'error'])
 
 const MAX_PROMPT_LENGTH = 20_000
+
+const REASON_PRIORITY = ['not_configured', 'key_rejected', 'quota', 'busy', 'timeout', 'network', 'invalid_response', 'model_unavailable', 'error']
+const SHORT_REASONS = {
+  quota: 'limit reached',
+  busy: 'busy',
+  timeout: 'timed out',
+  network: 'unreachable',
+  invalid_response: 'gave an unusable reply',
+  model_unavailable: 'not available',
+  error: 'failed',
+}
+
+export function geminiModelLabel(model) {
+  return String(model || '').replace(/^gemini-/, 'Gemini ').replace(/-lite$/, '-Lite').replace(/-flash/, ' Flash').replace(/-pro/, ' Pro')
+}
+
+function durationLabel(ms) {
+  const minutes = Math.max(1, Math.ceil(ms / 60_000))
+  return minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 60)} h`
+}
+
+function retryDelayMs(error) {
+  const info = (Array.isArray(error?.errorDetails) ? error.errorDetails : [])
+    .find(detail => String(detail?.['@type'] || '').endsWith('RetryInfo'))
+  const seconds = Number.parseFloat(String(info?.retryDelay || ''))
+  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null
+}
+
+export function classifyGeminiError(error) {
+  const status = Number(error?.status) || 0
+  const message = String(error?.message || '').toLowerCase()
+  if (status === 429 || /quota|rate limit|resource exhausted|too many requests/.test(message)) {
+    return { reason: 'quota', cooldownMs: retryDelayMs(error) ?? 60_000 }
+  }
+  if (status === 401 || status === 403 || /api key not valid|api_key_invalid|permission denied|permission_denied/.test(message)) {
+    return { reason: 'key_rejected', cooldownMs: 0, stop: true }
+  }
+  if (status === 404 || /not found|unsupported|is not supported/.test(message)) return { reason: 'model_unavailable', cooldownMs: 60 * 60_000 }
+  if (error?.name === 'AbortError' || /timed? ?out|deadline|aborted/.test(message)) return { reason: 'timeout', cooldownMs: 0 }
+  if (status >= 500 || /overloaded|high demand|unavailable|internal error/.test(message)) return { reason: 'busy', cooldownMs: 0 }
+  if (/fetch failed|network|econn|enotfound|socket/.test(message)) return { reason: 'network', cooldownMs: 0 }
+  return { reason: 'error', cooldownMs: 0 }
+}
+
+// Turns the per-model outcomes into one plain sentence for the page.
+export function unavailableMessage(attempts, retryAfterMs = null) {
+  const latest = new Map()
+  attempts.forEach(attempt => latest.set(attempt.model || 'gemini', attempt.reason))
+  const reasons = [...new Set(latest.values())]
+  if (reasons.includes('not_configured')) return 'Gemini is not set up: the GEMINI_API_KEY secret is missing on the server.'
+  if (reasons.includes('key_rejected')) return 'Google rejected the Gemini API key. Check the GEMINI_API_KEY secret.'
+  if (reasons.length === 1) {
+    if (reasons[0] === 'quota') return `Gemini's request limit is used up for now${retryAfterMs ? `; it resets in about ${durationLabel(retryAfterMs)}` : ''}.`
+    if (reasons[0] === 'busy') return 'Gemini is overloaded right now (Google reported high demand).'
+    if (reasons[0] === 'timeout') return 'Gemini took too long to reply.'
+    if (reasons[0] === 'network') return 'The server could not reach Gemini.'
+    if (reasons[0] === 'invalid_response') return 'Gemini replied, but not with a usable result.'
+  }
+  if (!latest.size) return 'Gemini could not be reached.'
+  return `Gemini could not answer: ${[...latest].map(([model, reason]) => `${geminiModelLabel(model)} ${SHORT_REASONS[reason] || 'failed'}`).join('; ')}.`
+}
+
+function unavailable(attempts) {
+  const reason = REASON_PRIORITY.find(code => attempts.some(attempt => attempt.reason === code)) || 'error'
+  const quotaWaits = attempts.filter(attempt => attempt.reason === 'quota' && attempt.retryAfterMs).map(attempt => attempt.retryAfterMs)
+  const retryAfterMs = quotaWaits.length ? Math.min(...quotaWaits) : null
+  return {
+    text: null,
+    data: null,
+    model: 'Unavailable',
+    reason,
+    reasonMessage: unavailableMessage(attempts, retryAfterMs),
+    retryAfterMs,
+    attempts: attempts.map(({ model, reason: code }) => ({ model, reason: code })),
+  }
+}
 
 // Entry point for the free-form `ai/generate` endpoint. Internal callers use
 // askGemini directly with their own server-built prompts.
@@ -21,40 +103,100 @@ export async function generateFromPrompt(prompt) {
   return askGemini(prompt)
 }
 
-export async function askGemini(prompt) {
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+// Asks each Gemini model in turn until one returns a reply that `validate`
+// accepts. Only accepted replies are cached, so a bad reply is never reused.
+// `fresh` skips the cached reply (the Regenerate button) and caches the new one.
+export async function askGemini(prompt, { validate = null, fresh = false } = {}) {
   const key = runtimeValue('GEMINI_API_KEY')
-  if (!key) throw Object.assign(new Error('Gemini API key is not configured'), { status: 500 })
-  const cached = responseCache.get(prompt)
-  if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) return cached.value
-  if (cached) responseCache.delete(prompt)
+  if (!key) return unavailable([{ model: null, reason: 'not_configured' }])
+  // Checked and free-form replies are cached apart so one never stands in for the other.
+  const cacheKey = `${validate ? 'checked' : 'raw'}:${prompt}`
+  const cached = responseCache.get(cacheKey)
+  const cacheIsCurrent = cached && Date.now() - cached.createdAt < CACHE_TTL_MS
+  if (!fresh && cacheIsCurrent) return { ...cached.value, cached: true }
+  if (cached && !cacheIsCurrent) responseCache.delete(cacheKey)
 
   const client = new GoogleGenerativeAI(key)
-  for (const modelName of models) {
-    if (Date.now() - (cooldowns.get(modelName) || 0) < 5000) continue
-    try {
-      const model = client.getGenerativeModel({
-        model: modelName,
-        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
-      })
-      const result = await model.generateContent(prompt)
-      const value = { text: result.response.text(), model: modelName }
-      if (responseCache.size >= MAX_CACHE_ENTRIES) responseCache.delete(responseCache.keys().next().value)
-      responseCache.set(prompt, { createdAt: Date.now(), value })
-      return value
-    } catch (error) {
-      const message = error?.message?.toLowerCase() || ''
-      if (!/quota|429|rate limit|resource exhausted|not found|unsupported/.test(message)) throw error
-      cooldowns.set(modelName, Date.now())
+  const startedAt = Date.now()
+  const attempts = []
+  let pending = models
+  for (let round = 0; round < 2 && pending.length; round += 1) {
+    if (round) await pause(RETRY_PAUSE_MS)
+    const retry = []
+    for (const modelName of pending) {
+      const cooldown = cooldowns.get(modelName)
+      if (cooldown && cooldown.until > Date.now()) {
+        attempts.push({ model: modelName, reason: cooldown.reason, retryAfterMs: cooldown.until - Date.now() })
+        continue
+      }
+      const remaining = TOTAL_BUDGET_MS - (Date.now() - startedAt)
+      if (remaining < 3_000) break
+      try {
+        const model = client.getGenerativeModel({
+          model: modelName,
+          generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
+        })
+        // AbortSignal.timeout rather than the SDK's own timer, which is never cleared.
+        const result = await model.generateContent(prompt, { signal: AbortSignal.timeout(Math.min(ATTEMPT_TIMEOUT_MS, remaining)) })
+        const text = result.response.text()
+        let data = text
+        try {
+          if (validate) data = validate(text)
+        } catch {
+          attempts.push({ model: modelName, reason: 'invalid_response' })
+          retry.push(modelName)
+          continue
+        }
+        const value = { text, data, model: modelName, generatedAt: new Date().toISOString() }
+        if (responseCache.size >= MAX_CACHE_ENTRIES) responseCache.delete(responseCache.keys().next().value)
+        responseCache.set(cacheKey, { createdAt: Date.now(), value })
+        return value
+      } catch (error) {
+        const outcome = classifyGeminiError(error)
+        attempts.push({ model: modelName, reason: outcome.reason, retryAfterMs: outcome.cooldownMs || null })
+        if (outcome.cooldownMs) cooldowns.set(modelName, { until: Date.now() + outcome.cooldownMs, reason: outcome.reason })
+        if (outcome.stop) return unavailable(attempts)
+        if (TRANSIENT_REASONS.has(outcome.reason)) retry.push(modelName)
+      }
     }
+    pending = retry
   }
-  return { text: null, model: 'Unavailable' }
+  return unavailable(attempts)
 }
 
-function parseJson(text) {
-  const match = text?.match(/\{[\s\S]*\}/)
-  if (!match) throw Object.assign(new Error('The AI response was not valid JSON'), { status: 502 })
-  try { return JSON.parse(match[0]) } catch { throw Object.assign(new Error('The AI response was not valid JSON'), { status: 502 }) }
+// Reads the first complete JSON object in a reply. Models sometimes wrap it in
+// a code fence or add a stray character after it, which must not discard it.
+export function parseJsonObject(text) {
+  const source = String(text ?? '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')
+  const asObject = value => (Array.isArray(value) ? value[0] : value)
+  try {
+    const value = asObject(JSON.parse(source))
+    if (value && typeof value === 'object') return value
+  } catch { /* fall through to the scan below */ }
+  const start = source.indexOf('{')
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = Math.max(start, 0); start >= 0 && index < source.length; index += 1) {
+    const char = source[index]
+    if (inString) {
+      if (escaped) escaped = false
+      else if (char === '\\') escaped = true
+      else if (char === '"') inString = false
+    } else if (char === '"') inString = true
+    else if (char === '{') depth += 1
+    else if (char === '}' && --depth === 0) {
+      try { return JSON.parse(source.slice(start, index + 1)) } catch { break }
+    }
+  }
+  throw Object.assign(new Error('The AI response was not valid JSON'), { status: 502 })
 }
+
+const toAmount = value => (value === null || value === undefined || value === ''
+  ? Number.NaN
+  : Number(String(value).replace(/[,\s₱]/g, '')))
 
 function limitInsightWords(text, maxWords = 18) {
   const value = String(text || '').trim()
@@ -135,32 +277,73 @@ function localDecisionSupport(metrics, forecastData) {
   }))
 }
 
-function logGeminiFallback(feature, error) {
+function logGeminiFallback(feature, reasonMessage) {
   // Do not log request prompts, API keys, or customer data.
-  console.warn(`Gemini ${feature} unavailable; returning a local fallback.`, error?.message || 'No usable provider response')
+  console.warn(`Gemini ${feature} unavailable; returning a local fallback.`, reasonMessage || 'No usable provider response')
 }
 
-export async function generateForecast({ history, forecastDates, branch, range }) {
+async function askGeminiSafely(prompt, validate, fresh = false) {
+  try {
+    return await askGemini(prompt, { validate, fresh: Boolean(fresh) })
+  } catch {
+    return unavailable([{ model: null, reason: 'error' }])
+  }
+}
+
+function baselineForecast(history, forecastDates, { reason, reasonMessage, retryAfterMs = null }) {
+  return {
+    predictions: localForecast(history, forecastDates),
+    insights: [{ title: 'Local trend baseline', description: `${reasonMessage} This forecast uses the average of the recorded data and should be treated as low confidence.` }],
+    method: 'Local trend baseline · low confidence',
+    model: 'Local fallback',
+    source: 'baseline',
+    isFallback: true,
+    reason,
+    reasonMessage,
+    retryAfterMs,
+  }
+}
+
+// Accepts a reply only when it has a numeric prediction for every forecast
+// date. Dates are matched by value, or by position when the model rewrote them.
+function forecastPredictions(parsed, forecastDates) {
+  const items = Array.isArray(parsed?.predictions) ? parsed.predictions : []
+  const byDate = new Map(items.map(item => [String(item?.date || '').slice(0, 10), item]))
+  const aligned = forecastDates.every(date => byDate.has(date))
+    ? forecastDates.map(date => byDate.get(date))
+    : items.length === forecastDates.length ? items : null
+  const usable = aligned?.every(item => Number.isFinite(toAmount(item?.predictedRevenue)) && Number.isFinite(toAmount(item?.predictedOrders)))
+  if (!usable) throw new Error('Incomplete forecast')
+  return { parsed, items: aligned }
+}
+
+function decisionSupportInsights(parsed) {
+  const insights = (Array.isArray(parsed?.insights) ? parsed.insights : [])
+    .filter(item => typeof item?.title === 'string'
+      && typeof item?.description === 'string'
+      && typeof item?.recommendation === 'string'
+      && item.recommendation.trim().length > 0)
+    .slice(0, 3)
+  if (insights.length !== 3) throw new Error('Incomplete decision support')
+  return insights
+}
+
+export async function generateForecast({ history, forecastDates, branch, range, refresh = false }) {
   if (!Array.isArray(forecastDates) || !forecastDates.length) {
     throw Object.assign(new Error('Forecast dates are required'), { status: 400 })
   }
   history = Array.isArray(history) ? history : []
 
   // A newly opened branch or a narrow date filter may legitimately contain no
-  // orders. It is not an API error: render a zero, low-confidence baseline.
+  // orders. There is nothing for Gemini to learn from, so say so plainly.
   if (!history.length || !history.some(day => (Number(day?.orders) || 0) > 0 || (Number(day?.revenue) || 0) > 0)) {
-    return {
-      predictions: localForecast(history, forecastDates),
-      insights: [{ title: 'Limited historical data', description: 'There are no recorded orders or payments in this selected period, so the displayed zero-value baseline is not a reliable demand prediction.' }],
-      method: 'Local trend baseline · low confidence',
-      model: 'Local fallback',
-      isFallback: true,
-    }
+    return baselineForecast(history, forecastDates, {
+      reason: 'no_data',
+      reasonMessage: 'No orders or payments were recorded in this period, so there was nothing to send to Gemini.',
+    })
   }
 
-  let response
-  try {
-    response = await askGemini(`You are assisting a laundry business manager with a revenue-and-demand forecast.
+  const response = await askGeminiSafely(`You are assisting a laundry business manager with a revenue-and-demand forecast.
 Use only the supplied dated historical totals. Weekly and monthly selections use daily observations; yearly selections use yearly observations. Do not invent events, customers, or operational facts.
 
 Branch scope: ${branch || 'All branches'}
@@ -179,49 +362,13 @@ Rules:
 - Make conservative forecasts when history is sparse.
 - Use low confidence with fewer than 28 historical observations, medium with 28–89, and high only with at least 90 observations and a consistent pattern. The server will enforce this ceiling.
 - Provide 2 or 3 practical recommendations covering peak demand, staffing, inventory, service demand, or branch performance when supported by the data.
-- Do not use markdown.`)
-  } catch (error) {
-    logGeminiFallback('forecasting', error)
-  }
+- Do not use markdown.`, text => forecastPredictions(parseJsonObject(text), forecastDates), refresh)
 
-  if (!response?.text) {
-    return {
-      predictions: localForecast(history, forecastDates),
-      insights: [{ title: 'Local trend baseline', description: 'Gemini is temporarily unavailable, so this forecast uses the average of the recorded daily data and should be treated as low confidence.' }],
-      method: 'Local trend baseline · low confidence',
-      model: 'Local fallback',
-      isFallback: true,
-    }
+  if (!response.data) {
+    logGeminiFallback('forecasting', response.reasonMessage)
+    return baselineForecast(history, forecastDates, response)
   }
-
-  let parsed
-  try {
-    parsed = parseJson(response.text)
-  } catch (error) {
-    logGeminiFallback('forecast response parsing', error)
-    return {
-      predictions: localForecast(history, forecastDates),
-      insights: [{ title: 'Local trend baseline', description: 'Gemini returned an unusable response, so this forecast uses the average of the recorded daily data and should be treated as low confidence.' }],
-      method: 'Local trend baseline · low confidence',
-      model: 'Local fallback',
-      isFallback: true,
-    }
-  }
-  const byDate = new Map((parsed.predictions || []).map(item => [item.date, item]))
-  const isComplete = forecastDates.every(date => {
-    const item = byDate.get(date)
-    return item && Number.isFinite(Number(item.predictedRevenue)) && Number.isFinite(Number(item.predictedOrders))
-  })
-  if (!isComplete) {
-    logGeminiFallback('forecast response validation')
-    return {
-      predictions: localForecast(history, forecastDates),
-      insights: [{ title: 'Local trend baseline', description: 'Gemini returned an incomplete forecast, so the displayed values use the recorded daily average and should be treated as low confidence.' }],
-      method: 'Local trend baseline · low confidence',
-      model: 'Local fallback',
-      isFallback: true,
-    }
-  }
+  const { parsed, items } = response.data
   const historicalOrderCounts = history.map(day => Math.max(0, Number(day?.orders) || 0))
   const meanHistoricalOrders = historicalOrderCounts.length
     ? historicalOrderCounts.reduce((sum, count) => sum + count, 0) / historicalOrderCounts.length
@@ -231,15 +378,15 @@ Rules:
     : Number.POSITIVE_INFINITY
   const orderVariation = meanHistoricalOrders > 0 ? Math.sqrt(orderVariance) / meanHistoricalOrders : Number.POSITIVE_INFINITY
   const stableOrderPattern = orderVariation <= 0.75
-  const predictions = forecastDates.map(date => {
-    const item = byDate.get(date)
+  const predictions = forecastDates.map((date, index) => {
+    const item = items[index]
     const modelConfidence = ['low', 'medium', 'high'].includes(item.confidence) ? item.confidence : 'low'
     const confidenceCeiling = history.length >= 90 && stableOrderPattern ? 'high' : history.length >= 28 ? 'medium' : 'low'
     const confidenceRank = { low: 0, medium: 1, high: 2 }
     return {
       date,
-      predictedRevenue: Math.max(0, Math.round(Number(item.predictedRevenue))),
-      predictedOrders: Math.max(0, Math.round(Number(item.predictedOrders))),
+      predictedRevenue: Math.max(0, Math.round(toAmount(item.predictedRevenue))),
+      predictedOrders: Math.max(0, Math.round(toAmount(item.predictedOrders))),
       confidence: confidenceRank[modelConfidence] <= confidenceRank[confidenceCeiling] ? modelConfidence : confidenceCeiling,
     }
   })
@@ -250,10 +397,13 @@ Rules:
     // Do not render free-form model prose in the dashboard header.
     method: `Gemini-assisted forecast (${response.model})`,
     model: response.model,
+    source: 'gemini',
+    generatedAt: response.generatedAt,
+    cached: Boolean(response.cached),
   }
 }
 
-export async function generateDecisionSupport({ metrics, trendData, forecastData, branch, range }) {
+export async function generateDecisionSupport({ metrics, trendData, forecastData, branch, range, refresh = false }) {
   const safeMetrics = {
     totalRevenue: Number(metrics?.totalRevenue) || 0,
     totalExpenses: Number(metrics?.totalExpenses) || 0,
@@ -265,9 +415,7 @@ export async function generateDecisionSupport({ metrics, trendData, forecastData
   const safeTrendData = Array.isArray(trendData) ? trendData.slice(-60) : []
   const safeForecastData = Array.isArray(forecastData) ? forecastData.slice(0, 30) : []
 
-  let response
-  try {
-    response = await askGemini(`You are an AI-assisted decision-support system for a multi-branch laundry business.
+  const response = await askGeminiSafely(`You are an AI-assisted decision-support system for a multi-branch laundry business.
 Analyze only the supplied metrics, trend data, and forecast. Do not invent facts.
 
 Branch scope: ${branch || 'All branches'}
@@ -287,35 +435,25 @@ Rules:
 - Recommendations should be practical, optional next steps; include a quick verification when needed.
 - In descriptions, state the supplied evidence and uncertainty; never invent causes or facts.
 - When data is limited, recommend maintaining the current plan and checking live records rather than acting on a weak forecast.
-- Avoid generic advice and markdown.`)
-  } catch (error) {
-    logGeminiFallback('decision support', error)
-  }
+- Avoid generic advice and markdown.`, text => decisionSupportInsights(parseJsonObject(text)), refresh)
 
-  if (!response?.text) return { insights: localDecisionSupport(safeMetrics, safeForecastData), model: 'Local fallback', isFallback: true }
-
-  let parsed
-  try {
-    parsed = parseJson(response.text)
-  } catch (error) {
-    logGeminiFallback('decision-support response parsing', error)
-    return { insights: localDecisionSupport(safeMetrics, safeForecastData), model: 'Local fallback', isFallback: true }
+  if (!response.data) {
+    logGeminiFallback('decision support', response.reasonMessage)
+    return {
+      insights: localDecisionSupport(safeMetrics, safeForecastData),
+      model: 'Local fallback',
+      source: 'baseline',
+      isFallback: true,
+      reason: response.reason,
+      reasonMessage: response.reasonMessage,
+      retryAfterMs: response.retryAfterMs,
+    }
   }
-  const insights = (parsed.insights || [])
-    .filter(item => typeof item?.title === 'string'
-      && typeof item?.description === 'string'
-      && typeof item?.recommendation === 'string'
-      && item.recommendation.trim().length > 0)
-    .slice(0, 3)
-
-  if (insights.length !== 3) {
-    logGeminiFallback('decision-support response validation')
-    return { insights: localDecisionSupport(safeMetrics, safeForecastData), model: 'Local fallback', isFallback: true }
-  }
+  const insights = response.data
   const conciseInsights = insights.map(item => ({
     title: limitInsightWords(item.title, 4),
     description: limitInsightWords(item.description),
     recommendation: limitInsightWords(item.recommendation),
   }))
-  return { insights: conciseInsights, model: response.model }
+  return { insights: conciseInsights, model: response.model, source: 'gemini', generatedAt: response.generatedAt, cached: Boolean(response.cached) }
 }

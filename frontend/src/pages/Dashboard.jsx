@@ -21,6 +21,7 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { generateDecisionSupport } from "../services/geminiService";
+import { aiCacheKey, aiServiceErrorReason, dataFingerprint, geminiModelLabel, lastGeminiResult, readAiCache, reusableAiCache, sharedAiRequest, writeAiCache } from "../utils/aiOutputCache";
 import { InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import DashboardCharts from "../components/DashboardCharts";
 import Pagination from "../components/Pagination";
@@ -42,6 +43,7 @@ export default function Dashboard() {
   const [loadError, setLoadError] = useState("");
   const [aiInsights, setAiInsights] = useState("");
   const [currentAIModel, setCurrentAIModel] = useState("");
+  const [aiSourceNote, setAiSourceNote] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [chartLoading, setChartLoading] = useState(true);
   const [weeklyData, setWeeklyData] = useState([]);
@@ -326,7 +328,7 @@ export default function Dashboard() {
         const periodExpenses = expenses
           .filter((expense) => new Date(`${expense.expense_date}T00:00:00`) >= periodStart)
           .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
-        const dssResult = await generateDecisionSupport({
+        const dssRequest = {
           metrics: {
             totalRevenue: periodRevenue,
             totalExpenses: periodExpenses,
@@ -346,16 +348,44 @@ export default function Dashboard() {
           forecastData: [{ date: "next-month", predictedRevenue: fc.predictedMonthlyRevenue, predictedOrders: Math.round(fc.avgDailyOrders * 30) }],
           branch: "All branches",
           range,
-        });
-        const normalizedInsights = (Array.isArray(dssResult.insights) ? dssResult.insights : [])
+        };
+        // Reuse this browser's recent Gemini result so each visit does not
+        // spend a Gemini request; see utils/aiOutputCache.js.
+        const cacheKey = aiCacheKey("dashboard", [range]);
+        const dataVersion = dataFingerprint(dssRequest);
+        const cachedEntry = readAiCache(cacheKey);
+        let entry = reusableAiCache(cachedEntry, dataVersion);
+        let reason = "";
+        if (!entry) {
+          let dssResult;
+          try {
+            dssResult = await sharedAiRequest(`${cacheKey}|${dataVersion}`, () => generateDecisionSupport(dssRequest));
+          } catch (serviceError) {
+            dssResult = { source: "baseline", reasonMessage: aiServiceErrorReason(serviceError) };
+          }
+          if (dssResult.source === "gemini" && Array.isArray(dssResult.insights)) {
+            entry = { data: dssResult.insights, model: dssResult.model, savedAt: Date.parse(dssResult.generatedAt) || Date.now(), dataVersion };
+            writeAiCache(cacheKey, entry);
+          } else {
+            reason = dssResult.reasonMessage || "Gemini did not return decision support.";
+            entry = lastGeminiResult(cachedEntry) || { data: Array.isArray(dssResult.insights) ? dssResult.insights : [], baseline: true };
+          }
+        }
+        const normalizedInsights = entry.data
           .map((insight) => `${insight.title || "Decision support"}: ${(insight.recommendation || "Review the signal before acting.").replace(/^Option(?:\s+to\s+consider)?:\s*/i, "")} Signal: ${insight.description || "No supporting signal is available."}`)
           .join("\n");
         setAiInsights(normalizedInsights || "Operational Recommendation: No decision-support recommendation is available for the current data.");
-        setCurrentAIModel(dssResult.model || "AI decision support");
+        setCurrentAIModel(entry.baseline ? "Local baseline" : `Gemini AI · ${geminiModelLabel(entry.model).replace(/^Gemini /, "")}`);
+        setAiSourceNote(entry.baseline
+          ? `Not Gemini output. ${reason}`
+          : reason
+            ? `Showing the last Gemini result from ${new Date(entry.savedAt).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}. Gemini could not refresh it: ${reason}`
+            : "");
       } catch (error) {
         console.error("AI error:", error);
         setAiInsights("Operational Recommendation: AI insight unavailable. Check live orders and stock before acting. Signal: dashboard data is still available.");
-        setCurrentAIModel("Service unavailable");
+        setCurrentAIModel("Local baseline");
+        setAiSourceNote(`Not Gemini output. ${error.message || "The AI service could not be reached."}`);
       } finally {
         setAiLoading(false);
       }
@@ -841,6 +871,7 @@ export default function Dashboard() {
             </div>
             <span className="dashboard-ai-model">{currentAIModel || "Preparing analysis"}</span>
           </header>
+          {!aiLoading && aiSourceNote && <p className="ai-source-note"><span>{aiSourceNote}</span></p>}
 
           {/* CONTENT */}
           {aiLoading ? (
