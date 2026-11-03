@@ -15,6 +15,7 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { predictInventoryDaysLeft } from "../utils/inventoryForecast";
+import { loadInventoryForecastHistory } from "../services/inventoryForecastHistory";
 import { createBranchInventoryItem, getInventoryPage, restockBranchInventory } from "../services/api/operationsApi";
 import { useShowPageLoader, InlineSkeleton, PageError, PageLoader } from "../components/AsyncState";
 import RowActionsMenu from "../components/RowActionsMenu";
@@ -85,21 +86,20 @@ export default function Inventory() {
       setLoadError("");
     } else setRefreshing(true);
     try {
-      const [itemsRes, usageRes, recipesRes, addonsRes, orderItemsRes] = await Promise.all([
+      const [itemsRes, addonsRes] = await Promise.all([
         getInventoryPage({ page, pageSize: PAGE_SIZE, branch: branchFilter, search: searchQuery }),
-        supabase.from("inventory_usage_log").select("*").order("logged_at", { ascending: false }).limit(500),
-        supabase.from("service_inventory_requirements").select("inventory_item_id, service_type_id, branch_id, quantity_per_load, is_active").eq("is_active", true),
         supabase.from("service_addon_items").select("inventory_item_id, service_type_id, branch_id, is_active").eq("is_active", true),
-        supabase.from("order_items").select("service_type_id, branch_id, loads, status, created_at").not("status", "eq", "cancelled").order("created_at", { ascending: false }).limit(1000),
       ]);
-      const error = usageRes.error || recipesRes.error || addonsRes.error || orderItemsRes.error;
-      if (error) throw error;
-      setItems(itemsRes.data || []);
+      if (addonsRes.error) throw addonsRes.error;
+      const pageItems = itemsRes.data || [];
+      // Forecast history is read per branch of the items on this page.
+      const history = await loadInventoryForecastHistory(pageItems);
+      setItems(pageItems);
       setTotalCount(Number(itemsRes.count || 0));
-      setUsageLogs(usageRes.data || []);
-      setServiceRecipes(recipesRes.data || []);
+      setUsageLogs(history.usageLogs);
+      setServiceRecipes(history.serviceRecipes);
       setServiceAddonConfigs(addonsRes.data || []);
-      setServiceOrderItems(orderItemsRes.data || []);
+      setServiceOrderItems(history.serviceOrderItems);
     } catch (error) {
       if (!background) setLoadError(error.message || "Unable to load inventory data.");
       else console.error("Background inventory refresh failed:", error);

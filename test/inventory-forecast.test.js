@@ -43,3 +43,31 @@ test('suggested reorder uses a minimum-level buffer when usage history is limite
   const item = { id: 'bags', branch_id: 'branch-1', current_stock: 8, minimum_stock: 20 }
   assert.equal(suggestInventoryReorderQuantity(item), 32)
 })
+
+test('inventory forecast counts only usage recorded in the item\'s own branch', () => {
+  const item = { id: 'soap', branch_id: 'branch-2', current_stock: 12 }
+  const logs = [
+    // Recorded at the item's previous branch before it was moved.
+    { item_id: 'soap', branch_id: 'branch-1', quantity_used: 50, logged_at: '2026-09-20T08:00:00Z' },
+    { item_id: 'soap', branch_id: 'branch-1', quantity_used: 50, logged_at: '2026-09-21T08:00:00Z' },
+    { item_id: 'soap', branch_id: 'branch-2', quantity_used: 3, logged_at: '2026-09-28T08:00:00Z' },
+    { item_id: 'soap', branch_id: 'branch-2', quantity_used: 3, logged_at: '2026-10-01T08:00:00Z' },
+  ]
+
+  assert.equal(predictInventoryDaysLeft(item, logs), 6)
+})
+
+test('inventory forecast ignores another branch\'s service demand', () => {
+  const now = new Date('2026-10-01T12:00:00Z')
+  const item = { id: 'bag', branch_id: 'branch-1', current_stock: 20 }
+  const recipes = [
+    { inventory_item_id: 'bag', service_type_id: 'wash', branch_id: 'branch-1', quantity_per_load: 1 },
+    { inventory_item_id: 'bag', service_type_id: 'wash', branch_id: 'branch-2', quantity_per_load: 1 },
+  ]
+  const orderItems = [
+    { branch_id: 'branch-1', service_type_id: 'wash', loads: 5, created_at: '2026-09-22T12:00:00Z' },
+    { branch_id: 'branch-2', service_type_id: 'wash', loads: 500, created_at: '2026-09-22T12:00:00Z' },
+  ]
+
+  assert.equal(predictInventoryDaysLeft(item, [], recipes, orderItems, now), 40)
+})

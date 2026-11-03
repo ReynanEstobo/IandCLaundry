@@ -1,4 +1,4 @@
-import { differenceInDays, format, startOfToday } from "date-fns";
+import { format, startOfToday } from "date-fns";
 import {
   AlertTriangle,
   ArrowRight,
@@ -29,6 +29,7 @@ import Pagination from "../components/Pagination";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { paymentTimestamp, recordedPaymentAmount, rollingDemandForecast } from "../utils/businessForecast";
 import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorderQuantity } from "../utils/inventoryForecast";
+import { loadInventoryForecastHistory } from "../services/inventoryForecastHistory";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -199,7 +200,6 @@ export default function Dashboard() {
       customersRes,
       inventoryRes,
       recentRes,
-      usageRes,
       paymentsByPaidAtRes,
       paymentsByPaymentDateRes,
       expensesRes,
@@ -230,11 +230,6 @@ export default function Dashboard() {
         .order("status", { ascending: true }) // NOT released first
         .order("created_at", { ascending: true }) // oldest first
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1),
-      supabase
-        .from("inventory_usage_log")
-        .select("item_id, quantity_used, logged_at, reversed_at")
-        .order("logged_at", { ascending: false })
-        .limit(500),
       // The local query adapter intentionally exposes only simple filters.
       // Read both timestamp indexes, then retain the same preferred
       // `paid_at || payment_date` timestamp used by the existing dashboard.
@@ -247,7 +242,7 @@ export default function Dashboard() {
       .select("*")
       .single();
 
-    const requestError = historicalOrdersRes.error || activeOrdersRes.error || unpaidOrdersRes.error || customersRes.error || inventoryRes.error || recentRes.error || usageRes.error || paymentsByPaidAtRes.error || paymentsByPaymentDateRes.error || expensesRes.error;
+    const requestError = historicalOrdersRes.error || activeOrdersRes.error || unpaidOrdersRes.error || customersRes.error || inventoryRes.error || recentRes.error || paymentsByPaidAtRes.error || paymentsByPaymentDateRes.error || expensesRes.error;
     if (requestError) throw requestError;
 
     setSettings(settingsData || {});
@@ -256,7 +251,8 @@ export default function Dashboard() {
     [...(historicalOrdersRes.data || []), ...(activeOrdersRes.data || []), ...(unpaidOrdersRes.data || [])].forEach((order) => ordersById.set(order.id, order));
     const orders = [...ordersById.values()];
     const inventory = inventoryRes.data || [];
-    const usageLogs = usageRes.data || [];
+    // Item forecasts read each branch's own recent history.
+    const forecastHistory = await loadInventoryForecastHistory(inventory);
     const paymentsById = new Map();
     [...(paymentsByPaidAtRes.data || []), ...(paymentsByPaymentDateRes.data || [])].forEach((payment) => paymentsById.set(payment.id, payment));
     const payments = [...paymentsById.values()].filter((payment) => {
@@ -294,14 +290,14 @@ export default function Dashboard() {
     // Generate smart suggestions
     const tips = generateSuggestions(
       inventory,
-      usageLogs,
+      forecastHistory,
       orders,
       readyForPickup,
     );
     setSuggestions(tips);
 
     // Generate AI forecasts
-    const fc = generateForecasts(orders, payments, inventory, usageLogs);
+    const fc = generateForecasts(orders, payments, inventory, forecastHistory);
     setForecasts(fc);
     setOverviewAlertPage((current) => Math.min(current, Math.max(0, fc.restockAlerts.length - 1)));
     // Charts are ready as soon as the filtered operational data is ready.
@@ -405,7 +401,13 @@ export default function Dashboard() {
     }
   }
 
-  function generateForecasts(orders, payments, inventory, usageLogs) {
+  // Same inputs as the Inventory page, so both show the same days left.
+  function itemDaysLeft(item, { usageLogs, serviceRecipes, serviceOrderItems }) {
+    return predictInventoryDaysLeft(item, usageLogs, serviceRecipes, serviceOrderItems);
+  }
+
+  function generateForecasts(orders, payments, inventory, forecastHistory) {
+    const { usageLogs, serviceRecipes, serviceOrderItems } = forecastHistory;
     const baseline = rollingDemandForecast(orders, payments);
 
     // --- Restock predictions ---
@@ -413,12 +415,12 @@ export default function Dashboard() {
     inventory
       .filter((item) => Number(item.current_stock) <= Number(item.minimum_stock))
       .forEach((item) => {
-      const itemLogs = usageLogs.filter((l) => l.item_id === item.id);
       restockAlerts.push({
         name: item.name,
-        daysLeft: predictInventoryDaysLeft(item, itemLogs),
+        branch: item.branch,
+        daysLeft: itemDaysLeft(item, forecastHistory),
         unit: item.unit,
-        suggestedReorder: suggestInventoryReorderQuantity(item, itemLogs),
+        suggestedReorder: suggestInventoryReorderQuantity(item, usageLogs, serviceRecipes, serviceOrderItems),
         currentStock: Number(item.current_stock),
       });
     });
@@ -431,7 +433,7 @@ export default function Dashboard() {
     };
   }
 
-  function generateSuggestions(inventory, usageLogs, orders, readyCount) {
+  function generateSuggestions(inventory, forecastHistory, orders, readyCount) {
     const tips = [];
 
     // 1. Low stock / out of stock items - suggest buying
@@ -468,40 +470,17 @@ export default function Dashboard() {
 
     // 2. Stock prediction - items that will run out within 7 days
     inventory.forEach((item) => {
-      const itemLogs = usageLogs.filter((l) => l.item_id === item.id);
-      if (itemLogs.length >= 2) {
-        const sorted = [...itemLogs].sort(
-          (a, b) => new Date(a.logged_at) - new Date(b.logged_at),
-        );
-        const daysDiff = Math.max(
-          differenceInDays(
-            new Date(sorted[sorted.length - 1].logged_at),
-            new Date(sorted[0].logged_at),
-          ),
-          1,
-        );
-        const totalUsed = itemLogs.reduce(
-          (s, l) => s + Number(l.quantity_used),
-          0,
-        );
-        const dailyUsage = totalUsed / daysDiff;
-        if (dailyUsage > 0) {
-          const daysLeft = Math.floor(Number(item.current_stock) / dailyUsage);
-          if (
-            daysLeft <= 7 &&
-            daysLeft > 0 &&
-            !lowItems.find((l) => l.id === item.id)
-          ) {
-            tips.push({
-              type: "critical",
-              icon: TrendingUp,
-              title: `${item.name} Running Out`,
-              message: `Based on usage trends, ${item.name} will run out in ~${daysLeft} day${daysLeft !== 1 ? "s" : ""}. Buy more to avoid shortage.`,
-              action: "View Predictions",
-              link: "/dashboard/inventory",
-            });
-          }
-        }
+      const daysLeft = itemDaysLeft(item, forecastHistory);
+      if (daysLeft !== null && daysLeft <= 7 && daysLeft > 0 && !lowItems.find((l) => l.id === item.id)) {
+        const itemLabel = `${item.name}${item.branch ? ` at ${item.branch}` : ""}`;
+        tips.push({
+          type: "critical",
+          icon: TrendingUp,
+          title: `${item.name} Running Out`,
+          message: `Based on usage trends, ${itemLabel} will run out in ~${daysLeft} day${daysLeft !== 1 ? "s" : ""}. Buy more to avoid shortage.`,
+          action: "View Predictions",
+          link: "/dashboard/inventory",
+        });
       }
     });
 
@@ -818,7 +797,7 @@ export default function Dashboard() {
                     <span className="staff-dss-alert-dot" aria-hidden="true" />
                     <div>
                       <strong>{activeRestockAlert.name}</strong>
-                      <small className="staff-dss-next">{activeRestockAlert.currentStock} {activeRestockAlert.unit} left · {activeRestockAlert.daysLeft == null ? "limited history" : activeRestockAlert.daysLeft <= 0 ? "may run out today" : `~${activeRestockAlert.daysLeft} days left`} · reorder {activeRestockAlert.suggestedReorder} {activeRestockAlert.unit}</small>
+                      <small className="staff-dss-next">{activeRestockAlert.branch ? `${activeRestockAlert.branch} · ` : ""}{activeRestockAlert.currentStock} {activeRestockAlert.unit} left · {activeRestockAlert.daysLeft == null ? "limited history" : activeRestockAlert.daysLeft <= 0 ? "may run out today" : `~${activeRestockAlert.daysLeft} days left`} · reorder {activeRestockAlert.suggestedReorder} {activeRestockAlert.unit}</small>
                       <span>
                         {inventoryRunOutLabel(activeRestockAlert.daysLeft)}
                       </span>

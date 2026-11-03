@@ -7,7 +7,11 @@ function estimateDailyInventoryUsage(
   serviceOrderItems = [],
   now = new Date(),
 ) {
-  const itemLogs = usageLogs.filter(log => log.item_id === item?.id && !log.reversed_at)
+  // Only usage recorded in the item's current branch counts: after an item
+  // moves branch, its old branch's consumption no longer predicts its future.
+  const itemLogs = usageLogs.filter(log => log.item_id === item?.id
+    && !log.reversed_at
+    && (!log.branch_id || !item?.branch_id || log.branch_id === item.branch_id))
 
   if (itemLogs.length >= 2) {
     const sortedLogs = [...itemLogs].sort((a, b) => new Date(a.logged_at) - new Date(b.logged_at))
