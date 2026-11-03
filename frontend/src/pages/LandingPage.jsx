@@ -891,7 +891,7 @@ export default function LandingPage() {
                         <span>
                           {order.eta_revised_at
                             ? "Updated after a staff correction"
-                            : order.eta_source === "historical_service_branch"
+                            : order.eta_source?.startsWith("historical_service_branch")
                               ? "Based on similar completed orders"
                               : "Based on the branch default"}
                         </span>
