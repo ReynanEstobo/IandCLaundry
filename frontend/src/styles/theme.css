@@ -386,6 +386,16 @@ button, a, input, select, textarea, label, [role="button"] { touch-action: manip
 }
 .form-control::placeholder, .login-input::placeholder { color: var(--text-muted); opacity: 0.8; }
 .form-control:focus, .login-input:focus { border-color: var(--primary); box-shadow: var(--focus-ring); outline: 2px solid transparent; outline-offset: 1px; }
+/* A field a form flagged (components/FormAlert.jsx) keeps its red outline, even while focused. */
+.form-control[aria-invalid="true"], .login-input[aria-invalid="true"] { border-color: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 14%, transparent); }
+/* Inline form error: the same light-red box and icon as the sign-in error, for every form. */
+.form-alert { display: flex; align-items: flex-start; gap: 9px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--danger) 32%, transparent); border-radius: var(--radius-sm); background: var(--danger-light); color: var(--danger); font-size: 13px; font-weight: 500; line-height: 1.45; text-align: left; }
+.form-alert__icon { flex: 0 0 auto; margin-top: 2px; }
+.form-alert__text { min-width: 0; overflow-wrap: anywhere; }
+.form-alert--compact { gap: 7px; margin: 7px 0 0; padding: 7px 10px; font-size: 12px; }
+.form-alert--compact .form-alert__icon { margin-top: 1px; }
+.track-form + .form-alert { margin: 14px 0 0; }
+.analytics-filter-error .form-alert { margin: 0; }
 .form-control.is-readonly, .form-control[readonly] { background: var(--bg-secondary); color: var(--text-secondary); }
 .form-hint { color: var(--text-muted); font-size: 12.5px; }
 /* Guidance under the inventory fields only administrators can change after creation. */

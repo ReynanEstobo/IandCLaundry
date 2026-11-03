@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { apiFetch } from '../services/api/client'
 import LoadingButton from '../components/LoadingButton'
+import FormAlert from '../components/FormAlert'
 import ChangeEmail from '../components/ChangeEmail'
 import useOtpCooldown from '../hooks/useOtpCooldown'
 import { clearOtpSession, readOtpSession, writeOtpSession } from '../utils/otpSession'
@@ -23,17 +24,18 @@ function tabFromHash() {
   return ACCOUNT_TABS.some(tab => tab.id === id) ? id : ACCOUNT_TABS[0].id
 }
 
-function PasswordField({ label, value, onChange, visible, onToggle, placeholder, disabled }) {
+function PasswordField({ label, value, onChange, visible, onToggle, placeholder, disabled, error }) {
   const fieldId = useId()
   return <div className="login-field">
     <label htmlFor={fieldId}>{label}</label>
     <div className="login-input-wrap">
       <LockKeyhole size={15} className="login-input-icon" />
-      <input id={fieldId} className="login-input login-input-password" type={visible ? 'text' : 'password'} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} minLength={12} placeholder={placeholder} autoComplete="new-password" required />
+      <input id={fieldId} className="login-input login-input-password" type={visible ? 'text' : 'password'} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} minLength={12} placeholder={placeholder} autoComplete="new-password" aria-invalid={Boolean(error)} aria-describedby={error ? `${fieldId}-error` : undefined} required />
       <button type="button" className="login-eye-btn" disabled={disabled} onClick={onToggle} aria-label={visible ? `Hide ${label}` : `Show ${label}`}>
         {visible ? <EyeOff size={15} /> : <Eye size={15} />}
       </button>
     </div>
+    <FormAlert compact id={`${fieldId}-error`}>{error}</FormAlert>
   </div>
 }
 
@@ -52,6 +54,9 @@ export default function AccountSecurity() {
   const [saving, setSaving] = useState(false)
   const [passwordChanged, setPasswordChanged] = useState(false)
   const [visible, setVisible] = useState({ next: false, confirmation: false })
+  // field: 'request' (sending the code), 'next', 'confirmation', or '' for the whole form.
+  const [formError, setFormError] = useState({ field: '', message: '' })
+  const fieldError = field => (formError.field === field ? formError.message : '')
   const cooldown = useOtpCooldown(OTP_COOLDOWN_KEY)
   // One tab is shown at a time; the URL hash keeps it linkable.
   const [activeTab, setActiveTab] = useState(tabFromHash)
@@ -63,6 +68,7 @@ export default function AccountSecurity() {
   async function requestCode() {
     setSendingCode(true)
     setRecoveryEmailMissing(false)
+    setFormError({ field: '', message: '' })
     try {
       const result = await apiFetch('/api/auth/password/otp', { method: 'POST' })
       setDestination(result.destination)
@@ -71,9 +77,11 @@ export default function AccountSecurity() {
       setOtp(''); setOtpStatus('idle'); setOtpMessage(''); setNewPassword(''); setConfirmation('')
       toast.success(`Verification code sent to ${result.destination}`)
     } catch (error) {
-      setRecoveryEmailMissing(error.data?.code === 'CONTACT_EMAIL_REQUIRED')
+      // A missing recovery email and a cooldown each have their own notice.
+      const missingEmail = error.data?.code === 'CONTACT_EMAIL_REQUIRED'
+      setRecoveryEmailMissing(missingEmail)
       if (error.data?.retryAfterSeconds) cooldown.start(error.data.retryAfterSeconds)
-      toast.error(error.message)
+      else if (!missingEmail) setFormError({ field: 'request', message: error.message })
     } finally {
       setSendingCode(false)
     }
@@ -94,16 +102,17 @@ export default function AccountSecurity() {
   async function submit(event) {
     event.preventDefault()
     const policyError = passwordPolicyError(newPassword)
-    if (policyError) return toast.error(policyError)
-    if (newPassword !== confirmation) return toast.error('Passwords do not match.')
-    if (otpStatus !== 'valid') return toast.error('Verify your OTP before setting a new password.')
+    if (policyError) return setFormError({ field: 'next', message: policyError })
+    if (newPassword !== confirmation) return setFormError({ field: 'confirmation', message: 'Passwords do not match.' })
+    if (otpStatus !== 'valid') return setFormError({ field: '', message: 'Verify your OTP before setting a new password.' })
+    setFormError({ field: '', message: '' })
     setSaving(true)
     try {
       await apiFetch('/api/auth/password', { method: 'PATCH', body: JSON.stringify({ newPassword, otp }) })
       clearOtpSession(OTP_SESSION_KEY)
       setPasswordChanged(true)
     } catch (error) {
-      toast.error(error.message || 'Unable to change password.')
+      setFormError({ field: '', message: error.message || 'Unable to change password.' })
     } finally {
       setSaving(false)
     }
@@ -141,6 +150,7 @@ export default function AccountSecurity() {
         <LoadingButton type="button" className="account-security-code-button" disabled={cooldown.remaining > 0} onClick={requestCode} loading={sendingCode} loadingLabel="Sending verification code…">
           <MailCheck size={16} /> {destination ? cooldown.label : 'Send verification code'}
         </LoadingButton>
+        <FormAlert compact>{fieldError('request')}</FormAlert>
         {cooldown.remaining > 0 && <p className="otp-cooldown-notice" role="status">{cooldown.message}</p>}
         {recoveryEmailMissing && <div className="otp-email-missing" role="alert">No recovery email is bound to your account. Open the <button type="button" className="login-forgot-password" onClick={() => selectTab('recovery-email')}>Recovery email</button> tab to add one before requesting an OTP.</div>}
         {destination && <div className="account-security-notice"><MailCheck size={16} /><span>Code sent to <strong>{destination}</strong>. It expires in 10 minutes.</span></div>}
@@ -151,11 +161,12 @@ export default function AccountSecurity() {
             <input id="account-security-otp" autoComplete="one-time-code" spellCheck={false} className={`login-input account-security-otp otp-verification-input ${otpStatus}`} inputMode="numeric" maxLength={6} value={otp} disabled={!destination || saving || otpStatus === 'valid' || otpStatus === 'checking'} onChange={event => { const code = event.target.value.replace(/\D/g, ''); setOtp(code); setOtpStatus('idle'); setOtpMessage(''); if (code.length === 6) void verifyCode(code) }} placeholder="000000" aria-invalid={otpStatus === 'invalid'} required />
           </div>
           {otpStatus === 'checking' && <p className="otp-verification-checking" role="status">Checking OTP…</p>}
-          {otpMessage && <p className="otp-verification-message" role="alert">{otpMessage}</p>}
+          <FormAlert compact>{otpMessage}</FormAlert>
         </div>
         {otpStatus === 'valid' && <div className="otp-verification-success" role="status">OTP verified. You can now set a new password.</div>}
-        <PasswordField label="New password" value={newPassword} onChange={setNewPassword} visible={visible.next} onToggle={flip('next')} placeholder="Strong password" disabled={saving || otpStatus !== 'valid'} />
-        <PasswordField label="Confirm new password" value={confirmation} onChange={setConfirmation} visible={visible.confirmation} onToggle={flip('confirmation')} placeholder="Re-enter your new password" disabled={saving || otpStatus !== 'valid'} />
+        <PasswordField label="New password" value={newPassword} onChange={value => { setNewPassword(value); setFormError({ field: '', message: '' }) }} visible={visible.next} onToggle={flip('next')} placeholder="Strong password" disabled={saving || otpStatus !== 'valid'} error={fieldError('next')} />
+        <PasswordField label="Confirm new password" value={confirmation} onChange={value => { setConfirmation(value); setFormError({ field: '', message: '' }) }} visible={visible.confirmation} onToggle={flip('confirmation')} placeholder="Re-enter your new password" disabled={saving || otpStatus !== 'valid'} error={fieldError('confirmation')} />
+        <FormAlert>{fieldError('')}</FormAlert>
         <LoadingButton type="submit" className="btn btn-primary" disabled={otpStatus !== 'valid'} loading={saving} loadingLabel="Changing password…"><LockKeyhole size={16} /> Change password</LoadingButton>
       </form>
       </div></div>

@@ -20,6 +20,7 @@ import { supabase } from "../lib/supabase";
 import { apiFetch } from "../services/api/client";
 import LandingChatbot from "../components/LandingChatbot";
 import FacebookIcon from "../components/FacebookIcon";
+import FormAlert from "../components/FormAlert";
 import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
 
 function useScrollReveal(threshold = 0.15) {
@@ -788,7 +789,7 @@ export default function LandingPage() {
                 {trackLoading ? "Searching…" : "Track"}
               </button>
             </form>
-            {trackError && <p className="track-error">{trackError}</p>}
+            <FormAlert>{trackError}</FormAlert>
           </div>
 
           {Array.isArray(trackResults) &&

@@ -3,6 +3,7 @@ import { CheckCircle2, Eye, EyeOff, MailCheck } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiFetch } from '../services/api/client'
 import LoadingButton from './LoadingButton'
+import FormAlert from './FormAlert'
 import useOtpCooldown from '../hooks/useOtpCooldown'
 import { clearOtpSession, readOtpSession, writeOtpSession } from '../utils/otpSession'
 
@@ -24,6 +25,8 @@ export default function ChangeEmail({ onChanged }) {
   const [savedEmail, setSavedEmail] = useState('')
   const cooldown = useOtpCooldown(OTP_COOLDOWN_KEY)
   const current = savedEmail || contactEmail || (user?.email?.endsWith('.local') ? '' : user?.email)
+  // Show a rejected password or address under its own field; anything else above the button.
+  const errorField = /password/i.test(error) ? 'password' : /email address/i.test(error) ? 'email' : null
 
   async function sendCode(event) {
     event.preventDefault()
@@ -41,7 +44,10 @@ export default function ChangeEmail({ onChanged }) {
       setOtpStatus('idle')
       setOtpMessage('')
       setPassword('')
-    } catch (error) { if (error.data?.retryAfterSeconds) cooldown.start(error.data.retryAfterSeconds); setError(error.message) }
+    } catch (error) {
+      if (error.data?.retryAfterSeconds) cooldown.start(error.data.retryAfterSeconds)
+      else setError(error.message)
+    }
     finally { setBusy('') }
   }
 
@@ -86,19 +92,22 @@ export default function ChangeEmail({ onChanged }) {
     <div className="settings-info-row"><span className="settings-label">Bound email</span><span className="settings-value" style={{ overflowWrap: 'anywhere' }}>{current || 'No email bound'}</span></div>
     <p style={{ color: 'var(--text-secondary)', fontSize: 13, margin: '16px 0' }}>Confirm your current password, then verify a code sent to the new address. Your existing sign-in details stay the same.</p>
     {savedEmail && <div className="account-security-notice" role="status"><CheckCircle2 size={20} /><span>Email changed successfully. Future password codes will be sent to <strong>{savedEmail}</strong>. Request a fresh password code after this change.</span></div>}
-    {error && <p role="alert" style={{ color: 'var(--danger, #b91c1c)' }}>{error}</p>}
     {cooldown.remaining > 0 && <p className="otp-cooldown-notice" role="status">{cooldown.message}</p>}
     {!challenge ? <form onSubmit={sendCode}>
-      <div className="form-group"><label htmlFor="bound-email">New email address</label><input id="bound-email" className="form-control" type="email" autoComplete="email" maxLength={254} value={email} onChange={event => setEmail(event.target.value)} disabled={Boolean(busy)} required /></div>
+      <div className="form-group"><label htmlFor="bound-email">New email address</label><input id="bound-email" className="form-control" type="email" autoComplete="email" maxLength={254} value={email} onChange={event => { setEmail(event.target.value); setError('') }} disabled={Boolean(busy)} aria-invalid={errorField === 'email'} aria-describedby={errorField === 'email' ? 'bound-email-error' : undefined} required />
+        {errorField === 'email' && <FormAlert compact id="bound-email-error">{error}</FormAlert>}</div>
       <div className="form-group"><label htmlFor="bound-email-password">Current password</label><div className="settings-input-wrapper">
-        <input id="bound-email-password" className="form-control" type={visible ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} disabled={Boolean(busy)} style={{ paddingRight: 42 }} required />
+        <input id="bound-email-password" className="form-control" type={visible ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={event => { setPassword(event.target.value); setError('') }} disabled={Boolean(busy)} aria-invalid={errorField === 'password'} aria-describedby={errorField === 'password' ? 'bound-email-password-error' : undefined} style={{ paddingRight: 42 }} required />
         <button type="button" className="settings-eye-btn" aria-label={visible ? 'Hide password' : 'Show password'} onClick={() => setVisible(!visible)}>{visible ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-      </div></div>
+      </div>
+        {errorField === 'password' && <FormAlert compact id="bound-email-password-error">{error}</FormAlert>}</div>
+      {!errorField && <FormAlert>{error}</FormAlert>}
       <LoadingButton type="submit" className="btn btn-primary" disabled={cooldown.remaining > 0} loading={busy === 'send'} loadingLabel="Sending code…">{cooldown.remaining ? cooldown.label : 'Send code to new email'}</LoadingButton>
     </form> : <form onSubmit={confirm}>
       <div className="account-security-notice" role="status"><MailCheck size={18} /><span>Code sent to <strong>{challenge.destination}</strong>. Expires in 10 minutes; maximum five attempts.</span></div>
-      <div className="form-group" style={{ marginTop: 16 }}><label htmlFor="bound-email-code">Verification code from new email</label><input id="bound-email-code" className={`form-control otp-verification-input ${otpStatus}`} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={otp} onChange={event => { const code = event.target.value.replace(/\D/g, ''); setOtp(code); setOtpStatus('idle'); setOtpMessage(''); if (code.length === 6) void verifyOtp(code) }} disabled={Boolean(busy) || otpStatus === 'valid'} aria-invalid={otpStatus === 'invalid'} required />{otpStatus === 'checking' && <p className="otp-verification-checking" role="status">Checking OTP…</p>}{otpMessage && <p className="otp-verification-message" role="alert">{otpMessage}</p>}</div>
+      <div className="form-group" style={{ marginTop: 16 }}><label htmlFor="bound-email-code">Verification code from new email</label><input id="bound-email-code" className={`form-control otp-verification-input ${otpStatus}`} inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} value={otp} onChange={event => { const code = event.target.value.replace(/\D/g, ''); setOtp(code); setOtpStatus('idle'); setOtpMessage(''); if (code.length === 6) void verifyOtp(code) }} disabled={Boolean(busy) || otpStatus === 'valid'} aria-invalid={otpStatus === 'invalid'} required />{otpStatus === 'checking' && <p className="otp-verification-checking" role="status">Checking OTP…</p>}<FormAlert compact>{otpMessage}</FormAlert></div>
       {otpStatus === 'valid' && <div className="otp-verification-success" role="status">OTP verified. You can now confirm the email change.</div>}
+      <FormAlert>{error}</FormAlert>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
         <LoadingButton type="submit" className="btn btn-primary" disabled={otpStatus !== 'valid'} loading={busy === 'confirm'} loadingLabel="Updating email…">Confirm email change</LoadingButton>
         <button type="button" className="btn btn-secondary" disabled={Boolean(busy)} onClick={() => { clearOtpSession(OTP_SESSION_KEY); setChallenge(null); setOtp(''); setOtpStatus('idle'); setOtpMessage(''); setError('') }}>Change address / request another code</button>

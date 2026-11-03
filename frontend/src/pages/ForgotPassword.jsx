@@ -3,6 +3,7 @@ import { useId, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import LoadingButton from '../components/LoadingButton'
+import FormAlert from '../components/FormAlert'
 import { apiFetch } from '../services/api/client'
 import useOtpCooldown from '../hooks/useOtpCooldown'
 import { clearOtpSession, readOtpSession, writeOtpSession } from '../utils/otpSession'
@@ -11,15 +12,17 @@ import { passwordPolicyError } from '../utils/validation'
 const OTP_SESSION_KEY = 'ic-laundry:forgot-password-otp'
 const OTP_COOLDOWN_KEY = 'ic-laundry:forgot-password-otp-cooldown'
 
-function PasswordInput({ label, value, onChange, visible, onToggle, disabled, hint }) {
+function PasswordInput({ label, value, onChange, visible, onToggle, disabled, hint, error }) {
   const id = useId()
+  const describedBy = [error && `${id}-error`, hint && `${id}-hint`].filter(Boolean).join(' ')
   return <div className="login-field">
     <label htmlFor={id}>{label}</label>
     <div className="login-input-wrap">
       <LockKeyhole size={15} className="login-input-icon" />
-      <input id={id} aria-describedby={hint ? `${id}-hint` : undefined} className="login-input login-input-password" type={visible ? 'text' : 'password'} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} minLength={12} placeholder="Strong password" autoComplete="new-password" required />
+      <input id={id} aria-describedby={describedBy || undefined} aria-invalid={Boolean(error)} className="login-input login-input-password" type={visible ? 'text' : 'password'} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} minLength={12} placeholder="Strong password" autoComplete="new-password" required />
       <button type="button" className="login-eye-btn" disabled={disabled} onClick={onToggle} aria-label={`${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`}>{visible ? <EyeOff size={15} /> : <Eye size={15} />}</button>
     </div>
+    <FormAlert compact id={`${id}-error`}>{error}</FormAlert>
     {hint && <p id={`${id}-hint`} className="auth-hint">{hint}</p>}
   </div>
 }
@@ -37,6 +40,10 @@ export default function ForgotPassword() {
   const [otpMessage, setOtpMessage] = useState('')
   const [password, setPassword] = useState('')
   const [confirmation, setConfirmation] = useState('')
+  // field: 'identifier', 'request' (sending the code), 'password', 'confirmation', or '' for the whole form.
+  const [formError, setFormError] = useState({ field: '', message: '' })
+  const fieldError = field => (formError.field === field ? formError.message : '')
+  const clearFormError = () => setFormError({ field: '', message: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -44,7 +51,8 @@ export default function ForgotPassword() {
   const verified = otpStatus === 'valid'
 
   async function requestCode() {
-    if (!identifier.trim()) return toast.error('Enter your username.')
+    if (!identifier.trim()) return setFormError({ field: 'identifier', message: 'Enter your username.' })
+    clearFormError()
     setLoading(true)
     try {
       const result = await apiFetch('/api/auth/forgot-password/otp', { method: 'POST', body: JSON.stringify({ identifier }) })
@@ -53,7 +61,10 @@ export default function ForgotPassword() {
       setCodeRequested(true)
       setOtp(''); setOtpStatus('idle'); setOtpMessage(''); setPassword(''); setConfirmation('')
       toast.success(result.message || 'If this username belongs to an active account, a verification code has been sent to its recovery email.')
-    } catch (error) { if (error.data?.retryAfterSeconds) cooldown.start(error.data.retryAfterSeconds); toast.error(error.message) } finally { setLoading(false) }
+    } catch (error) {
+      if (error.data?.retryAfterSeconds) cooldown.start(error.data.retryAfterSeconds)
+      setFormError({ field: 'request', message: error.message })
+    } finally { setLoading(false) }
   }
 
   async function verifyOtp(code) {
@@ -70,17 +81,18 @@ export default function ForgotPassword() {
 
   async function submit(event) {
     event.preventDefault()
-    if (!verified) return toast.error('Verify your OTP before setting a new password.')
+    if (!verified) return setFormError({ field: '', message: 'Verify your OTP before setting a new password.' })
     const policyError = passwordPolicyError(password, identifier)
-    if (policyError) return toast.error(policyError)
-    if (password !== confirmation) return toast.error('Passwords do not match.')
+    if (policyError) return setFormError({ field: 'password', message: policyError })
+    if (password !== confirmation) return setFormError({ field: 'confirmation', message: 'Passwords do not match.' })
+    clearFormError()
     setLoading(true)
     try {
       await apiFetch('/api/auth/forgot-password', { method: 'PATCH', body: JSON.stringify({ identifier, otp, newPassword: password }) })
       clearOtpSession(OTP_SESSION_KEY)
       toast.success('Password reset successfully. You can now sign in.')
       navigate('/login', { replace: true })
-    } catch (error) { toast.error(error.message) } finally { setLoading(false) }
+    } catch (error) { setFormError({ field: '', message: error.message }) } finally { setLoading(false) }
   }
 
   const updateOtp = value => {
@@ -91,6 +103,7 @@ export default function ForgotPassword() {
   const changeIdentifier = () => {
     clearOtpSession(OTP_SESSION_KEY)
     cooldown.clear()
+    clearFormError()
     setIdentifier('')
     setCodeRequested(false)
     setOtp('')
@@ -133,21 +146,24 @@ export default function ForgotPassword() {
         <form onSubmit={submit} className={`login-form forgot-password-form ${verified ? 'is-verified' : codeRequested ? 'is-code-requested' : 'is-username-entry'}`}>
           {!codeRequested && <div className="login-field">
             <label htmlFor="forgot-password-identifier">Username</label>
-            <div className="login-input-wrap"><KeyRound size={15} className="login-input-icon" /><input autoComplete="username" spellCheck={false} id="forgot-password-identifier" ref={identifierInput} className="login-input" value={identifier} disabled={loading} onChange={event => setIdentifier(event.target.value)} placeholder="Enter your username" required /></div>
+            <div className="login-input-wrap"><KeyRound size={15} className="login-input-icon" /><input autoComplete="username" spellCheck={false} id="forgot-password-identifier" ref={identifierInput} className="login-input" value={identifier} disabled={loading} onChange={event => { setIdentifier(event.target.value); clearFormError() }} placeholder="Enter your username" aria-invalid={Boolean(fieldError('identifier'))} aria-describedby={fieldError('identifier') ? 'forgot-password-identifier-error' : undefined} required /></div>
+            <FormAlert compact id="forgot-password-identifier-error">{fieldError('identifier')}</FormAlert>
           </div>}
           {(!codeRequested || !verified) && <>
             {codeRequested && <div className="forgot-password-account-summary"><span>Recovery requested for</span><strong>{identifier}</strong></div>}
             <LoadingButton type="button" className="login-submit-btn forgot-password-action" disabled={loading || cooldown.remaining > 0} onClick={requestCode} loading={loading} loadingLabel="Sending…">{codeRequested ? cooldown.label : <><MailCheck size={16} /> Send verification code</>}</LoadingButton>
+            <FormAlert compact>{fieldError('request')}</FormAlert>
           </>}
           {codeRequested && !verified && <>
             <p className="forgot-password-status" role="status">If this username belongs to an active account, its recovery email should receive a code. Check spam too.</p>
             <button type="button" className="login-forgot-password forgot-password-change-identifier" disabled={loading} onClick={changeIdentifier}>Use a different username</button>
-            <div className="login-field"><label htmlFor="forgot-password-code">Email verification code</label><div className="login-input-wrap"><KeyRound size={15} className="login-input-icon" /><input id="forgot-password-code" autoComplete="one-time-code" className={`login-input otp-verification-input ${otpStatus}`} inputMode="numeric" maxLength={6} disabled={loading || verified || otpStatus === 'checking'} value={otp} onChange={event => updateOtp(event.target.value)} placeholder="6-digit code" aria-invalid={otpStatus === 'invalid'} required /></div>{otpStatus === 'checking' && <p className="otp-verification-checking" role="status">Checking OTP…</p>}{otpMessage && <p className="otp-verification-message" role="alert">{otpMessage}</p>}</div>
+            <div className="login-field"><label htmlFor="forgot-password-code">Email verification code</label><div className="login-input-wrap"><KeyRound size={15} className="login-input-icon" /><input id="forgot-password-code" autoComplete="one-time-code" className={`login-input otp-verification-input ${otpStatus}`} inputMode="numeric" maxLength={6} disabled={loading || verified || otpStatus === 'checking'} value={otp} onChange={event => updateOtp(event.target.value)} placeholder="6-digit code" aria-invalid={otpStatus === 'invalid'} required /></div>{otpStatus === 'checking' && <p className="otp-verification-checking" role="status">Checking OTP…</p>}<FormAlert compact>{otpMessage}</FormAlert></div>
           </>}
           {verified && <>
             <div className="otp-verification-success forgot-password-verified" role="status"><ShieldCheck size={18} /> Code verified for <strong>{identifier}</strong></div>
-            <PasswordInput label="New password" value={password} onChange={setPassword} visible={showPassword} onToggle={() => setShowPassword(value => !value)} disabled={locked} hint="12–128 characters, with an uppercase letter, a lowercase letter, a number, and a symbol. No spaces, and not your username." />
-            <PasswordInput label="Confirm new password" value={confirmation} onChange={setConfirmation} visible={showConfirmation} onToggle={() => setShowConfirmation(value => !value)} disabled={locked} />
+            <PasswordInput label="New password" value={password} onChange={value => { setPassword(value); clearFormError() }} visible={showPassword} onToggle={() => setShowPassword(value => !value)} disabled={locked} error={fieldError('password')} hint="12–128 characters, with an uppercase letter, a lowercase letter, a number, and a symbol. No spaces, and not your username." />
+            <PasswordInput label="Confirm new password" value={confirmation} onChange={value => { setConfirmation(value); clearFormError() }} visible={showConfirmation} onToggle={() => setShowConfirmation(value => !value)} disabled={locked} error={fieldError('confirmation')} />
+            <FormAlert>{fieldError('')}</FormAlert>
             <LoadingButton type="submit" className="login-submit-btn forgot-password-action" disabled={!verified || loading} loading={loading} loadingLabel="Resetting…">Reset password</LoadingButton>
             <button type="button" className="login-forgot-password forgot-password-change-identifier" disabled={loading} onClick={changeIdentifier}>Use a different username</button>
           </>}

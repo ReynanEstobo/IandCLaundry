@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import LoadingButton from '../components/LoadingButton'
+import FormAlert from '../components/FormAlert'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { passwordPolicyError } from '../utils/validation'
@@ -19,6 +20,9 @@ export default function ActivatePassword() {
   const [showConfirmation, setShowConfirmation] = useState(false)
   const [saving, setSaving] = useState(false)
   const [leaving, setLeaving] = useState(false)
+  // field: 'password', 'confirmation', or '' for the whole form.
+  const [formError, setFormError] = useState({ field: '', message: '' })
+  const fieldError = field => (formError.field === field ? formError.message : '')
   const accountLabel = ACCOUNT_LABELS[role]
 
   // The temporary password is still signed in here, so going back signs it
@@ -36,8 +40,9 @@ export default function ActivatePassword() {
   async function submit(event) {
     event.preventDefault()
     const policyError = passwordPolicyError(password)
-    if (policyError) return toast.error(policyError)
-    if (password !== confirmPassword) return toast.error('Passwords do not match.')
+    if (policyError) return setFormError({ field: 'password', message: policyError })
+    if (password !== confirmPassword) return setFormError({ field: 'confirmation', message: 'Passwords do not match.' })
+    setFormError({ field: '', message: '' })
     setSaving(true)
     try {
       const { error } = await supabase.auth.updateUser({ password })
@@ -45,7 +50,7 @@ export default function ActivatePassword() {
       toast.success('Password created. Your account is now active.')
       navigate('/dashboard', { replace: true })
     } catch (error) {
-      toast.error(error.message || 'Unable to activate the account.')
+      setFormError({ field: '', message: error.message || 'Unable to activate the account.' })
     } finally {
       setSaving(false)
     }
@@ -73,23 +78,26 @@ export default function ActivatePassword() {
               <label htmlFor="activate-password">New password</label>
               <div className="login-input-wrap">
                 <LockKeyhole size={15} className="login-input-icon" />
-                <input id="activate-password" aria-describedby="activate-password-rules" className="login-input login-input-password" type={showPassword ? 'text' : 'password'} value={password} onChange={event => setPassword(event.target.value)} minLength={12} autoComplete="new-password" required />
+                <input id="activate-password" aria-describedby={fieldError('password') ? 'activate-password-error activate-password-rules' : 'activate-password-rules'} aria-invalid={Boolean(fieldError('password'))} className="login-input login-input-password" type={showPassword ? 'text' : 'password'} value={password} onChange={event => { setPassword(event.target.value); setFormError({ field: '', message: '' }) }} minLength={12} autoComplete="new-password" required />
                 <button type="button" className="login-eye-btn" onClick={() => setShowPassword(visible => !visible)} aria-label={showPassword ? 'Hide new password' : 'Show new password'}>
                   {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
+              <FormAlert compact id="activate-password-error">{fieldError('password')}</FormAlert>
               <p id="activate-password-rules" className="auth-hint">12–128 characters, with an uppercase letter, a lowercase letter, a number, and a symbol. No spaces.</p>
             </div>
             <div className="login-field">
               <label htmlFor="activate-password-confirm">Confirm new password</label>
               <div className="login-input-wrap">
                 <LockKeyhole size={15} className="login-input-icon" />
-                <input id="activate-password-confirm" className="login-input login-input-password" type={showConfirmation ? 'text' : 'password'} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} minLength={12} autoComplete="new-password" required />
+                <input id="activate-password-confirm" aria-describedby={fieldError('confirmation') ? 'activate-password-confirm-error' : undefined} aria-invalid={Boolean(fieldError('confirmation'))} className="login-input login-input-password" type={showConfirmation ? 'text' : 'password'} value={confirmPassword} onChange={event => { setConfirmPassword(event.target.value); setFormError({ field: '', message: '' }) }} minLength={12} autoComplete="new-password" required />
                 <button type="button" className="login-eye-btn" onClick={() => setShowConfirmation(visible => !visible)} aria-label={showConfirmation ? 'Hide confirmation password' : 'Show confirmation password'}>
                   {showConfirmation ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
+              <FormAlert compact id="activate-password-confirm-error">{fieldError('confirmation')}</FormAlert>
             </div>
+            <FormAlert>{fieldError('')}</FormAlert>
             <LoadingButton type="submit" className="login-submit-btn" loading={saving} loadingLabel="Activating…">Activate account</LoadingButton>
           </form>
         </section>

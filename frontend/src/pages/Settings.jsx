@@ -17,6 +17,7 @@ import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 import { apiFetch } from "../services/api/client";
 import LoadingButton from "../components/LoadingButton";
+import FormAlert from "../components/FormAlert";
 import ChangeEmail from "../components/ChangeEmail";
 import InfoNote from "../components/InfoNote";
 import useOtpCooldown from "../hooks/useOtpCooldown";
@@ -53,6 +54,10 @@ export default function Settings() {
   const [passwordOtpStatus, setPasswordOtpStatus] = useState("idle");
   const [passwordOtpMessage, setPasswordOtpMessage] = useState("");
   const [pwLoading, setPwLoading] = useState(false);
+  // field: "request" (sending the code), "next", "confirmation", or "" for the whole form.
+  const [passwordError, setPasswordError] = useState({ field: "", message: "" });
+  const passwordFieldError = (field) => (passwordError.field === field ? passwordError.message : "");
+  const clearPasswordError = () => setPasswordError({ field: "", message: "" });
   const [passwordChanged, setPasswordChanged] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [appearanceSaving, setAppearanceSaving] = useState(false);
@@ -80,6 +85,7 @@ export default function Settings() {
   const requestPasswordOtp = async () => {
     setPwLoading(true);
     setRecoveryEmailMissing(false);
+    clearPasswordError();
     try {
       const result = await apiFetch('/api/auth/password/otp', { method: 'POST' });
       setOtpDestination(result.destination);
@@ -92,9 +98,11 @@ export default function Settings() {
       setConfirmPassword("");
       toast.success(`Verification code sent to ${result.destination}`);
     } catch (error) {
-      setRecoveryEmailMissing(error.data?.code === 'CONTACT_EMAIL_REQUIRED');
+      // A missing recovery email and a cooldown each have their own notice.
+      const missingEmail = error.data?.code === 'CONTACT_EMAIL_REQUIRED';
+      setRecoveryEmailMissing(missingEmail);
       if (error.data?.retryAfterSeconds) passwordOtpCooldown.start(error.data.retryAfterSeconds);
-      toast.error(error.message);
+      else if (!missingEmail) setPasswordError({ field: "request", message: error.message });
     } finally {
       setPwLoading(false);
     }
@@ -194,18 +202,19 @@ export default function Settings() {
     e.preventDefault();
     const policyError = passwordPolicyError(newPassword);
     if (policyError) {
-      toast.error(policyError);
+      setPasswordError({ field: "next", message: policyError });
       return;
     }
     if (newPassword !== confirmPassword) {
-      toast.error("Passwords do not match");
+      setPasswordError({ field: "confirmation", message: "Passwords do not match." });
       return;
     }
     if (passwordOtpStatus !== "valid") {
-      toast.error("Verify your OTP before setting a new password");
+      setPasswordError({ field: "", message: "Verify your OTP before setting a new password." });
       return;
     }
 
+    clearPasswordError();
     setPwLoading(true);
     try {
       await apiFetch('/api/auth/password', { method: 'PATCH', body: JSON.stringify({ newPassword, otp: passwordOtp }) });
@@ -217,7 +226,7 @@ export default function Settings() {
       setPasswordOtpStatus("idle");
       setPasswordChanged(true);
     } catch (err) {
-      toast.error(err.message || "Failed to update password");
+      setPasswordError({ field: "", message: err.message || "Failed to update password." });
     }
     setPwLoading(false);
   };
@@ -337,6 +346,7 @@ export default function Settings() {
                 <LoadingButton type="button" className="btn btn-secondary" disabled={passwordOtpCooldown.remaining > 0} onClick={requestPasswordOtp} loading={pwLoading} loadingLabel="Sending code…" style={{ width: '100%', marginBottom: 14 }}>
                   <MailCheck size={16} /> {otpDestination ? passwordOtpCooldown.label : 'Send verification code'}
                 </LoadingButton>
+                <FormAlert compact>{passwordFieldError("request")}</FormAlert>
                 {passwordOtpCooldown.remaining > 0 && <p className="otp-cooldown-notice" role="status">{passwordOtpCooldown.message}</p>}
                 {recoveryEmailMissing && <div className="otp-email-missing" role="alert">No recovery email is bound to your account. Use <strong>Change Bound Email</strong> below to add one before requesting an OTP.</div>}
                 {otpDestination && <div className="account-security-notice" style={{ marginBottom: 14 }}><MailCheck size={16} /><span>Code sent to <strong>{otpDestination}</strong>. It expires in 10 minutes.</span></div>}
@@ -347,7 +357,7 @@ export default function Settings() {
                     <input id="settings-password-otp" autoComplete="one-time-code" spellCheck={false} className={`form-control otp-verification-input ${passwordOtpStatus}`} inputMode="numeric" maxLength={6} disabled={!otpDestination || pwLoading || passwordOtpStatus === "valid" || passwordOtpStatus === "checking"} value={passwordOtp} onChange={(e) => { const code = e.target.value.replace(/\D/g, ''); setPasswordOtp(code); setPasswordOtpStatus("idle"); setPasswordOtpMessage(""); if (code.length === 6) void verifyPasswordOtp(code); }} placeholder="6-digit code" aria-invalid={passwordOtpStatus === "invalid"} required style={{ paddingLeft: 38, textAlign: 'center', letterSpacing: 5, fontWeight: 700 }} />
                   </div>
                   {passwordOtpStatus === "checking" && <p className="otp-verification-checking" role="status">Checking OTP…</p>}
-                  {passwordOtpMessage && <p className="otp-verification-message" role="alert">{passwordOtpMessage}</p>}
+                  <FormAlert compact>{passwordOtpMessage}</FormAlert>
                 </div>
                 {passwordOtpStatus === "valid" && <div className="otp-verification-success" role="status">OTP verified. You can now set a new password.</div>}
                 <div className="form-row">
@@ -360,7 +370,9 @@ export default function Settings() {
                         type={showNew ? "text" : "password"}
                         placeholder="Strong password"
                         value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
+                        onChange={(e) => { setNewPassword(e.target.value); clearPasswordError(); }}
+                        aria-invalid={Boolean(passwordFieldError("next"))}
+                        aria-describedby={passwordFieldError("next") ? "settings-new-password-error" : undefined}
                         minLength={12}
                         disabled={pwLoading || passwordOtpStatus !== "valid"}
                         required
@@ -375,6 +387,7 @@ export default function Settings() {
                         {showNew ? <EyeOff size={16} /> : <Eye size={16} />}
                       </button>
                     </div>
+                    <FormAlert compact id="settings-new-password-error">{passwordFieldError("next")}</FormAlert>
                   </div>
                   <div className="form-group">
                     <label htmlFor="settings-confirm-password">Confirm New Password</label>
@@ -385,7 +398,9 @@ export default function Settings() {
                         type={showConfirm ? "text" : "password"}
                         placeholder="Re-enter new password"
                         value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        onChange={(e) => { setConfirmPassword(e.target.value); clearPasswordError(); }}
+                        aria-invalid={Boolean(passwordFieldError("confirmation"))}
+                        aria-describedby={passwordFieldError("confirmation") ? "settings-confirm-password-error" : undefined}
                         disabled={pwLoading || passwordOtpStatus !== "valid"}
                         required
                         style={{ paddingLeft: 38, paddingRight: 38 }}
@@ -399,8 +414,10 @@ export default function Settings() {
                         {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
                       </button>
                     </div>
+                    <FormAlert compact id="settings-confirm-password-error">{passwordFieldError("confirmation")}</FormAlert>
                   </div>
                 </div>
+                <FormAlert>{passwordFieldError("")}</FormAlert>
                 <LoadingButton className="btn btn-primary" type="submit" disabled={passwordOtpStatus !== "valid"} loading={pwLoading} loadingLabel="Updating password…">
                   <Lock size={15} /> Update Password
                 </LoadingButton>

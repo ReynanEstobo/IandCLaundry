@@ -39,6 +39,7 @@ import { analyticsDailyHistory, branchPerformance } from '../utils/analyticsMetr
 import { buildAnalyticsReport } from '../utils/analyticsReport'
 import { aiCacheKey, aiServiceErrorReason, dataFingerprint, describeAiSource, lastGeminiResult, pruneLegacyAiCache, readAiCache, reusableAiCache, sharedAiRequest, writeAiCache } from '../utils/aiOutputCache'
 import AiSourceNote, { PENDING_AI_META } from '../components/AiSourceNote'
+import FormAlert from '../components/FormAlert'
 import useActiveBranches from '../hooks/useActiveBranches'
 
 // ─── Custom tooltip ────────────────────────────────────────────────────────────
@@ -1018,13 +1019,9 @@ Rules:
             </button>
           )}
           {filterError && (
-            <p
-              role="alert"
-              aria-live="polite"
-              className="analytics-filter-error"
-            >
-              {filterError}
-            </p>
+            <div className="analytics-filter-error">
+              <FormAlert compact>{filterError}</FormAlert>
+            </div>
           )}
         </div>
 
