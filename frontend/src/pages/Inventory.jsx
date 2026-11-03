@@ -25,9 +25,16 @@ import { useSearchPending, SearchStatusIcon, useChangedRows, DataTable, EmptySta
 import Pagination from "../components/Pagination";
 import useActiveBranches from "../hooks/useActiveBranches";
 
+const UNIT_OPTIONS = [
+  ["pcs", "Pieces"], ["kg", "Kilograms"], ["L", "Liters"], ["mL", "Milliliters"],
+  ["g", "Grams"], ["packs", "Packs"], ["bottles", "Bottles"], ["sachets", "Sachets"],
+];
+const unitLabel = (unit) => UNIT_OPTIONS.find(([value]) => value === unit)?.[1] || unit;
+
 export default function Inventory() {
   const branchNames = useActiveBranches();
   const { role, branch } = useAuth();
+  const isAdmin = role === "admin";
   const [items, setItems] = useState([]);
   const [usageLogs, setUsageLogs] = useState([]);
   const [serviceRecipes, setServiceRecipes] = useState([]);
@@ -44,6 +51,7 @@ export default function Inventory() {
   const [savingItem, setSavingItem] = useState(false);
   const [restocking, setRestocking] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [editBaseline, setEditBaseline] = useState(null);
   const [search, setSearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [branchFilter, setBranchFilter] = useState(
@@ -65,6 +73,11 @@ export default function Inventory() {
     minimum_stock: "",
     cost_per_unit: "",
   });
+  // Fields an administrator changed while editing an existing item.
+  const editedStock = parseFloat(form.current_stock);
+  const branchChanged = Boolean(editing) && isAdmin && form.branch !== editBaseline?.branch;
+  const unitChanged = Boolean(editing) && isAdmin && form.unit !== editBaseline?.unit;
+  const stockChanged = Boolean(editing) && isAdmin && Number.isFinite(editedStock) && editedStock !== Number(editBaseline?.current_stock);
 
   const loadData = useCallback(async (background = false) => {
     if (!background) {
@@ -141,16 +154,18 @@ export default function Inventory() {
   }
 
   function openEdit(item) {
-    setEditing(item);
-    setInitialCost("");
-    setForm({
+    const values = {
       name: item.name,
       branch: item.branch || branchNames[0] || "",
       unit: item.unit,
       current_stock: item.current_stock,
       minimum_stock: item.minimum_stock,
       cost_per_unit: item.cost_per_unit,
-    });
+    };
+    setEditing(item);
+    setEditBaseline(values);
+    setInitialCost("");
+    setForm(values);
     setShowModal(true);
   }
 
@@ -166,6 +181,12 @@ export default function Inventory() {
           minimum_stock: parseFloat(form.minimum_stock) || 0,
           cost_per_unit: parseFloat(form.cost_per_unit) || 0,
         };
+        // Administrators may also correct branch, unit, and stock. Send only
+        // the fields they changed: re-sending the stock shown when the form
+        // opened would undo any order deduction made in the meantime.
+        if (branchChanged) payload.branch = form.branch;
+        if (unitChanged) payload.unit = form.unit;
+        if (stockChanged) payload.current_stock = editedStock;
         ({ error } = await supabase
           .from("inventory_items")
           .update(payload)
@@ -188,7 +209,9 @@ export default function Inventory() {
       setSavingItem(false);
       return toast.error(error.message);
     }
-    toast.success(editing ? "Item updated!" : "Item added!");
+    toast.success(branchChanged
+      ? `Item moved to ${form.branch}. Link it again on the Services page.`
+      : editing ? "Item updated!" : "Item added!");
     setShowModal(false);
     await loadData(true);
     setSavingItem(false);
@@ -537,9 +560,8 @@ export default function Inventory() {
                       <label htmlFor="inventory-item-branch">Assigned Branch *</label>
 
                       <select id="inventory-item-branch"
-                        className={`form-control ${editing ? "is-readonly" : ""}`}
+                        className="form-control"
                         value={form.branch}
-                        disabled={Boolean(editing)}
                         onChange={(e) =>
                           setForm((f) => ({
                             ...f,
@@ -553,7 +575,11 @@ export default function Inventory() {
                           </option>
                         ))}
                       </select>
-                      {editing && <span className="form-hint is-readonly-hint">Read-only · Branch assignment is locked after the item is created.</span>}
+                      {branchChanged ? (
+                        <InfoNote compact tone="warning" title="Service links will be turned off">
+                          Moving {form.name.trim() || "this item"} from {editBaseline.branch} to {form.branch} turns off its service links. Link it again on the Services page for {form.branch}.
+                        </InfoNote>
+                      ) : editing && <span className="form-hint inventory-edit-hint">Moving an item to another branch turns off its service links.</span>}
                     </div>
                   )}
 
@@ -562,9 +588,9 @@ export default function Inventory() {
                     <label htmlFor="inventory-item-unit">Unit</label>
 
                     <select id="inventory-item-unit"
-                      className={`form-control ${editing ? "is-readonly" : ""}`}
+                      className={`form-control ${editing && !isAdmin ? "is-readonly" : ""}`}
                       value={form.unit}
-                      disabled={Boolean(editing)}
+                      disabled={Boolean(editing) && !isAdmin}
                       onChange={(e) =>
                         setForm((f) => ({
                           ...f,
@@ -572,29 +598,29 @@ export default function Inventory() {
                         }))
                       }
                     >
-                      <option value="pcs">Pieces</option>
-                      <option value="kg">Kilograms</option>
-                      <option value="L">Liters</option>
-                      <option value="mL">Milliliters</option>
-                      <option value="g">Grams</option>
-                      <option value="packs">Packs</option>
-                      <option value="bottles">Bottles</option>
-                      <option value="sachets">Sachets</option>
+                      {UNIT_OPTIONS.map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
                     </select>
-                    {editing && <span className="form-hint is-readonly-hint">Read-only · The measuring unit is locked to preserve inventory history.</span>}
+                    {editing && !isAdmin && <span className="form-hint is-readonly-hint">Read-only · The measuring unit is locked to preserve inventory history.</span>}
+                    {unitChanged ? (
+                      <InfoNote compact tone="warning" title="Past records keep the old unit">
+                        Usage and restock records already saved stay in {unitLabel(editBaseline.unit).toLowerCase()}. Make sure the current stock and minimum level are in {unitLabel(form.unit).toLowerCase()}.
+                      </InfoNote>
+                    ) : editing && isAdmin && <span className="form-hint inventory-edit-hint">Past usage and restock records keep their original unit.</span>}
                   </div>
                 </div>
                 <div className="form-row">
                   <div className="form-group">
                     <label htmlFor="inventory-current-stock">Current Stock *</label>
                     <input id="inventory-current-stock" autoComplete="off"
-                      className={`form-control ${editing ? "is-readonly" : ""}`}
+                      className={`form-control ${editing && !isAdmin ? "is-readonly" : ""}`}
                       type="number"
                       min="0"
                       step="0.01"
                       placeholder="0"
                       value={form.current_stock}
-                      disabled={Boolean(editing)}
+                      disabled={Boolean(editing) && !isAdmin}
                       onChange={(e) =>
                         setForm((f) => ({
                           ...f,
@@ -603,7 +629,12 @@ export default function Inventory() {
                       }
                       required
                     />
-                    {editing && <span className="form-hint is-readonly-hint">Read-only · Use Restock to increase stock. Order usage and cancellations update it automatically.</span>}
+                    {editing && !isAdmin && <span className="form-hint is-readonly-hint">Read-only · Use Restock to increase stock. Order usage and cancellations update it automatically.</span>}
+                    {stockChanged ? (
+                      <InfoNote compact tone="warning" title="Stock correction">
+                        Stock changes from {editBaseline.current_stock} to {editedStock} {form.unit}, and the change is recorded in the Audit Log. For deliveries, use Restock so the cost is recorded.
+                      </InfoNote>
+                    ) : editing && isAdmin && <span className="form-hint inventory-edit-hint">For corrections such as a recount. Use Restock for deliveries.</span>}
                   </div>
                   <div className="form-group">
                     <label htmlFor="inventory-minimum-stock">Minimum Stock Level</label>

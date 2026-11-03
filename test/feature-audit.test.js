@@ -268,6 +268,30 @@ test('staff cannot overwrite current inventory stock outside audited workflows',
   assert.equal(calls.length, 0)
 })
 
+test('administrators can correct an inventory item\'s stock, branch, and unit', async t => {
+  const calls = mockDatabase(t, [{ id: 'branch-b', name: 'Other' }])
+  const result = await execute('inventory_items', {
+    operation: 'update',
+    payload: { name: 'Ariel', current_stock: 180, branch: 'Other', unit: 'kg', minimum_stock: 20 },
+    filters: [{ type: 'eq', column: 'id', value: 'inventory-1' }],
+  }, admin)
+  assert.equal(result.error, null)
+  const update = calls.find(call => call.table === 'inventory_items' && call.method === 'update')
+  assert.deepEqual(update.args[0], { name: 'Ariel', current_stock: 180, branch: 'Other', branch_id: 'branch-b', unit: 'kg', minimum_stock: 20 })
+})
+
+test('administrators cannot set a negative stock or an unknown branch', async t => {
+  mockDatabase(t)
+  await assert.rejects(execute('inventory_items', {
+    operation: 'update', payload: { current_stock: -1 },
+    filters: [{ type: 'eq', column: 'id', value: 'inventory-1' }],
+  }, admin), /current stock/i)
+  await assert.rejects(execute('inventory_items', {
+    operation: 'update', payload: { branch: 'Nowhere' },
+    filters: [{ type: 'eq', column: 'id', value: 'inventory-1' }],
+  }, admin), /branch does not exist/)
+})
+
 test('staff cannot use recycle-bin administration', async t => {
   const calls = mockDatabase(t)
   await assert.rejects(listRecycleBin(staff), /Administrator/)

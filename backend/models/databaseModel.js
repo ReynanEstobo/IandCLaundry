@@ -395,7 +395,10 @@ export async function execute(table, request, identity) {
       throw Object.assign(new Error('Only administrators can change a customer phone number or email address.'), { status: 403 })
     }
   }
-  if (table === 'inventory_items' && request.operation === 'update') {
+  // Administrators may correct an item's stock, branch, and unit directly; the
+  // database audits every change and turns off service links when an item
+  // moves branch. Staff keep the restock and order workflows only.
+  if (table === 'inventory_items' && request.operation === 'update' && identity.role !== 'admin') {
     const updates = request.payload || {}
     if (Object.hasOwn(updates, 'current_stock')) {
       throw Object.assign(new Error('Current stock cannot be edited directly. Use the Restock workflow or an audited inventory operation.'), { status: 403 })

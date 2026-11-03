@@ -388,6 +388,8 @@ button, a, input, select, textarea, label, [role="button"] { touch-action: manip
 .form-control:focus, .login-input:focus { border-color: var(--primary); box-shadow: var(--focus-ring); outline: 2px solid transparent; outline-offset: 1px; }
 .form-control.is-readonly, .form-control[readonly] { background: var(--bg-secondary); color: var(--text-secondary); }
 .form-hint { color: var(--text-muted); font-size: 12.5px; }
+/* Guidance under the inventory fields only administrators can change after creation. */
+.inventory-edit-hint { display: block; margin-top: 6px; line-height: 1.45; }
 /* Phones zoom into any field under 16px when it is tapped. */
 @media (max-width: 768px) {
   .form-control, .login-input, .search-box input, select, textarea,
