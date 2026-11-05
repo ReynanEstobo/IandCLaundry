@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer'
 import { runtimeValue } from '../config/supabase.js'
 
-const WEBSITE_URL = 'https://hc-laundry.23-14327.workers.dev/'
+const WEBSITE_URL = 'https://ic-laundry.23-14327.workers.dev/'
 
 function requireValue(value, label) {
   if (!value) throw Object.assign(new Error(`${label} is not configured`), { status: 500 })
