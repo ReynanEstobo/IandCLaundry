@@ -18,7 +18,7 @@ const TRANSIENT_REASONS = new Set(['busy', 'timeout', 'network', 'invalid_respon
 
 const MAX_PROMPT_LENGTH = 20_000
 
-const REASON_PRIORITY = ['not_configured', 'key_rejected', 'quota', 'busy', 'timeout', 'network', 'invalid_response', 'model_unavailable', 'error']
+const REASON_PRIORITY = ['not_configured', 'key_rejected', 'location_blocked', 'quota', 'busy', 'timeout', 'network', 'invalid_response', 'model_unavailable', 'error']
 const SHORT_REASONS = {
   quota: 'limit reached',
   busy: 'busy',
@@ -54,6 +54,9 @@ export function classifyGeminiError(error) {
   if (status === 401 || status === 403 || /api key not valid|api_key_invalid|permission denied|permission_denied/.test(message)) {
     return { reason: 'key_rejected', cooldownMs: 0, stop: true }
   }
+  // Every model answers the same from a refused location, so stop there. The
+  // next request may run elsewhere, so nothing is put on cooldown.
+  if (/location is not supported/.test(message)) return { reason: 'location_blocked', cooldownMs: 0, stop: true }
   if (status === 404 || /not found|unsupported|is not supported/.test(message)) return { reason: 'model_unavailable', cooldownMs: 60 * 60_000 }
   if (error?.name === 'AbortError' || /timed? ?out|deadline|aborted/.test(message)) return { reason: 'timeout', cooldownMs: 0 }
   if (status >= 500 || /overloaded|high demand|unavailable|internal error/.test(message)) return { reason: 'busy', cooldownMs: 0 }
@@ -68,6 +71,7 @@ export function unavailableMessage(attempts, retryAfterMs = null) {
   const reasons = [...new Set(latest.values())]
   if (reasons.includes('not_configured')) return 'Gemini is not set up: the GEMINI_API_KEY secret is missing on the server.'
   if (reasons.includes('key_rejected')) return 'Google rejected the Gemini API key. Check the GEMINI_API_KEY secret.'
+  if (reasons.includes('location_blocked')) return 'Google does not offer Gemini in the server location that handled this request.'
   if (reasons.length === 1) {
     if (reasons[0] === 'quota') return `Gemini's request limit is used up for now${retryAfterMs ? `; it resets in about ${durationLabel(retryAfterMs)}` : ''}.`
     if (reasons[0] === 'busy') return 'Gemini is overloaded right now (Google reported high demand).'
@@ -155,6 +159,8 @@ export async function askGemini(prompt, { validate = null, fresh = false } = {})
         return value
       } catch (error) {
         const outcome = classifyGeminiError(error)
+        // The page shows a plain summary; the logs keep Google's own wording.
+        console.warn(`Gemini ${modelName} failed (${outcome.reason}):`, String(error?.message || '').slice(0, 300))
         attempts.push({ model: modelName, reason: outcome.reason, retryAfterMs: outcome.cooldownMs || null })
         if (outcome.cooldownMs) cooldowns.set(modelName, { until: Date.now() + outcome.cooldownMs, reason: outcome.reason })
         if (outcome.stop) return unavailable(attempts)

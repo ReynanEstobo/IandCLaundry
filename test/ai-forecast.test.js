@@ -50,6 +50,15 @@ test('ai forecast: a busy model hands over to the next model', async t => {
   assert.deepEqual(calls, ['gemini-2.5-flash', 'gemini-2.5-flash-lite'])
 })
 
+test('ai forecast: a refused server location stops at once and says so', async t => {
+  const calls = withGemini(t, () => geminiError(400, 'Bad Request', 'User location is not supported for the API use.'))
+  const result = await generateForecast({ history: freshHistory(), forecastDates, branch: 'all', range: 'weekly' })
+  assert.equal(result.source, 'baseline')
+  assert.equal(result.reason, 'location_blocked')
+  assert.match(result.reasonMessage, /server location/)
+  assert.deepEqual(calls, ['gemini-2.5-flash'], 'the other models would refuse in the same way')
+})
+
 test('ai forecast: predictions with rewritten dates are matched by position', async t => {
   const rewritten = JSON.stringify({ predictions: [prediction('Nov 1', '1,200', 5), prediction('Nov 2', 900, 4)] })
   withGemini(t, () => geminiReply(rewritten))

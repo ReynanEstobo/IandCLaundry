@@ -4,6 +4,9 @@
   "main": "cloudflare/worker.js",
   "compatibility_date": "2026-09-07",
   "compatibility_flags": ["nodejs_compat"],
+  // Gemini refuses requests from some Cloudflare data centers, such as Hong
+  // Kong. Run near Singapore, where it is offered, wherever the visitor is.
+  "placement": { "region": "gcp:asia-southeast1" },
   "assets": {
     "directory": "./frontend/dist",
     "binding": "ASSETS",
