@@ -83,11 +83,18 @@ function brandedEmailHtml(subject, body, { canReply = false } = {}) {
 </html>`
 }
 
-async function sendViaAppsScript({ relayUrl, relaySecret, to, subject, body, html, replyTo }) {
+// Gmail shows this as the sender's name; the sending address stays the shop's.
+// Quotes, angle brackets, "@", backslashes, and line breaks are removed so a
+// visitor's name cannot alter the header or look like another address.
+function senderDisplayName(value) {
+  return String(value || '').replace(/[\r\n"<>@\\]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 100)
+}
+
+async function sendViaAppsScript({ relayUrl, relaySecret, to, subject, body, html, replyTo, senderName }) {
   const response = await fetch(relayUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ secret: relaySecret, to, subject, body, html, replyTo }),
+    body: JSON.stringify({ secret: relaySecret, to, subject, body, html, replyTo, senderName }),
   })
   let data = null
   try { data = await response.json() } catch { /* The status check below handles non-JSON responses. */ }
@@ -96,8 +103,9 @@ async function sendViaAppsScript({ relayUrl, relaySecret, to, subject, body, htm
   }
 }
 
-export async function sendEmail({ to, subject, body, replyTo }) {
+export async function sendEmail({ to, subject, body, replyTo, senderName }) {
   if (!to || !subject || !body) throw Object.assign(new Error('Missing required fields'), { status: 400 })
+  const fromName = senderDisplayName(senderName) || 'I&C Laundry'
   const normalizedReplyTo = replyTo ? String(replyTo).trim() : null
   if (normalizedReplyTo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedReplyTo)) {
     throw Object.assign(new Error('Reply-to email is invalid'), { status: 400 })
@@ -117,7 +125,7 @@ export async function sendEmail({ to, subject, body, replyTo }) {
     await sendViaAppsScript({
       relayUrl: requireValue(relayUrl, 'Google Apps Script relay URL'),
       relaySecret: requireValue(relaySecret, 'Google Apps Script relay secret'),
-      to, subject, body: text, html, replyTo: normalizedReplyTo,
+      to, subject, body: text, html, replyTo: normalizedReplyTo, senderName: fromName,
     })
     return { success: true, message: 'Email sent successfully', provider: 'google_apps_script' }
   }
@@ -132,7 +140,7 @@ export async function sendEmail({ to, subject, body, replyTo }) {
     secure: true,
     auth: { user: from, pass },
   })
-  await transporter.sendMail({ from: `"I&C Laundry" <${from}>`, to, subject, text, html, replyTo: normalizedReplyTo || undefined })
+  await transporter.sendMail({ from: `"${fromName}" <${from}>`, to, subject, text, html, replyTo: normalizedReplyTo || undefined })
   return { success: true, message: 'Email sent successfully', provider: 'gmail_smtp' }
 }
 

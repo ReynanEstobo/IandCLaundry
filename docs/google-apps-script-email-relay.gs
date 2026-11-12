@@ -12,6 +12,7 @@ const DEFAULT_REPLY_TO = 'iclaundryshop@gmail.com';
 const MAX_RECIPIENT_LENGTH = 254;
 const MAX_SUBJECT_LENGTH = 200;
 const MAX_BODY_LENGTH = 20000;
+const MAX_SENDER_NAME_LENGTH = 100;
 
 function doPost(event) {
   try {
@@ -27,6 +28,9 @@ function doPost(event) {
     const body = String(payload.body || '').trim();
     const html = String(payload.html || '').trim();
     const replyTo = String(payload.replyTo || '').trim();
+    // Contact-form emails show the visitor's name, such as "Juan Dela Cruz via
+    // I&C Laundry". Gmail still sends from this account, so nothing is spoofed.
+    const senderName = cleanSenderName(payload.senderName) || SENDER_NAME;
 
     if (!isValidEmail(to) || !subject || !body ||
         (replyTo && !isValidEmail(replyTo)) ||
@@ -37,7 +41,7 @@ function doPost(event) {
 
     GmailApp.sendEmail(to, subject, body, {
       htmlBody: html || undefined,
-      name: SENDER_NAME,
+      name: senderName,
       // Public contact-form emails provide the visitor's address here. Staff
       // can reply directly while Gmail still sends from the business account.
       replyTo: replyTo || DEFAULT_REPLY_TO,
@@ -48,6 +52,12 @@ function doPost(event) {
     console.error('Email relay failed', error && error.message);
     return response({ success: false, error: 'Delivery failed' });
   }
+}
+
+// Removes characters that could alter the From header or imitate an address.
+function cleanSenderName(value) {
+  return String(value || '').replace(/[\r\n"<>@\\]/g, ' ').replace(/\s+/g, ' ').trim()
+    .slice(0, MAX_SENDER_NAME_LENGTH);
 }
 
 function isValidEmail(value) {

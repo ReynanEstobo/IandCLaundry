@@ -96,6 +96,8 @@ export async function sendContactMessage(body) {
   await sendEmail({
     to: inbox,
     replyTo: validEmail,
+    // The inbox lists the visitor by name; Gmail still sends from the shop account.
+    senderName: `${validName.slice(0, 60)} via I&C Laundry`,
     subject: 'New website contact message — I&C Laundry',
     body: `Name: ${validName}\nEmail: ${validEmail}\nPhone: ${validPhone || 'Not provided'}\nAddress: ${address || 'Not provided'}\n\nMessage:\n${message}`,
   })
