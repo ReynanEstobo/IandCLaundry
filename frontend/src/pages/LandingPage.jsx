@@ -231,6 +231,22 @@ function Spinner({ size = 16 }) {
   return <Loader2 size={size} className="button-spinner" aria-hidden="true" />;
 }
 
+/* Visitor-facing text for Turnstile error codes. Codes 1101xx, 110200, and
+   400020 mean the widget rejects this site's key or address, which only the
+   Cloudflare dashboard can fix, so content blockers are not mentioned there. */
+function turnstileErrorMessage(code) {
+  if (code === "110200" || /^1101\d\d$/.test(code) || code === "400020") {
+    return "The security check is not set up for this web address yet, so the form cannot be sent. Please contact us by phone, email, or Facebook instead.";
+  }
+  if (code === "iframe-load" || code === "200500") {
+    return `Security check could not load (code: ${code}). Disable content blockers or allow challenges.cloudflare.com, then refresh.`;
+  }
+  if (code === "200100") {
+    return "Security check failed because this device's clock is incorrect. Correct the date and time, then refresh.";
+  }
+  return `Security check could not be completed (code: ${code}). Refresh the page and try again.`;
+}
+
 export default function LandingPage() {
   const navigate = useNavigate();
   const [showTopBtn, setShowTopBtn] = useState(false);
@@ -294,6 +310,9 @@ export default function LandingPage() {
         callback: token => { if (active) { setTurnstileToken(token); setTurnstileErrorCode(""); } },
         "expired-callback": () => { if (active) setTurnstileToken(""); },
         "error-callback": errorCode => {
+          if (String(errorCode) === "110200") {
+            console.warn(`Turnstile error 110200: add ${window.location.hostname} to the widget's hostnames in the Cloudflare dashboard.`);
+          }
           if (active) {
             setTurnstileToken("");
             setTurnstileErrorCode(String(errorCode || "unknown"));
@@ -1047,7 +1066,7 @@ export default function LandingPage() {
                   : turnstileConfigLoaded && !turnstileSiteKey
                     ? "Security check is unavailable. Please try again later."
                     : turnstileErrorCode
-                      ? `Security check could not load (code: ${turnstileErrorCode}). Disable content blockers or allow challenges.cloudflare.com, then refresh.`
+                      ? turnstileErrorMessage(turnstileErrorCode)
                     : turnstileLoaded
                       ? "Complete the security check to send your message."
                       : "Loading security check…"}</small>
