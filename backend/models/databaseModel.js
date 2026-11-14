@@ -8,6 +8,7 @@ export const TABLES = new Set([
   'inventory_usage_log', 'inventory_restocks', 'expenses', 'staff',
   'settings', 'service_types', 'sms_log', 'branches', 'payments', 'ai_forecasts',
   'order_items', 'order_item_addons', 'service_inventory_requirements', 'service_addon_items',
+  'order_refunds',
 ])
 
 // These reference/operational records can be hidden and later restored.
@@ -18,7 +19,7 @@ const SOFT_DELETABLE_TABLES = new Set([
 ])
 const PROTECTED_TRANSACTION_TABLES = new Set([
   'orders', 'payments', 'inventory_usage_log', 'inventory_restocks', 'sms_log',
-  'order_items', 'order_item_addons',
+  'order_items', 'order_item_addons', 'order_refunds',
 ])
 const WORKFLOW_CREATED_TABLES = new Set([
   'orders', 'inventory_items', 'inventory_restocks', 'inventory_usage_log',
@@ -189,7 +190,7 @@ function compareOrdersForList(a, b) {
 // lookup/assignment is always performed on the server, not trusted from UI data.
 const BRANCH_SCOPED_TABLES = new Set([
   'orders', 'customers', 'inventory_items', 'inventory_usage_log',
-  'inventory_restocks', 'expenses', 'payments',
+  'inventory_restocks', 'expenses', 'payments', 'order_refunds',
   'order_items', 'order_item_addons', 'service_inventory_requirements', 'service_addon_items',
 ])
 
@@ -373,6 +374,9 @@ export async function execute(table, request, identity) {
   }
   if (['order_items', 'order_item_addons'].includes(table) && request.operation !== 'select') {
     throw Object.assign(new Error('Order service items can only be changed through the secure order workflow.'), { status: 403 })
+  }
+  if (table === 'order_refunds' && request.operation !== 'select') {
+    throw Object.assign(new Error('Refunds are recorded only when an order is cancelled.'), { status: 403 })
   }
   if (table === 'staff' && ['insert', 'update'].includes(request.operation)) {
     throw Object.assign(new Error('Staff accounts can only be created or changed through the secure staff-provisioning workflow.'), { status: 403 })

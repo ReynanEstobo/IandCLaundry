@@ -104,6 +104,27 @@ test('staff cannot alter settings, directly set stages, or delete transaction hi
   assert.equal(calls.length,0)
 })
 
+test('refunds are written only by cancellation, and staff read only their own branch\'s refunds', async t => {
+  const calls = mockDatabase(t, [
+    { id: 'refund-a', branch: 'Main', amount: 150 },
+    { id: 'refund-b', branch: 'Calzada', amount: 90 },
+  ])
+  const byId = [{ type: 'eq', column: 'id', value: 'refund-a' }]
+  for (const identity of [staff, admin]) {
+    for (const operation of ['insert', 'update', 'delete']) {
+      await assert.rejects(
+        execute('order_refunds', { operation, payload: { amount: 1 }, filters: byId }, identity),
+        /Refunds are recorded only when an order is cancelled/,
+      )
+    }
+  }
+  assert.equal(calls.some(call => ['insert', 'update', 'delete'].includes(call.method)), false)
+  const own = await execute('order_refunds', { operation: 'select', selection: 'amount, branch' }, staff)
+  assert.deepEqual(own.data.map(row => row.id), ['refund-a'])
+  const all = await execute('order_refunds', { operation: 'select', selection: 'amount, branch' }, admin)
+  assert.equal(all.data.length, 2)
+})
+
 test('staff can read branches but only administrators can change them', async t => {
   const calls = mockDatabase(t, [{ id: 'branch-a', name: 'Main' }])
   const result = await execute('branches', { operation: 'select', selection: 'id, name' }, staff)

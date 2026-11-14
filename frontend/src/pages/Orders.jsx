@@ -987,8 +987,11 @@ export default function Orders() {
     if (!cancellingOrder || isCancelling) return;
     setIsCancelling(true);
     try {
-      await cancelBranchOrder(cancellingOrder.id, cancellationReason.trim());
-      toast.success("Order cancelled and branch inventory restored");
+      const result = await cancelBranchOrder(cancellingOrder.id, cancellationReason.trim());
+      const refunded = Number(result?.data?.refunded_amount) || 0;
+      toast.success(refunded > 0
+        ? `Order cancelled. Return ₱${refunded.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} cash to the customer; the refund is recorded.`
+        : "Order cancelled and branch inventory restored");
       setCancellingOrder(null);
       setCancellationReason("");
       loadData(true);
@@ -1296,7 +1299,9 @@ export default function Orders() {
                           {"₱"}
                           {(Number(order.total_price) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
-                        <span className={`badge badge-${order.payment_status}`}>{order.payment_status}</span>
+                        {order.status === "cancelled" && Number(order.refunded_amount) > 0
+                          ? <span className="badge badge-cancelled" title="Cash paid for this order was refunded when it was cancelled">refunded ₱{Number(order.refunded_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          : <span className={`badge badge-${order.payment_status}`}>{order.payment_status}</span>}
                       </td>
                       <td data-card-actions className="orders-column-actions">
                         <div className="orders-row-actions">
@@ -2025,7 +2030,10 @@ export default function Orders() {
             <div className="order-modal-body">
               <div className="cancellation-alert-message">
                 <strong>This action changes the order status to Cancelled.</strong>
-                <span>Used inventory is returned to <b>{cancellingOrder.branch || "this branch"}</b>. Payments are retained for audit purposes; issue a refund or correction separately when needed.</span>
+                <span>Used inventory is returned to <b>{cancellingOrder.branch || "this branch"}</b>.{" "}
+                  {Number(cancellingOrder.amount_paid) > 0
+                    ? <>The <b>₱{Number(cancellingOrder.amount_paid).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> paid for this order will be recorded as refunded under your name. Return this cash to the customer.</>
+                    : "No payment was collected, so no refund is needed."}</span>
               </div>
               <div className="form-group">
                 <label htmlFor="cancellation-reason">Cancellation reason *</label>

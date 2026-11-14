@@ -28,6 +28,8 @@ const reportInput = {
     repeatCustomers: 1,
     completedOrders: 1,
     averageTurnaroundHours: 4.5,
+    refundsTotal: 180,
+    refundsCount: 1,
   },
 }
 
@@ -66,6 +68,13 @@ test('staff rows show orders created and released separately, with the release r
 test('turnaround is described as receiving to ready for pickup', () => {
   assert.match(report.printHtml, /Average turnaround from receiving to ready for pickup was 4\.5 hours/)
   assert.doesNotMatch(report.printHtml, /released-order turnaround/i)
+})
+
+test('refunds on cancelled orders appear in the CSV and the printed report', () => {
+  assert.match(report.csv, /"Refunded on Cancelled Orders \(PHP\)","180"/)
+  assert.match(report.csv, /"Cancelled Orders Refunded","1"/)
+  assert.match(report.printHtml, /Refunds on cancelled orders/)
+  assert.match(report.printHtml, /refunded to customers on 1 cancelled order\./)
 })
 
 test('spreadsheet export is a styled multi-sheet I&C management workbook', async () => {

@@ -49,6 +49,8 @@ function normalizeInput(input) {
     repeatCustomers: number(operations.repeatCustomers),
     completedOrders: released,
     turnaround: operations.averageTurnaroundHours ?? null,
+    refundsTotal: number(operations.refundsTotal),
+    refundsCount: number(operations.refundsCount),
     generatedAt,
     revenue,
     expenses,
@@ -269,6 +271,7 @@ function addSummarySheet(workbook, model) {
       ['Customers with repeat visits', model.repeatCustomers, 'Customers with more than one recorded order in scope.'],
       ['Average turnaround time', model.turnaround == null ? 'Not available' : number(model.turnaround), model.turnaround == null ? 'No order has reached ready for pickup yet.' : 'Average hours from receiving an order until it is ready for pickup.'],
       ['Payment entries', model.payments.length, 'Deposits and balance payments; this does not represent the order count.'],
+      ['Refunded on cancelled orders (PHP)', model.refundsTotal, `${model.refundsCount} cancelled order${model.refundsCount === 1 ? '' : 's'} refunded. Cash from cancelled orders is not counted as cash received.`],
     ],
   )
   sheet.getCell(indicators.start, 2).numFmt = moneyFormat
