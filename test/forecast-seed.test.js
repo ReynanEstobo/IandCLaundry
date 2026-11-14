@@ -18,6 +18,7 @@ test('forecast supplement creates dated ledger, usage and ETA history without re
     CREATE TABLE order_stage_history (id uuid DEFAULT gen_random_uuid(), order_id uuid, branch_id uuid,
       staff_id uuid, previous_status text, status text, changed_at timestamptz DEFAULT now());
     DROP TABLE payments;
+    CREATE SCHEMA ic_laundry_test_only;
   `)
   for (const name of [
     '20260908_order_stage_corrections.sql',

@@ -4,6 +4,8 @@
 -- 5 on Friday/Saturday. Uses the Demo services and their inventory recipes.
 -- Keep this artificial history out of real evaluation/forecast accuracy claims.
 -- Existing demo customers, loyalty settings, users and active orders are retained.
+-- Runs only in a test copy marked by loadtest/build-setup-sql.mjs (the
+-- ic_laundry_test_only schema), never in the live project.
 BEGIN;
 
 DO $$
@@ -28,6 +30,9 @@ DECLARE
   v_addons JSONB;
   v_previous_sync TEXT := current_setting('app.payment_ledger_sync', true);
 BEGIN
+  IF to_regnamespace('ic_laundry_test_only') IS NULL THEN
+    RAISE EXCEPTION 'Stopped: this database is not marked as a test copy. Never add demo history to the live project. Nothing was changed.';
+  END IF;
   -- Prevent two editor sessions from seeding the same history concurrently.
   PERFORM pg_advisory_xact_lock(hashtextextended('demo-forecast-history-v1', 0));
   IF EXISTS (SELECT 1 FROM public.customers WHERE email LIKE '%@forecast.example.test') THEN

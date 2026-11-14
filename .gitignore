@@ -6,3 +6,7 @@ dist
 .dev.vars
 .dev.vars.*
 .wrangler/
+
+# Load-test outputs and generated test credentials
+loadtest/out/
+loadtest/.accounts.json

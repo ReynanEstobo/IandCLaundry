@@ -1,24 +1,34 @@
--- DESTRUCTIVE TEST-DATA RESET for the I&C Laundry Supabase project.
--- Before running: export a backup, review this entire file, and replace the
--- confirmation text below with RESET_TEST_DATA_ONLY.
+-- DESTRUCTIVE TEST-DATA RESET for a TEST copy of the I&C Laundry database.
+-- NEVER run this in the live project: it deletes every customer, order,
+-- payment, service and inventory record and replaces them with demo data.
+--
+-- It runs only in a test project set up with loadtest/build-setup-sql.mjs,
+-- which marks that database with the ic_laundry_test_only schema. The live
+-- project has no marker, so the script stops before changing anything.
+-- To run it in the test project, replace the empty confirmation text below
+-- with RESET_TEST_DATA_ONLY.
 --
 -- Preserved: public.staff (including admin/staff profiles), auth.users,
 -- public.branches, and public.settings. Branches are retained because staff
 -- profiles and branch-scoped records depend on them. Settings are reset only
 -- for the loyalty test scenario below. Other business/test rows are removed.
--- Run the whole file in Supabase SQL Editor as one execution.
+-- Run the whole file in Supabase SQL Editor as one execution. The checks run
+-- inside the transaction, so if either one stops the script nothing is changed.
+
+BEGIN;
 
 DO $$
 DECLARE
-  v_confirmation TEXT := 'RESET_TEST_DATA_ONLY';
+  v_confirmation TEXT := '';
 BEGIN
+  IF to_regnamespace('ic_laundry_test_only') IS NULL THEN
+    RAISE EXCEPTION 'Reset stopped: this database is not marked as a test copy. Never run this script on the live project. Nothing was changed.';
+  END IF;
   IF v_confirmation <> 'RESET_TEST_DATA_ONLY' THEN
-    RAISE EXCEPTION 'Reset stopped. Review this script and replace the confirmation text before running.';
+    RAISE EXCEPTION 'Reset stopped. Review this script and replace the confirmation text before running. Nothing was changed.';
   END IF;
 END;
 $$;
-
-BEGIN;
 
 DO $$
 DECLARE
@@ -69,6 +79,7 @@ TRUNCATE TABLE
   public.loyalty_rewards,
   public.order_item_addons,
   public.order_items,
+  public.order_refunds,
   public.order_stage_history,
   public.orders,
   public.password_change_otps,
