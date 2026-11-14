@@ -8,7 +8,6 @@ import {
   ShoppingBag,
   Printer,
   RefreshCw,
-  RotateCcw,
   TrendingUp,
   Users,
   Timer,
@@ -198,7 +197,7 @@ export default function Analytics() {
 
   const [stats, setStats] = useState({});
   const [operationalSummary, setOperationalSummary] = useState({
-    services: [], branches: [], topServices: [], topBranches: [], staffPerformance: [], lowStockItems: [], repeatCustomers: 0, completedOrders: 0, averageTurnaroundHours: null, newCustomerTotal: 0, dailyNewCustomers: [], outstandingBalances: [], refundsTotal: 0, refundsCount: 0,
+    services: [], branches: [], topServices: [], topBranches: [], staffPerformance: [], lowStockItems: [], repeatCustomers: 0, completedOrders: 0, averageTurnaroundHours: null, newCustomerTotal: 0, dailyNewCustomers: [], outstandingBalances: [],
   });
 
   const [forecastLoading, setForecastLoading] = useState(false);
@@ -307,17 +306,9 @@ export default function Analytics() {
       customerQuery = customerQuery.eq("branch", selectedBranch);
     }
 
-    // Cash returned to customers when paid orders were cancelled.
-    let refundQuery = supabase
-      .from("order_refunds")
-      .select("amount, refunded_at, branch")
-      .gte("refunded_at", startDate)
-      .lte("refunded_at", endDate);
-    if (selectedBranch !== "all") refundQuery = refundQuery.eq("branch", selectedBranch);
-
     let inventoryQuery = supabase.from("inventory_items").select("id, name, current_stock, minimum_stock, unit, branch");
     if (selectedBranch !== "all") inventoryQuery = inventoryQuery.eq("branch", selectedBranch);
-    const [ordersRes, expensesRes, staffRes, inventoryRes, paymentsRes, serviceItemsRes, customersRes, refundsRes] = await Promise.all([
+    const [ordersRes, expensesRes, staffRes, inventoryRes, paymentsRes, serviceItemsRes, customersRes] = await Promise.all([
       orderQuery,
       expenseQuery,
       supabase.from("staff").select("id, full_name"),
@@ -325,7 +316,6 @@ export default function Analytics() {
       paymentQuery,
       serviceItemQuery,
       customerQuery,
-      refundQuery,
     ]);
     if (requestId !== analyticsRequestId.current) return;
     const requestError = ordersRes.error || expensesRes.error || staffRes.error || inventoryRes.error || paymentsRes.error || serviceItemsRes.error || customersRes.error;
@@ -338,11 +328,6 @@ export default function Analytics() {
     const inventoryData = inventoryRes.data || [];
     const serviceItems = (serviceItemsRes.data || []).filter((item) => item.orders?.status !== 'cancelled');
     const newCustomerData = customersRes.data || [];
-    // Refunds are a supporting figure: if they cannot be read (for example,
-    // before the refund migration is run) the rest of the report still loads.
-    if (refundsRes.error) console.warn("Refunds could not be loaded for Analytics:", refundsRes.error.message || refundsRes.error);
-    const refundData = refundsRes.error ? [] : (refundsRes.data || []);
-    const refundsTotal = refundData.reduce((sum, refund) => sum + (Number(refund.amount) || 0), 0);
 
     setOrders(orderData);
     setPayments(paymentData);
@@ -459,8 +444,6 @@ export default function Analytics() {
       newCustomerTotal: newCustomerData.length,
       dailyNewCustomers,
       outstandingBalances,
-      refundsTotal,
-      refundsCount: refundData.length,
     });
 
     generateForecast(orderData, paymentData);
@@ -716,7 +699,6 @@ export default function Analytics() {
             `Repeat customers in the selected scope: ${operationalSummary.repeatCustomers}.`,
             `Released orders: ${operationalSummary.completedOrders}.`,
             operationalSummary.averageTurnaroundHours == null ? "Turnaround time is not yet available." : `Average turnaround from receiving to ready for pickup: ${operationalSummary.averageTurnaroundHours.toFixed(1)} hours.`,
-            `Refunded on cancelled orders: ₱${operationalSummary.refundsTotal.toLocaleString()} across ${operationalSummary.refundsCount} order${operationalSummary.refundsCount === 1 ? "" : "s"}.`,
           ],
         },
         trendData: chartData,
@@ -1171,11 +1153,6 @@ Rules:
                   ? `${(operationalSummary.averageTurnaroundHours / 24).toFixed(1)} days`
                   : `${operationalSummary.averageTurnaroundHours.toFixed(1)} h`,
               icon: Timer,
-            },
-            {
-              label: `Refunded on ${operationalSummary.refundsCount} cancelled order${operationalSummary.refundsCount === 1 ? "" : "s"}`,
-              value: `₱${operationalSummary.refundsTotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-              icon: RotateCcw,
             },
           ].map((metric) => {
             const Icon = metric.icon;

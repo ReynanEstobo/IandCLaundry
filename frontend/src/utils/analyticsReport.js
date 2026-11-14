@@ -91,12 +91,6 @@ function managementHighlights(model, metrics) {
       detail: `${metrics.orders} unique order${metrics.orders === 1 ? ' was' : 's were'} created and ${metrics.released} ${metrics.released === 1 ? 'was' : 'were'} released to customers. Paying an order more than once does not increase the order count.`,
     },
     {
-      title: 'Refunds on cancelled orders',
-      detail: model.operationalSummary.refundsCount
-        ? `${peso(model.operationalSummary.refundsTotal)} was refunded to customers on ${model.operationalSummary.refundsCount} cancelled order${model.operationalSummary.refundsCount === 1 ? '' : 's'}. Cash from cancelled orders is not counted as cash received.`
-        : 'No cash was refunded on cancelled orders in this period.',
-    },
-    {
       title: 'Strongest activity',
       detail: leadingService || leadingBranch
         ? `${leadingService ? `${leadingService.name} led the service list with ${number(leadingService.orders)} request${number(leadingService.orders) === 1 ? '' : 's'}` : 'No service activity was recorded'}${leadingBranch ? `, while ${leadingBranch.name} led branch cash collections at ${peso(leadingBranch.revenue)}` : ''}.`
@@ -147,8 +141,6 @@ export function buildAnalyticsReport(input) {
       newCustomerTotal: number(input.operationalSummary?.newCustomerTotal),
       dailyNewCustomers: input.operationalSummary?.dailyNewCustomers || [],
       outstandingBalances: input.operationalSummary?.outstandingBalances || [],
-      refundsTotal: number(input.operationalSummary?.refundsTotal),
-      refundsCount: number(input.operationalSummary?.refundsCount),
     },
     logoUrl: input.logoUrl || '/assets/Rectangle.png',
     forecastSource: input.forecastSource || 'Not recorded',
@@ -185,8 +177,6 @@ export function buildAnalyticsReport(input) {
     ['Orders Released to Customers', metrics.released],
     ['Released Orders as Share of Orders Created (%)', metrics.releaseRate.toFixed(1)],
     ['Payment Entries', model.payments.length],
-    ['Refunded on Cancelled Orders (PHP)', model.operationalSummary.refundsTotal],
-    ['Cancelled Orders Refunded', model.operationalSummary.refundsCount],
     ['Repeat Customers', model.operationalSummary.repeatCustomers],
     ['New Customer Profiles', model.operationalSummary.newCustomerTotal],
     ['Average Turnaround (Hours)', model.operationalSummary.averageTurnaroundHours == null ? 'Not available' : number(model.operationalSummary.averageTurnaroundHours).toFixed(1)],
