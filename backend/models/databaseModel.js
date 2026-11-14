@@ -147,6 +147,19 @@ function hasRecordIdFilter(filters = []) {
   return filters.some(({ type, column, value }) => type === 'eq' && column === 'id' && value !== undefined && value !== null && value !== '')
 }
 
+// Customers are shared between branches (one record per phone number). Staff
+// may archive only a customer served at their own branch alone: archiving a
+// shared customer would hide them from the other branches, and their next
+// order there would start a new record with no loyalty history.
+async function assertCustomerServedOnlyAtStaffBranch(filters, identity) {
+  const ids = filters.filter(({ type, column }) => type === 'eq' && column === 'id').map(({ value }) => value)
+  const { data, error } = await database.from('customer_branches').select('branch_id').in('customer_id', ids)
+  if (error) throw Object.assign(new Error('Unable to check which branches serve this customer.'), { status: 500 })
+  if ((data || []).some(link => link.branch_id !== identity.branchId)) {
+    throw Object.assign(new Error('This customer is also served at another branch, so only an administrator can archive them.'), { status: 403 })
+  }
+}
+
 function applyFilters(query, filters = []) {
   return filters.reduce((current, { type, column, value }) => {
     if (!column) return current
@@ -433,6 +446,9 @@ export async function execute(table, request, identity) {
   const { operation, selection = '*', filters, orders = [], range, limit, payload, count, head, single, returning } = request
   if (operation === 'delete' && PROTECTED_TRANSACTION_TABLES.has(table)) {
     throw Object.assign(new Error('This transaction record cannot be deleted. Use the appropriate cancellation or correction workflow so the audit trail and inventory history remain accurate.'), { status: 400 })
+  }
+  if (operation === 'delete' && table === 'customers' && identity.role !== 'admin') {
+    await assertCustomerServedOnlyAtStaffBranch(filters, identity)
   }
   if (operation === 'delete' && SOFT_DELETABLE_TABLES.has(table)) {
     const existing = await applyFilters(database.from(table).select('*'), filters)
