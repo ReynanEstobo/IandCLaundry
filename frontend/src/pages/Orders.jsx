@@ -27,7 +27,7 @@ import useEscapeToClose from "../components/useEscapeToClose";
 import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
-import { sendEmail, sendSms } from "../services/api/notificationApi";
+import { sendEmail } from "../services/api/notificationApi";
 import { cancelBranchOrder, collectBranchOrderPayment, createBranchOrder, getOrdersPage, lookupCustomerByPhone, settleAndReleaseBranchOrder, transitionAllOrderServiceItems, transitionBranchOrder } from "../services/api/operationsApi";
 import { useAuth } from "../context/AuthContext";
 import { useShowPageLoader, InlineSkeleton, PageError, PageLoader, TableSkeleton } from "../components/AsyncState";
@@ -150,40 +150,6 @@ async function sendReadyEmail(order, customerName, customerEmail) {
     }
   } catch {
     // Silently fail - email is best-effort (won't work in local dev, only on Netlify)
-  }
-}
-
-async function sendOrderSMS(
-  phone,
-  orderNumber,
-  customerName,
-  serviceName,
-  weightKg,
-  totalPrice,
-  estimatedReadyAt,
-) {
-  if (!phone) return;
-  try {
-    const etaText = estimatedReadyAt
-      ? new Date(estimatedReadyAt).toLocaleString("en-PH", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
-      : "to be confirmed";
-
-    const message = `Hi ${customerName || "Customer"}! Your laundry order has been received.\n\nTracking #: ${orderNumber}\nService: ${serviceName}\nWeight: ${weightKg}kg\nTotal: P${totalPrice.toLocaleString()}\nEstimated ready for pickup: ${etaText}\n\nTrack your order at our website using your tracking number.\n\nWe'll notify you when it's ready. Thank you! - I&C Laundry`;
-
-    await sendSms({ phone, message });
-  } catch {
-    // Silently fail - SMS is best-effort
-  }
-}
-
-async function sendReadySMS(phone, orderNumber, customerName) {
-  if (!phone) return;
-  try {
-    const message = `Hi ${customerName || "Customer"}! Your laundry (Tracking #: ${orderNumber}) is now READY for pickup. Please visit I&C Laundry at your earliest convenience. Thank you!`;
-
-    await sendSms({ phone, message });
-  } catch {
-    // Silently fail
   }
 }
 
@@ -747,19 +713,6 @@ export default function Orders() {
       );
     }
 
-    // Send order received SMS for new orders
-    if (!editing && orderData && form.customer_phone.trim()) {
-      sendOrderSMS(
-        form.customer_phone.trim(),
-        orderData.order_number,
-        form.customer_name.trim(),
-        form.items.map((item) => serviceTypes.find((service) => String(service.id) === String(item.service_type_id))?.name || "Laundry service").join(", "),
-        totalWeight,
-        total_price,
-        orderData.estimated_ready_at,
-      );
-    }
-
     toast.success(editing ? "Order updated!" : "Order created!");
     setShowModal(false);
     await loadData(true);
@@ -888,13 +841,6 @@ export default function Orders() {
         sendReadyEmail(order, order.customers.name, order.customers.email);
       } else {
         setManualPickupReminder(order);
-      }
-      if (order.customers?.phone) {
-        sendReadySMS(
-          order.customers.phone,
-          order.order_number,
-          order.customers.name,
-        );
       }
     }
 
