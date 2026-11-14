@@ -19,7 +19,11 @@ const reportInput = {
   operationalSummary: {
     services: [{ name: 'Wash & Fold', orders: 2, revenue: 1300, weightKg: 18, quantity: 2 }],
     branches: [{ name: 'Main - Brgy 7', orders: 2, revenue: 1500 }],
-    staffPerformance: [{ name: 'Maria Santos', created: 2, completed: 1 }],
+    staffPerformance: [
+      { name: 'Maria Santos', created: 2, completed: 1, createdReleased: 1 },
+      // Releases orders other staff created; she created none herself.
+      { name: 'Ana Reyes', created: 0, completed: 3, createdReleased: 0 },
+    ],
     lowStockItems: [{ name: 'Detergent', branch: 'Main - Brgy 7', current_stock: 2, minimum_stock: 5, unit: 'kg' }],
     repeatCustomers: 1,
     completedOrders: 1,
@@ -50,6 +54,18 @@ test('print report is I&C branded and includes governance and sign-off content',
   assert.match(report.printHtml, /Reviewed by/)
   assert.match(report.printHtml, /not counted again when the customer pays the balance/i)
   assert.match(report.printHtml, /What Management Should Know/)
+})
+
+test('staff rows show orders created and released separately, with the release rate of their own orders', () => {
+  assert.match(report.csv, /"Orders Created","Orders Released","Created Orders Released \(%\)"/)
+  assert.match(report.csv, /"Maria Santos","2","1","50\.0"/)
+  assert.match(report.csv, /"Ana Reyes","0","3","0\.0"/)
+  assert.match(report.printHtml, /Orders Created<\/th>/)
+})
+
+test('turnaround is described as receiving to ready for pickup', () => {
+  assert.match(report.printHtml, /Average turnaround from receiving to ready for pickup was 4\.5 hours/)
+  assert.doesNotMatch(report.printHtml, /released-order turnaround/i)
 })
 
 test('spreadsheet export is a styled multi-sheet I&C management workbook', async () => {

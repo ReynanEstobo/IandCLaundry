@@ -267,7 +267,7 @@ function addSummarySheet(workbook, model) {
       ['Orders released to customers', model.completedOrders, 'Orders completed and picked up by customers.'],
       ['Share of orders released', model.releaseRate, 'Released orders compared with orders created.'],
       ['Customers with repeat visits', model.repeatCustomers, 'Customers with more than one recorded order in scope.'],
-      ['Average turnaround time', model.turnaround == null ? 'Not available' : number(model.turnaround), model.turnaround == null ? 'Not enough released-order history.' : 'Average hours from order creation to release.'],
+      ['Average turnaround time', model.turnaround == null ? 'Not available' : number(model.turnaround), model.turnaround == null ? 'No order has reached ready for pickup yet.' : 'Average hours from receiving an order until it is ready for pickup.'],
       ['Payment entries', model.payments.length, 'Deposits and balance payments; this does not represent the order count.'],
     ],
   )
@@ -331,8 +331,8 @@ function addOperationsSheet(workbook, model) {
   sheet.addRow([])
   sectionBand(sheet, sheet.lastRow.number + 1, 'STAFF PRODUCTIVITY', 6, COLORS.green)
   addTable(sheet,
-    ['Rank', 'Staff Member', 'Orders Handled', 'Released to Customers', 'Share Released'],
-    model.staff.map((item, index) => [index + 1, item.name, number(item.created), number(item.completed), number(item.created) ? number(item.completed) / number(item.created) : 0]),
+    ['Rank', 'Staff Member', 'Orders Created', 'Released to Customers', 'Created Orders Released'],
+    model.staff.map((item, index) => [index + 1, item.name, number(item.created), number(item.completed), number(item.created) ? number(item.createdReleased) / number(item.created) : 0]),
     { percentageColumns: [5], empty: 'No staff productivity information is available for this period.' },
   )
   sheet.views = [{ state: 'frozen', ySplit: 2, showGridLines: false }]

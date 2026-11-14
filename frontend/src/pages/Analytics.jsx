@@ -268,7 +268,7 @@ export default function Analytics() {
 
     let orderQuery = supabase
       .from("orders")
-      .select("id, order_number, created_at, updated_at, status, customer_id, completed_by_staff_id, created_by_staff_id, branch, branch_id, total_price, amount_paid, payment_status, customers(name, phone), service_types(name)")
+      .select("id, order_number, created_at, updated_at, ready_at, status, customer_id, completed_by_staff_id, created_by_staff_id, branch, branch_id, total_price, amount_paid, payment_status, customers(name, phone), service_types(name)")
       .gte("created_at", startDate)
       .lte("created_at", endDate)
       .order("created_at", { ascending: true });
@@ -357,6 +357,10 @@ export default function Analytics() {
     const branchTotals = branchPerformance(orderData, paymentData);
     const staffTotals = new Map();
     let completedOrders = 0;
+    // Turnaround is the shop's processing time: received until ready for
+    // pickup. It ignores how long customers take to collect, and uses ready_at
+    // because updated_at also changes when a record is edited after release.
+    let turnaroundOrders = 0;
     let turnaroundTotalHours = 0;
     serviceItems.forEach((item) => {
       const serviceName = item.service_name_snapshot || "Unspecified service";
@@ -370,16 +374,25 @@ export default function Analytics() {
     });
     orderData.forEach((order) => {
       if (order.customer_id) customerVisits.set(order.customer_id, (customerVisits.get(order.customer_id) || 0) + 1);
-      const staffId = order.completed_by_staff_id || order.created_by_staff_id;
-      if (staffId) {
-        const staffRecord = staffTotals.get(staffId) || { name: staffById.get(staffId) || "Unassigned staff", completed: 0, created: 0 };
-        staffRecord.created += 1;
-        if (order.status === "released") staffRecord.completed += 1;
+      // The creator is credited with the order and the releaser with the
+      // release; they can be different people. createdReleased counts the
+      // creator's orders that were released by anyone, for the release rate.
+      const staffRecordFor = (staffId) => {
+        const staffRecord = staffTotals.get(staffId) || { name: staffById.get(staffId) || "Unassigned staff", completed: 0, created: 0, createdReleased: 0 };
         staffTotals.set(staffId, staffRecord);
+        return staffRecord;
+      };
+      if (order.created_by_staff_id) {
+        const creator = staffRecordFor(order.created_by_staff_id);
+        creator.created += 1;
+        if (order.status === "released") creator.createdReleased += 1;
       }
-      if (order.status === "released") {
-        completedOrders += 1;
-        if (order.created_at && order.updated_at) turnaroundTotalHours += Math.max(0, (new Date(order.updated_at) - new Date(order.created_at)) / 3600000);
+      const releaserId = order.status === "released" ? (order.completed_by_staff_id || order.created_by_staff_id) : null;
+      if (releaserId) staffRecordFor(releaserId).completed += 1;
+      if (order.status === "released") completedOrders += 1;
+      if (order.created_at && order.ready_at) {
+        turnaroundOrders += 1;
+        turnaroundTotalHours += Math.max(0, (new Date(order.ready_at) - new Date(order.created_at)) / 3600000);
       }
     });
     const rankedServices = [...serviceTotals.values()].sort((a, b) => b.revenue - a.revenue || b.orders - a.orders);
@@ -427,7 +440,7 @@ export default function Analytics() {
       lowStockItems,
       repeatCustomers: [...customerVisits.values()].filter((visits) => visits > 1).length,
       completedOrders,
-      averageTurnaroundHours: completedOrders ? turnaroundTotalHours / completedOrders : null,
+      averageTurnaroundHours: turnaroundOrders ? turnaroundTotalHours / turnaroundOrders : null,
       newCustomerTotal: newCustomerData.length,
       dailyNewCustomers,
       outstandingBalances,
@@ -685,7 +698,7 @@ export default function Analytics() {
             ...operationalSummary.lowStockItems.map((item) => `Low stock: ${item.name} has ${item.current_stock} ${item.unit} left at ${item.branch || "the selected branch"}.`),
             `Repeat customers in the selected scope: ${operationalSummary.repeatCustomers}.`,
             `Released orders: ${operationalSummary.completedOrders}.`,
-            operationalSummary.averageTurnaroundHours == null ? "Turnaround time is not yet available." : `Average released-order turnaround: ${operationalSummary.averageTurnaroundHours.toFixed(1)} hours.`,
+            operationalSummary.averageTurnaroundHours == null ? "Turnaround time is not yet available." : `Average turnaround from receiving to ready for pickup: ${operationalSummary.averageTurnaroundHours.toFixed(1)} hours.`,
           ],
         },
         trendData: chartData,
@@ -1154,7 +1167,7 @@ Rules:
         <div className="operational-lists">
           <OperationalList icon={<TrendingUp size={17} />} title="High-Performing Services" accent="#8b5cf6" empty="No service data yet" items={operationalSummary.topServices.map((service) => `${service.name} · ${service.orders} service requests · ₱${service.revenue.toLocaleString()}`)} />
           <OperationalList icon={<Building2 size={17} />} title="Top Branches" accent="#0ea5e9" empty="No branch data yet" items={operationalSummary.topBranches.map((branchMetric) => `${branchMetric.name} · ${branchMetric.orders} ${branchMetric.orders === 1 ? "order" : "orders"} created · ₱${branchMetric.revenue.toLocaleString()}`)} />
-          <OperationalList icon={<Users size={17} />} title="Staff Productivity" accent="#10b981" empty="No staff activity yet" items={operationalSummary.staffPerformance.slice(0, 3).map((staff) => `${staff.name} · ${staff.completed} released / ${staff.created} handled`)} />
+          <OperationalList icon={<Users size={17} />} title="Staff Productivity" accent="#10b981" empty="No staff activity yet" items={operationalSummary.staffPerformance.slice(0, 3).map((staff) => `${staff.name} · ${staff.completed} released / ${staff.created} created`)} />
           <OperationalList icon={<Users size={17} />} title="Daily New Customers" accent="#0284c7" empty="No new customer profiles in this scope" ranked={false} limit={7} items={[...operationalSummary.dailyNewCustomers].reverse().map((item) => `${format(new Date(`${item.date}T00:00:00`), "MMM d, yyyy")} · ${item.count} new customer${item.count === 1 ? "" : "s"}`)} />
         </div>
       </div>
