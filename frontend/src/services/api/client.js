@@ -167,6 +167,7 @@ const resourcePaths = {
   payments: '/api/payments', branches: '/api/branches', order_items: '/api/order-items',
   service_inventory_requirements: '/api/service-inventory-requirements',
   order_item_addons: '/api/order-item-addons', service_addon_items: '/api/service-addon-items',
+  order_refunds: '/api/order-refunds',
 }
 
 export async function apiFetch(path, options = {}) {
