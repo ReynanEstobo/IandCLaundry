@@ -78,21 +78,32 @@ export function rollingDemandForecast(orders = [], paymentsOrNow = [], suppliedN
     ? `Limited history; ${todayOrderCount} received today.`
     : `${expectedOrdersText} expected; ${todayOrderCount} received today (usual: ${usualOrdersText}/day).`
 
+  // The busiest weekday is the one with the most orders per day. A 30-day
+  // window holds some weekdays five times and others four, so comparing raw
+  // totals would favour whichever weekday happened to occur more often.
   const byDay = Array(7).fill(0)
   history.forEach(order => { byDay[new Date(order.created_at).getDay()] += 1 })
+  const daysOfWeekday = Array(7).fill(0)
+  for (let index = 1; index <= historyDays; index += 1) daysOfWeekday[subDays(today, index).getDay()] += 1
+  const ordersPerDay = byDay.map((count, day) => (daysOfWeekday[day] ? count / daysOfWeekday[day] : 0))
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-  const peakDayIndex = byDay.indexOf(Math.max(...byDay))
+  const peakDayIndex = ordersPerDay.indexOf(Math.max(...ordersPerDay))
   const peakDayOrders = byDay[peakDayIndex] || 0
   const peakDay = history.length >= 14 && peakDayOrders >= 2
     ? dayNames[peakDayIndex]
     : 'Not enough data'
 
-  const recentStart = subDays(today, 14)
-  const previousStart = subDays(today, 29)
+  // Trend: the last 14 full days against the 14 full days before them. Today's
+  // partial collections are left out so both sides cover the same length.
+  const trendDays = 14
+  const recentStart = subDays(today, trendDays)
+  const previousStart = subDays(today, trendDays * 2)
   const revenueEvents = paymentHistory.length ? paymentHistory.map(payment => ({ date: paymentTimestamp(payment), amount: recordedPaymentAmount(payment) }))
     : revenueOrderHistory.map(order => ({ date: order.created_at, amount: recordedRevenue(order) }))
-  const recentRevenue = revenueEvents.filter(event => new Date(event.date) >= recentStart)
-    .reduce((sum, event) => sum + event.amount, 0)
+  const recentRevenue = revenueEvents.filter(event => {
+    const date = new Date(event.date)
+    return date >= recentStart && date < today
+  }).reduce((sum, event) => sum + event.amount, 0)
   const previousRevenue = revenueEvents.filter(event => {
     const date = new Date(event.date)
     return date >= previousStart && date < recentStart
@@ -110,6 +121,7 @@ export function rollingDemandForecast(orders = [], paymentsOrNow = [], suppliedN
     workloadLevel,
     peakDay,
     peakDayOrders,
+    peakDayAverage: Number((ordersPerDay[peakDayIndex] || 0).toFixed(1)),
     revenueTrend: previousRevenue > 0 ? Number((((recentRevenue - previousRevenue) / previousRevenue) * 100).toFixed(1)) : 0,
     oldestHistoryDate: history.length ? history.reduce((oldest, order) => new Date(order.created_at) < oldest ? new Date(order.created_at) : oldest, new Date(history[0].created_at)) : null,
   }

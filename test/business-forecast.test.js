@@ -135,6 +135,39 @@ test('a positive forecast below one order is not displayed as zero expected', ()
   assert.doesNotMatch(forecast.workloadSummary, /\b0 orders expected;/)
 })
 
+test('the peak day is the weekday with the most orders per day, not the most in total', () => {
+  // The 30 days before Saturday 14 Nov 2026 hold five Fridays but only four Saturdays.
+  const now = new Date('2026-11-14T22:00:00')
+  const on = (date, count) => Array.from({ length: count }, () => ({ created_at: `${date}T09:00:00`, status: 'released' }))
+  const fridays = ['2026-10-16', '2026-10-23', '2026-10-30', '2026-11-06', '2026-11-13'].flatMap(date => on(date, 10))
+  const saturdays = ['2026-10-17', '2026-10-24', '2026-10-31', '2026-11-07'].flatMap(date => on(date, 12))
+  const forecast = rollingDemandForecast([...fridays, ...saturdays], now)
+
+  assert.equal(fridays.length > saturdays.length, true, 'Fridays have more orders in total')
+  assert.equal(forecast.peakDay, 'Saturday')
+  assert.equal(forecast.peakDayOrders, 48)
+  assert.equal(forecast.peakDayAverage, 12)
+})
+
+test('the revenue trend compares two equal 14-day periods and leaves out today so far', () => {
+  const now = new Date('2026-09-25T09:00:00')
+  const forecast = rollingDemandForecast([], [
+    { amount: 300, paid_at: '2026-08-27T10:00:00' },  // 29 days ago: in the 30-day total, before both trend periods
+    { amount: 1400, paid_at: '2026-08-28T10:00:00' }, // earlier 14 days
+    { amount: 1400, paid_at: '2026-09-11T10:00:00' }, // last 14 days
+    { amount: 500, paid_at: '2026-09-25T08:00:00' },  // today so far
+  ], now)
+
+  assert.equal(forecast.revenueTrend, 0, 'equal collections in equal periods show no change')
+  assert.equal(forecast.totalRevenue, 3600, 'the 30-day estimate still includes today')
+
+  const growing = rollingDemandForecast([], [
+    { amount: 1000, paid_at: '2026-08-30T10:00:00' },
+    { amount: 1500, paid_at: '2026-09-20T10:00:00' },
+  ], now)
+  assert.equal(growing.revenueTrend, 50)
+})
+
 test('the payment revenue window still includes today and starts 29 days before today', () => {
   const now = new Date('2026-09-25T12:00:00')
   const forecast = rollingDemandForecast([], [
