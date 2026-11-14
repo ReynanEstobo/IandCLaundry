@@ -233,8 +233,9 @@ export default function Dashboard() {
       // The local query adapter intentionally exposes only simple filters.
       // Read both timestamp indexes, then retain the same preferred
       // `paid_at || payment_date` timestamp used by the existing dashboard.
-      supabase.from("payments").select("id, amount, paid_at, payment_date").gte("paid_at", historyStartIso),
-      supabase.from("payments").select("id, amount, paid_at, payment_date").gte("payment_date", historyStartIso),
+      // The order status lets cancelled orders' payments be left out, as in Analytics.
+      supabase.from("payments").select("id, amount, paid_at, payment_date, orders!inner(status)").gte("paid_at", historyStartIso),
+      supabase.from("payments").select("id, amount, paid_at, payment_date, orders!inner(status)").gte("payment_date", historyStartIso),
       supabase.from("expenses").select("amount, expense_date").gte("expense_date", historyStart.toISOString().slice(0, 10)),
     ]);
     const { data: settingsData } = await supabase
@@ -255,9 +256,10 @@ export default function Dashboard() {
     const forecastHistory = await loadInventoryForecastHistory(inventory);
     const paymentsById = new Map();
     [...(paymentsByPaidAtRes.data || []), ...(paymentsByPaymentDateRes.data || [])].forEach((payment) => paymentsById.set(payment.id, payment));
+    // Revenue matches Analytics: cash recorded on cancelled orders is excluded.
     const payments = [...paymentsById.values()].filter((payment) => {
       const timestamp = paymentTimestamp(payment);
-      return timestamp && new Date(timestamp) >= historyStart;
+      return timestamp && new Date(timestamp) >= historyStart && payment.orders?.status !== "cancelled";
     });
     const expenses = expensesRes.data || [];
     const reportableOrders = orders.filter((o) => o.status !== "cancelled");
@@ -302,7 +304,8 @@ export default function Dashboard() {
     setOverviewAlertPage((current) => Math.min(current, Math.max(0, fc.restockAlerts.length - 1)));
     // Charts are ready as soon as the filtered operational data is ready.
     // Do not keep them blocked by the separate Gemini/DSS request below.
-    setWeeklyData(buildChartData(orders, payments, range));
+    // Chart order counts leave out cancelled orders, as Analytics does.
+    setWeeklyData(buildChartData(reportableOrders, payments, range));
     hasLoadedDashboard.current = true;
     setLoading(false);
     if (firstLoad || scope === "initial" || scope === "charts") setChartLoading(false);

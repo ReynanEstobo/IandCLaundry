@@ -76,8 +76,9 @@ export default function StaffDashboard() {
         // Row-level security restricts this data to the signed-in staff member's branch.
         supabase.from('orders').select('created_at, amount_paid, total_price, payment_status, status')
           .not('status', 'eq', 'cancelled').gte('created_at', historyStartIso),
-        supabase.from('payments').select('id, amount, paid_at, payment_date').gte('paid_at', historyStartIso),
-        supabase.from('payments').select('id, amount, paid_at, payment_date').gte('payment_date', historyStartIso),
+        // The order status lets cancelled orders' payments be left out, as in Analytics.
+        supabase.from('payments').select('id, amount, paid_at, payment_date, orders!inner(status)').gte('paid_at', historyStartIso),
+        supabase.from('payments').select('id, amount, paid_at, payment_date, orders!inner(status)').gte('payment_date', historyStartIso),
         supabase.from('inventory_usage_log').select('item_id, quantity_used, logged_at, reversed_at')
           .order('logged_at', { ascending: false }).limit(500),
         supabase.from('service_inventory_requirements')
@@ -96,7 +97,7 @@ export default function StaffDashboard() {
       paymentRows.forEach(payment => paymentsById.set(payment.id, payment))
       setPaymentHistory([...paymentsById.values()].filter(payment => {
         const timestamp = paymentTimestamp(payment)
-        return timestamp && new Date(timestamp) >= historyStart
+        return timestamp && new Date(timestamp) >= historyStart && payment.orders?.status !== 'cancelled'
       }))
       setUsageLogs(usageRes.data || [])
       setServiceRecipes(recipesRes.data || [])
