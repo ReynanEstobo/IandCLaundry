@@ -583,8 +583,8 @@ export default function Settings() {
           </div>
           <div className="settings-row">
             <div className="settings-row-text">
-              <label htmlFor="setting-free-load-milestone">Free 8 kg load order</label>
-              <p>The order in each cycle that earns one free 8 kg standard load.</p>
+              <label htmlFor="setting-free-load-milestone">Free load order</label>
+              <p>The order in each cycle that earns one free load of its first service, at that service's load size.</p>
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
@@ -606,7 +606,7 @@ export default function Settings() {
             </div>
           </div>
           <div className="settings-row settings-row-summary">
-            <span>Every cycle: order #{loyaltyDiscountMilestone} earns {loyaltyDiscountPercent}% off the entire checkout; order #{loyaltyFreeLoadMilestone} earns one free 8 kg standard load.</span>
+            <span>Every cycle: order #{loyaltyDiscountMilestone} earns {loyaltyDiscountPercent}% off the entire checkout; order #{loyaltyFreeLoadMilestone} earns one free load of its first service.</span>
           </div>
           <div className="settings-section-note">
             <InfoNote compact title="When rewards are earned">

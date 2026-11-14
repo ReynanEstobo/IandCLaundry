@@ -105,7 +105,9 @@ export async function lookupCustomer(phone, identity) {
       if (position === Number(loyaltySettings.loyalty_discount_milestone)) {
         nextReward = { reward_type: 'percentage_discount', discount_percent: loyaltySettings.loyalty_discount_percent }
       } else if (position === freeLoadMilestone) {
-        nextReward = { reward_type: 'free_load', free_load_kg: 8 }
+        // The free load is one load of the order's first service at its own
+        // size, so the order form labels it from the selected service.
+        nextReward = { reward_type: 'free_load' }
       }
     }
   }

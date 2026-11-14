@@ -366,6 +366,13 @@ export default function Orders() {
     return laundryPrice + addonTotal;
   }
 
+  // A free load is one load of the first service at that service's own size.
+  function freeLoadLabel() {
+    const firstService = serviceTypes.find(service => String(service.id) === String(form.items[0]?.service_type_id));
+    if (!firstService) return "load of the first service";
+    return `${Number(firstService.bundle_kg) || 8} kg ${firstService.name} load`;
+  }
+
   function loyaltyPrice(rawTotal, reward) {
     if (!reward) return rawTotal;
     if (reward.reward_type === "percentage_discount") {
@@ -1701,7 +1708,7 @@ export default function Orders() {
                   {!editing && loyaltyPreview && (
                     <div className="account-security-notice" style={{ marginBottom: 14 }}>
                       <CheckCircle2 size={16} />
-                      <span><strong>Loyalty reward applied automatically:</strong> {loyaltyPreview.reward_type === "percentage_discount" ? `${loyaltyPreview.discount_percent}% off this entire order, including add-ons and excess kg.` : "one free 8 kg standard load; add-ons and excess kg remain payable."}</span>
+                      <span><strong>Loyalty reward applied automatically:</strong> {loyaltyPreview.reward_type === "percentage_discount" ? `${loyaltyPreview.discount_percent}% off this entire order, including add-ons and excess kg.` : `one free ${freeLoadLabel()}; add-ons and excess kg remain payable.`}</span>
                     </div>
                   )}
                   <div className="pricing-card">
@@ -1758,7 +1765,7 @@ export default function Orders() {
                       const total = loyaltyPrice(rawTotal, reward);
                       return <>
                         {reward && <div className="pricing-row loyalty-discount-row" style={{ fontWeight: 700 }}>
-                          <span>{reward.reward_type === "percentage_discount" ? `${reward.discount_percent}% loyalty discount` : "Free 8 kg standard load"}</span>
+                          <span>{reward.reward_type === "percentage_discount" ? `${reward.discount_percent}% loyalty discount` : `Free ${freeLoadLabel()}`}</span>
                           <span>−₱{(rawTotal - total).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                         </div>}
                     <div className="pricing-total">
