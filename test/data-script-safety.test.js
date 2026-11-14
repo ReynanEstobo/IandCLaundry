@@ -17,6 +17,25 @@ test('data scripts are saved with an empty confirmation, so a pasted script neve
   assert.ok(reset.indexOf("to_regnamespace('ic_laundry_test_only')") < reset.indexOf('TRUNCATE TABLE'))
 })
 
+test('the reset-with-history script waits for its confirmation and creates nothing that looks like demo data', async t => {
+  const history = await script('reset-with-sample-history.sql')
+  assert.match(history, /v_confirmation TEXT := '';/)
+  assert.ok(history.indexOf("v_confirmation <> 'RESET_WITH_SAMPLE_HISTORY'") < history.indexOf('TRUNCATE TABLE'), 'checked before anything is deleted')
+  // Every name, description and reason it writes (its string literals), apart from the confirmation word.
+  const body = history.split('\n').map(line => line.replace(/--.*$/, '')).join('\n')
+  const literals = [...body.matchAll(/'((?:[^']|'')*)'/g)].map(match => match[1]).filter(text => !text.includes('RESET_WITH_SAMPLE_HISTORY'))
+  const flagged = literals.filter(text => /demo|test|sample|seed|example|fake|dummy|forecast/i.test(text))
+  assert.deepEqual(flagged, [])
+  // Customers get no email address, so the system never emails them.
+  assert.match(history, /'email', ''/)
+
+  const db = new PGlite()
+  t.after(() => db.close())
+  await db.exec('CREATE TABLE public.orders (id int); INSERT INTO public.orders VALUES (1);')
+  await assert.rejects(db.exec(history), /replace the empty confirmation text with RESET_WITH_SAMPLE_HISTORY/)
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM public.orders')).rows[0].n, 1)
+})
+
 test('the demo-data scripts stop on any database not marked as a test copy, even when confirmed', async t => {
   const db = new PGlite()
   t.after(() => db.close())
