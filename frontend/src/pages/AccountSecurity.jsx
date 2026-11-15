@@ -80,6 +80,7 @@ export default function AccountSecurity() {
       // A missing recovery email and a cooldown each have their own notice.
       const missingEmail = error.data?.code === 'CONTACT_EMAIL_REQUIRED'
       setRecoveryEmailMissing(missingEmail)
+      toast.error(error.message || 'Unable to send the verification code.')
       if (error.data?.retryAfterSeconds) cooldown.start(error.data.retryAfterSeconds)
       else if (!missingEmail) setFormError({ field: 'request', message: error.message })
     } finally {
@@ -93,9 +94,11 @@ export default function AccountSecurity() {
     try {
       await apiFetch('/api/auth/password/otp/verify', { method: 'POST', body: JSON.stringify({ otp: code }) })
       setOtpStatus('valid')
+      toast.success('Code verified. You can now set your new password.')
     } catch (error) {
       setOtpStatus('invalid')
       setOtpMessage(/invalid verification code/i.test(error.message) ? 'OTP is wrong. Please try again.' : error.message)
+      toast.error(/invalid verification code/i.test(error.message) ? 'Wrong code. Please try again.' : error.message)
     }
   }
 
@@ -111,8 +114,10 @@ export default function AccountSecurity() {
       await apiFetch('/api/auth/password', { method: 'PATCH', body: JSON.stringify({ newPassword, otp }) })
       clearOtpSession(OTP_SESSION_KEY)
       setPasswordChanged(true)
+      toast.success('Password changed.')
     } catch (error) {
       setFormError({ field: '', message: error.message || 'Unable to change password.' })
+      toast.error(error.message || 'Unable to change password.')
     } finally {
       setSaving(false)
     }

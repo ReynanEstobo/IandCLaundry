@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import toast from 'react-hot-toast'
 import { CheckCircle2, Eye, EyeOff, MailCheck } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { apiFetch } from '../services/api/client'
@@ -44,7 +45,9 @@ export default function ChangeEmail({ onChanged }) {
       setOtpStatus('idle')
       setOtpMessage('')
       setPassword('')
+      toast.success(`Verification code sent to ${result.destination}.`)
     } catch (error) {
+      toast.error(error.message || 'Unable to send the verification code.')
       if (error.data?.retryAfterSeconds) cooldown.start(error.data.retryAfterSeconds)
       else setError(error.message)
     }
@@ -58,9 +61,11 @@ export default function ChangeEmail({ onChanged }) {
     try {
       await apiFetch('/api/auth/email/otp/verify', { method: 'POST', body: JSON.stringify({ challengeId: challenge.challengeId, otp: code }) })
       setOtpStatus('valid')
+      toast.success('Code verified. Press Confirm email change to save it.')
     } catch (error) {
       setOtpStatus('invalid')
       setOtpMessage(/invalid verification code/i.test(error.message) ? 'OTP is wrong. Please try again.' : error.message)
+      toast.error(/invalid verification code/i.test(error.message) ? 'Wrong code. Please try again.' : error.message)
     } finally { setBusy('') }
   }
 
@@ -79,8 +84,12 @@ export default function ChangeEmail({ onChanged }) {
       setEmail('')
       setOtp('')
       onChanged?.()
+      toast.success(`Recovery email changed to ${result.contactEmail}.`)
       await refreshProfile()
-    } catch (error) { setError(error.message) }
+    } catch (error) {
+      setError(error.message)
+      toast.error(error.message || 'Unable to change the email.')
+    }
     finally { setBusy('') }
   }
 

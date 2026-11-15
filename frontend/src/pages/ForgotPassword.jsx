@@ -64,6 +64,7 @@ export default function ForgotPassword() {
     } catch (error) {
       if (error.data?.retryAfterSeconds) cooldown.start(error.data.retryAfterSeconds)
       setFormError({ field: 'request', message: error.message })
+      toast.error(error.message || 'Unable to send the verification code.')
     } finally { setLoading(false) }
   }
 
@@ -73,9 +74,11 @@ export default function ForgotPassword() {
     try {
       await apiFetch('/api/auth/forgot-password/otp/verify', { method: 'POST', body: JSON.stringify({ identifier, otp: code }) })
       setOtpStatus('valid')
+      toast.success('Code verified. You can now set a new password.')
     } catch (error) {
       setOtpStatus('invalid')
       setOtpMessage(/invalid verification code/i.test(error.message) ? 'OTP is wrong. Please try again.' : error.message)
+      toast.error(/invalid verification code/i.test(error.message) ? 'Wrong code. Please try again.' : error.message)
     }
   }
 
@@ -92,7 +95,10 @@ export default function ForgotPassword() {
       clearOtpSession(OTP_SESSION_KEY)
       toast.success('Password reset successfully. You can now sign in.')
       navigate('/login', { replace: true })
-    } catch (error) { setFormError({ field: '', message: error.message }) } finally { setLoading(false) }
+    } catch (error) {
+      setFormError({ field: '', message: error.message })
+      toast.error(error.message || 'Unable to reset the password.')
+    } finally { setLoading(false) }
   }
 
   const updateOtp = value => {

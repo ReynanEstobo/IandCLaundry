@@ -51,6 +51,7 @@ export default function ActivatePassword() {
       navigate('/dashboard', { replace: true })
     } catch (error) {
       setFormError({ field: '', message: error.message || 'Unable to activate the account.' })
+      toast.error(error.message || 'Unable to activate the account.')
     } finally {
       setSaving(false)
     }

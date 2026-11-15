@@ -205,6 +205,8 @@ export default function Analytics() {
   const [forecastModel, setForecastModel] = useState("");
   const [forecastAiMeta, setForecastAiMeta] = useState(PENDING_AI_META);
   const forecastRequestId = useRef(0);
+  // Where the latest forecast came from, so Regenerate can say whether it worked.
+  const forecastOutcome = useRef({ source: "", reason: "" });
 
   const [aiInsights, setAiInsights] = useState([]);
   const [aiLoading, setAiLoading] = useState(false);
@@ -599,6 +601,7 @@ export default function Analytics() {
         setForecastData(entry.data);
         setForecastModel(`Gemini-assisted forecast (${entry.model})`);
         setForecastAiMeta({ source: "gemini", model: entry.model, savedAt: entry.savedAt, isCached, staleData: entry.dataVersion !== dataVersion, reason });
+        forecastOutcome.current = { source: isCached && reason ? "earlier" : "gemini", reason: reason || "" };
         return entry.data;
       };
       const toChartForecast = (predictions) => predictions.map((prediction) => ({
@@ -648,6 +651,7 @@ export default function Analytics() {
       setForecastData(baselineForecast);
       setForecastModel("Local trend baseline · low confidence");
       setForecastAiMeta({ source: "baseline", model: "", savedAt: null, isCached: false, staleData: false, reason });
+      forecastOutcome.current = { source: "baseline", reason };
       return baselineForecast;
     } catch (err) {
       console.error(err);
@@ -834,11 +838,17 @@ Rules:
     if (manualAiRefresh || forecastLoading || aiLoading) return;
     setManualAiRefresh(true);
     try {
+      forecastOutcome.current = { source: "", reason: "" };
       const freshForecast = await generateForecast(orders, payments, { forceRefresh: true });
       await generateAIInsights(orders, expenses, {
         forceRefresh: true,
         forecastOverride: freshForecast || forecastData,
       });
+      const outcome = forecastOutcome.current;
+      if (outcome.source === "gemini") toast.success("AI forecast and recommendations updated.");
+      else if (outcome.source) toast.error(`The AI could not make a new forecast${outcome.reason ? `: ${outcome.reason}` : "."} ${outcome.source === "earlier" ? "Showing the last AI forecast." : "Showing a local estimate."}`);
+    } catch (error) {
+      toast.error(error.message || "Unable to regenerate the AI outputs.");
     } finally {
       setManualAiRefresh(false);
     }
@@ -964,6 +974,7 @@ Rules:
     try {
       const { downloadAnalyticsWorkbook } = await import('../utils/analyticsWorkbook');
       await downloadAnalyticsWorkbook(createManagementReportInput());
+      toast.success("Spreadsheet downloaded.");
     } catch (error) {
       console.error('Unable to export the management spreadsheet:', error);
       toast.error('The spreadsheet could not be created. Please try again.');
