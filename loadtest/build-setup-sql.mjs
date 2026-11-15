@@ -16,7 +16,8 @@ import { OUT_DIR, ROOT } from './lib/config.mjs'
 const LEGACY_BASELINE = `-- Pre-migration tables of the original database.
 CREATE TABLE IF NOT EXISTS public.branches (branch_name text NOT NULL, status text DEFAULT 'active',
   address text, created_at timestamptz DEFAULT now());
-CREATE TABLE IF NOT EXISTS public.payments (id uuid PRIMARY KEY DEFAULT uuid_generate_v4(), order_id uuid,
+CREATE TABLE IF NOT EXISTS public.payments (id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    order_id uuid REFERENCES public.orders(id) ON DELETE RESTRICT,
   amount numeric(10,2) NOT NULL DEFAULT 0, payment_method text, payment_status text,
   payment_date timestamptz DEFAULT now(), created_at timestamptz DEFAULT now());
 CREATE TABLE IF NOT EXISTS public.ai_forecasts (id uuid PRIMARY KEY DEFAULT uuid_generate_v4(), forecast_type text,
