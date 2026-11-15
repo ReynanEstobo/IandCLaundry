@@ -3,6 +3,7 @@ import { getStaffProfile } from '../models/databaseModel.js'
 import { createHash, randomInt } from 'node:crypto'
 import { sendSecurityEmailWithAudit } from '../services/emailAuditService.js'
 import { assertStrongPassword } from '../utils/validation.js'
+import { databaseProblem } from '../utils/databaseErrors.js'
 
 async function identityFor(user) {
   const { data: staff, error } = await getStaffProfile(user.id, user.email)
@@ -316,9 +317,11 @@ export async function updatePassword({ currentPassword, newPassword, otp }, iden
   }
   if (error) throw Object.assign(new Error(error.message), { status: 400 })
   if (challenge) await database.from('password_change_otps').update({ consumed_at: new Date().toISOString() }).eq('id', challenge.id)
-  if (identity?.staffId) {
+  // Only an activation changes the staff record; an ordinary password change
+  // leaves it untouched, so an old record cannot block the change.
+  if (identity?.staffId && identity.mustChangePassword) {
     const { error: staffError } = await database.from('staff').update({ must_change_password: false }).eq('id', identity.staffId)
-    if (staffError) throw Object.assign(new Error(staffError.message), { status: 400 })
+    if (staffError) throw databaseProblem(staffError, 'Your new password is saved, but your account could not be activated. Ask an administrator to check your details on the Staff page.')
   }
   await writePasswordAudit(identity?.staffId, identity?.branchId || null)
   return { success: true }

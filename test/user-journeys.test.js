@@ -360,7 +360,11 @@ test('administrator journey: a new administrator has no branch scope and must ha
       if (table === 'branches') throw new Error('Administrators must not require a branch lookup')
       if (table === 'staff') {
         return {
-          select() { return { ilike() { return { maybeSingle: async () => ({ data: null, error: null }) } } } },
+          // Username lookups and the recovery-email check both find nobody.
+          select() {
+            const lookup = { is: () => lookup, ilike: () => lookup, limit: async () => ({ data: [], error: null }), maybeSingle: async () => ({ data: null, error: null }) }
+            return lookup
+          },
           insert(payload) {
             inserted = payload
             return { select() { return { single: async () => ({ data: { id: 'admin-2', ...payload }, error: null }) } } }

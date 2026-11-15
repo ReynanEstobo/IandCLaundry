@@ -1,6 +1,7 @@
 import { createHmac, randomInt, randomUUID } from 'node:crypto'
 import { authClient, database, runtimeValue } from '../config/supabase.js'
 import { sendSecurityEmailWithAudit } from '../services/emailAuditService.js'
+import { databaseProblem } from '../utils/databaseErrors.js'
 
 const invalid = message => Object.assign(new Error(message), { status: 400 })
 const OTP_COOLDOWN_SECONDS = 300
@@ -46,7 +47,7 @@ export async function requestEmailChange({ newEmail, currentPassword }, identity
     p_previous_email: staff.contact_email, p_new_email: email,
     p_code_hash: hashCode(identity.user.id, id, code),
   })
-  if (insertError) throw new Error('Unable to create email verification challenge')
+  if (insertError) throw databaseProblem(insertError, 'Unable to send a verification code right now. Try again in a moment.')
   if (!created?.success) throw invalid(created?.error || 'Unable to request a code.')
   try {
     await sendSecurityEmailWithAudit({
@@ -72,7 +73,7 @@ export async function confirmEmailChange({ challengeId, otp }, identity) {
     p_auth_user_id: identity.user.id, p_challenge_id: challengeId,
     p_code_hash: hashCode(identity.user.id, challengeId, otp),
   })
-  if (error) throw new Error('Unable to confirm the email change')
+  if (error) throw databaseProblem(error, 'Unable to confirm the email change. Try again, or ask an administrator to check your account details on the Staff page.')
   if (!data?.success) throw invalid(data?.error || 'Unable to verify this code.')
   return data
 }
@@ -85,7 +86,7 @@ export async function verifyEmailChangeOtp({ challengeId, otp }, identity) {
     p_auth_user_id: identity.user.id, p_challenge_id: challengeId,
     p_code_hash: hashCode(identity.user.id, challengeId, otp),
   })
-  if (error) throw new Error('Unable to verify this code')
+  if (error) throw databaseProblem(error, 'Unable to verify this code right now. Try again in a moment.')
   if (!data?.success) throw invalid(data?.error || 'Unable to verify this code.')
   return data
 }

@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { database } from '../config/supabase.js'
 import { events } from '../services/realtimeService.js'
 import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
+import { databaseProblem } from '../utils/databaseErrors.js'
 
 function cleanName(value) {
   return String(value || '').trim().replace(/\s+/g, ' ')
@@ -49,6 +50,20 @@ function internalAuthEmail(username) {
   return `${username}.${randomUUID().slice(0, 8)}@accounts.iclaundry.local`
 }
 
+// One recovery email per active account, as in self-service email changes:
+// "Forgot password" looks accounts up by it and refuses an address two
+// accounts share. Deleted accounts no longer hold their addresses.
+async function assertRecoveryEmailAvailable(contactEmail, exceptStaffId = null) {
+  if (!contactEmail) return
+  const literal = contactEmail.replace(/[\\%_]/g, character => `\\${character}`)
+  for (const column of ['contact_email', 'email']) {
+    const { data, error } = await database.from('staff').select('id, full_name').is('deleted_at', null).ilike(column, literal).limit(5)
+    if (error) throw databaseProblem(error, 'Unable to check whether this email is already used.')
+    const owner = (data || []).find(account => account.id !== exceptStaffId)
+    if (owner) throw Object.assign(new Error(`This recovery email is already used by ${owner.full_name}. Use a different address.`), { status: 409 })
+  }
+}
+
 async function writeAudit(action, staff, actorStaffId, before = {}, after = {}) {
   const { error } = await database.from('audit_logs').insert({
     action,
@@ -72,6 +87,7 @@ export async function provisionStaff(body, identity) {
   if (role === 'admin' && !contactEmail) {
     throw Object.assign(new Error('A contact email is required for an administrator account.'), { status: 400 })
   }
+  await assertRecoveryEmailAvailable(contactEmail)
   // Only staff are attached to a branch. Administrators are global accounts
   // and must never acquire a branch scope that could be mistaken for a limit.
   const branch = role === 'staff' ? await resolveBranch(body?.branch) : null
@@ -107,7 +123,7 @@ export async function provisionStaff(body, identity) {
   const { data: staff, error: staffError } = await database.from('staff').insert(payload).select('*').single()
   if (staffError) {
     await database.auth.admin.deleteUser(auth.user.id)
-    throw Object.assign(new Error(staffError.message), { status: 400 })
+    throw databaseProblem(staffError, 'Could not save the staff account.')
   }
 
   await writeAudit('provision', staff, identity.staffId, {}, { staff_code: staffCode, username, branch: branch?.name || null, role })
@@ -126,7 +142,7 @@ export async function resetStaffCredentials(body, identity) {
     const username = staff.username || await uniqueUsername(staff.full_name)
     const staffCode = staff.staff_code || newAccountCode(staff.role)
     const { data: upgraded, error: upgradeError } = await database.from('staff').update({ staff_code: staffCode, username }).eq('id', staff.id).select('*').single()
-    if (upgradeError) throw Object.assign(new Error(upgradeError.message), { status: 400 })
+    if (upgradeError) throw databaseProblem(upgradeError, 'Could not update the staff account.')
     account = upgraded
   }
 
@@ -141,7 +157,7 @@ export async function resetStaffCredentials(body, identity) {
     credentials_issued_at: new Date().toISOString(),
     credentials_issued_by_staff_id: identity.staffId,
   }).eq('id', account.id).select('*').single()
-  if (updateError) throw Object.assign(new Error(updateError.message), { status: 400 })
+  if (updateError) throw databaseProblem(updateError, 'Could not update the staff account.')
 
   await writeAudit('credentials_reset', updated, identity.staffId, { must_change_password: staff.must_change_password }, { must_change_password: true })
   events.emit('change', { table: 'staff' })
@@ -161,6 +177,7 @@ export async function updateProvisionedStaff(body, identity) {
   if (role === 'admin' && !contactEmail) {
     throw Object.assign(new Error('A contact email is required for an administrator account.'), { status: 400 })
   }
+  await assertRecoveryEmailAvailable(contactEmail, staffId)
   const branch = role === 'staff' ? await resolveBranch(body?.branch) : null
   const updates = {
     full_name: fullName,
@@ -172,7 +189,7 @@ export async function updateProvisionedStaff(body, identity) {
     branch_id: branch?.id || null,
   }
   const { data: updated, error: updateError } = await database.from('staff').update(updates).eq('id', staffId).select('*').single()
-  if (updateError) throw Object.assign(new Error(updateError.message), { status: 400 })
+  if (updateError) throw databaseProblem(updateError, 'Could not update the staff account.')
   await writeAudit('update', updated, identity.staffId, { role: existing.role, branch: existing.branch }, { role, branch: branch?.name || null })
   events.emit('change', { table: 'staff' })
   return { staff: updated }
