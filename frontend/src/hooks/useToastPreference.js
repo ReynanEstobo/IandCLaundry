@@ -1,34 +1,64 @@
 import { useCallback, useEffect, useState } from 'react'
+import toast from 'react-hot-toast'
 
-// "Show toast notifications" belongs to each person on their own browser, like
-// the theme. It used to be one setting for the whole shop, so one person
-// turning it off hid every message for everyone, refusals included.
+// "Show pop-up confirmations" belongs to each person on their own browser,
+// like the theme. When it is off, confirmations (success and progress
+// messages) are not created at all, so none can appear later when it is
+// turned back on. Errors and warnings are never affected.
 const PREFERENCE_EVENT = 'ic-laundry:toast-preference-change'
+let currentUserId = null
+// Used when the browser blocks saved site data, so the switch still works
+// for the rest of the visit.
+const remembered = new Map()
 
 export function toastPreferenceKey(userId) {
   return userId ? `ic-laundry:toasts:${userId}` : null
 }
 
-export function readToastPreference(userId, storage = typeof window === 'undefined' ? null : window.localStorage) {
-  const key = toastPreferenceKey(userId)
-  if (!key || !storage) return true
+function browserStorage() {
   try {
-    return storage.getItem(key) !== 'off'
+    return typeof window === 'undefined' ? null : window.localStorage
   } catch {
-    return true
+    return null
   }
 }
 
-// Confirmations and progress messages can be hidden. Errors and warnings
-// always show: they explain why something was refused or needs attention.
-export function isHideableToast(toast) {
-  return toast?.type === 'success' || toast?.type === 'loading'
+export function readToastPreference(userId, storage = browserStorage()) {
+  const key = toastPreferenceKey(userId)
+  if (!key) return true
+  try {
+    const saved = storage?.getItem(key)
+    if (saved) return saved !== 'off'
+  } catch {
+    // Fall back to this visit's choice below.
+  }
+  return remembered.get(key) !== 'off'
 }
+
+// Whether confirmations may pop up for the person signed in on this screen.
+export function confirmationsEnabled() {
+  return readToastPreference(currentUserId)
+}
+
+// Wraps toast.success and toast.loading once, so every screen follows the
+// setting without changing how it shows messages. toast.error and plain
+// notices (warnings) are left as they are.
+export function installConfirmationFilter(target, isEnabled = confirmationsEnabled) {
+  if (!target || target.confirmationFilterInstalled) return
+  for (const kind of ['success', 'loading']) {
+    const show = target[kind]
+    target[kind] = (message, options) => (isEnabled() ? show(message, options) : '')
+  }
+  target.confirmationFilterInstalled = true
+}
+
+installConfirmationFilter(toast)
 
 export default function useToastPreference(userId) {
   const [enabled, setEnabled] = useState(() => readToastPreference(userId))
 
   useEffect(() => {
+    currentUserId = userId || null
     const sync = () => setEnabled(readToastPreference(userId))
     const handleStorage = (event) => { if (event.key === toastPreferenceKey(userId)) sync() }
     sync()
@@ -41,12 +71,14 @@ export default function useToastPreference(userId) {
   }, [userId])
 
   const setPreference = useCallback((next) => {
+    currentUserId = userId || null
     const key = toastPreferenceKey(userId)
     if (key) {
+      remembered.set(key, next ? 'on' : 'off')
       try {
-        window.localStorage.setItem(key, next ? 'on' : 'off')
+        browserStorage()?.setItem(key, next ? 'on' : 'off')
       } catch {
-        // Still applies to this screen when storage is unavailable.
+        // The remembered choice above still applies for this visit.
       }
     }
     setEnabled(Boolean(next))

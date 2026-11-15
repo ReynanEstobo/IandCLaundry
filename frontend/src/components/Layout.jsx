@@ -22,6 +22,7 @@ import { Fragment, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import useUserTheme from "../hooks/useUserTheme";
+import SignOutConfirm from "./SignOutConfirm";
 
 // Items are grouped by the kind of work they support; a section label is shown
 // whenever the group changes in the visible list.
@@ -55,7 +56,8 @@ const pageNames = {
 };
 
 export default function Layout() {
-  const { signOut, user, role, staffName, branch, contactEmail } = useAuth();
+  const { user, role, staffName, branch, contactEmail } = useAuth();
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
   const { darkMode, toggleTheme } = useUserTheme(user?.id);
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(() => {
@@ -144,7 +146,7 @@ export default function Layout() {
           </div>
           <button
             className="nav-link sidebar-signout"
-            onClick={signOut}
+            onClick={() => setConfirmingSignOut(true)}
             title={!sidebarExpanded ? "Sign out" : undefined}
           >
             <LogOut size={18} />
@@ -228,6 +230,7 @@ export default function Layout() {
           </NavLink>
         ))}
       </nav>}
+      <SignOutConfirm open={confirmingSignOut} onClose={() => setConfirmingSignOut(false)} />
     </div>
   );
 }

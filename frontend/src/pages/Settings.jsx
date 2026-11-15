@@ -23,7 +23,7 @@ import InfoNote from "../components/InfoNote";
 import useOtpCooldown from "../hooks/useOtpCooldown";
 import { clearOtpSession, readOtpSession, writeOtpSession } from "../utils/otpSession";
 import { passwordPolicyError } from "../utils/validation";
-import useToastPreference from "../hooks/useToastPreference";
+import NotificationPreferences from "../components/NotificationPreferences";
 import { orderTimingProblem } from "../utils/settingsRules";
 
 const PASSWORD_OTP_SESSION_KEY = "ic-laundry:settings-password-otp";
@@ -131,8 +131,6 @@ export default function Settings() {
   // Business settings
   const [settings, setSettings] = useState(null);
 
-  // Personal: stored for this account on this browser, like the theme.
-  const { enabled: notifications, setPreference: setNotifications } = useToastPreference(user?.id);
 
   // ETA settings
   const [defaultProcessingMinutes, setDefaultProcessingMinutes] = useState(100);
@@ -280,12 +278,6 @@ export default function Settings() {
     }
   };
 
-  const handleNotificationsToggle = () => {
-    const next = !notifications;
-    setNotifications(next);
-    toast.success(next ? "Confirmations will pop up again." : "Confirmations hidden. Errors and warnings still show.");
-  };
-
   // Format time for display
 
   if (!settings) return null;
@@ -419,37 +411,7 @@ export default function Settings() {
 
         {/* ====== NOTIFICATIONS AND DISPLAY ====== */}
         <section id="settings-panel-notifications" role="tabpanel" aria-labelledby="settings-tab-notifications" hidden={activeTab !== "notifications"} className="card settings-section">
-          <header className="settings-section-header">
-            <h3 id="settings-notifications-title">Notifications and display</h3>
-            <p>Your own on-screen preferences on this browser. They do not change anyone else&apos;s screen.</p>
-          </header>
-          <div className="settings-row">
-            <div className="settings-row-text">
-              <span className="settings-row-label" id="settings-notifications-label">Action notifications</span>
-              <p>Show pop-up confirmations for completed actions. Errors and warnings always show.</p>
-            </div>
-            <div className="settings-row-control">
-              <button
-                type="button"
-                role="switch"
-                className={`settings-toggle ${notifications ? "active" : ""}`}
-                onClick={handleNotificationsToggle}
-                aria-checked={notifications}
-                aria-labelledby="settings-notifications-label"
-              >
-                <div className="settings-toggle-knob" />
-              </button>
-            </div>
-          </div>
-          <div className="settings-row">
-            <div className="settings-row-text">
-              <span className="settings-row-label">Theme</span>
-              <p>Use the moon or sun button in the page header to change the theme for only your account on this browser.</p>
-            </div>
-          </div>
-          <p className="settings-auto-save-status" role="status">
-            Notification changes are saved automatically for your account on this browser.
-          </p>
+          <NotificationPreferences idPrefix="settings" />
         </section>
 
         {/* ====== ORDER TIMING ====== */}

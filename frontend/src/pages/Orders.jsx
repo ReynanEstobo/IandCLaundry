@@ -136,7 +136,14 @@ function isOrderOverdue(order) {
     && new Date(order.estimated_ready_at).getTime() < Date.now();
 }
 
-async function sendReadyEmail(order, customerName, customerEmail) {
+// Only administrators can open Notifications → Delivery Audit.
+function retryNote(isAdmin) {
+  return isAdmin
+    ? "You can retry it from Notifications → Delivery Audit."
+    : "An administrator can retry it from Notifications → Delivery Audit.";
+}
+
+async function sendReadyEmail(order, customerName, customerEmail, isAdmin = false) {
   if (!customerEmail) return;
   try {
     const res = await sendEmail({
@@ -154,7 +161,7 @@ async function sendReadyEmail(order, customerName, customerEmail) {
   } catch {
     // Reported below: staff must know the customer was not told.
   }
-  toast.error(`The ready-for-pickup email to ${customerEmail} could not be sent. Contact the customer, or retry it from Notifications → Delivery Audit.`, { duration: 8000 });
+  toast.error(`The ready-for-pickup email to ${customerEmail} could not be sent. Contact the customer. ${retryNote(isAdmin)}`, { duration: 8000 });
   return false;
 }
 
@@ -167,6 +174,7 @@ async function sendOrderReceivedEmail(
   weightKg,
   totalPrice,
   estimatedReadyAt,
+  isAdmin = false,
 ) {
   if (!String(customerEmail || "").trim()) return;
   try {
@@ -189,7 +197,7 @@ async function sendOrderReceivedEmail(
   } catch {
     // Reported below; the order itself was saved.
   }
-  toast.error(`The order was saved, but the confirmation email to ${customerEmail} could not be sent. You can retry it from Notifications → Delivery Audit.`, { duration: 8000 });
+  toast.error(`The order was saved, but the confirmation email to ${customerEmail} could not be sent. ${retryNote(isAdmin)}`, { duration: 8000 });
 }
 
 export default function Orders() {
@@ -779,6 +787,7 @@ export default function Orders() {
         totalWeight,
         total_price,
         orderData.estimated_ready_at,
+        isAdmin,
       );
     }
 
@@ -886,11 +895,12 @@ export default function Orders() {
     }
 
     setUpdatingOrderId(order.id);
+    let transition = null;
     try {
       if (!correctionNote && ["on_process", "ready"].includes(newStatus) && order.order_items?.length) {
         await transitionAllOrderServiceItems(order.id, newStatus);
       } else if (PROCESS_FLOW.includes(newStatus) || newStatus === "released") {
-        await transitionBranchOrder(order.id, newStatus, correctionNote, newStatus === "released");
+        transition = await transitionBranchOrder(order.id, newStatus, correctionNote, newStatus === "released");
       } else {
         const { error } = await supabase
           .from("orders")
@@ -907,10 +917,14 @@ export default function Orders() {
 
     toast.success(`Status → ${STATUS_LABELS[newStatus]}`);
 
+    // Moved back from Ready for Pick-up: the server emailed a correction if
+    // the customer had been emailed that the order is ready.
+    if (order.status === "ready" && newStatus === "on_process") reportReadyCorrection(order, transition?.readyCorrection);
+
     if (newStatus === "ready") {
       if (String(order.customers?.email || "").trim()) {
         // When the email fails, staff get the same reminder to call the customer.
-        sendReadyEmail(order, order.customers.name, order.customers.email).then((sent) => {
+        sendReadyEmail(order, order.customers.name, order.customers.email, isAdmin).then((sent) => {
           if (!sent) setManualPickupReminder({ ...order, emailFailed: true });
         });
       } else {
@@ -987,6 +1001,21 @@ export default function Orders() {
     setCorrectionOrder(current);
     setCorrectionTarget(targetStatus);
     setCorrectionReason("");
+  }
+
+  // Tells staff what the customer now knows after an order marked ready by
+  // mistake was moved back, and reminds them to call when email did not do it.
+  function reportReadyCorrection(order, correction) {
+    if (correction?.status === "sent") {
+      toast.success(`Correction email sent to ${correction.to}: the customer now knows the order is not ready yet.`, { duration: 6000 });
+    } else if (correction?.status === "failed") {
+      toast.error(`The correction email${correction.to ? ` to ${correction.to}` : ""} could not be sent. Call the customer. ${retryNote(isAdmin)}`, { duration: 9000 });
+      setManualPickupReminder({ ...order, reminder: "correction_failed" });
+    } else {
+      // No ready email reached the customer, but someone may have told them
+      // by phone (customers without email get a call reminder when ready).
+      setManualPickupReminder({ ...order, reminder: "correction_manual" });
+    }
   }
 
   function closeCorrection() {
@@ -1480,12 +1509,24 @@ export default function Orders() {
             if (event.key === "Escape") setManualPickupReminder(null);
             if (event.key === "Tab") event.preventDefault();
           }}>
-            <h3 id="manual-pickup-title">Manually notify the customer</h3>
-            <p id="manual-pickup-description">
-              <strong>{manualPickupReminder.customers?.name || "This customer"}</strong>{" "}
-              {manualPickupReminder.emailFailed ? "could not be emailed: the ready-for-pickup email failed to send." : "has no email address."}{" "}
-              Please contact them to let them know order <strong>{manualPickupReminder.order_number}</strong> is ready for pickup.
-            </p>
+            <h3 id="manual-pickup-title">{manualPickupReminder.reminder ? "Tell the customer it is not ready yet" : "Manually notify the customer"}</h3>
+            {manualPickupReminder.reminder === "correction_failed" ? (
+              <p id="manual-pickup-description">
+                <strong>{manualPickupReminder.customers?.name || "This customer"}</strong> was emailed that order <strong>{manualPickupReminder.order_number}</strong> is ready, but the correction email could not be sent.
+                Please contact them to say the order is not ready yet, so they do not come to the shop for it.
+              </p>
+            ) : manualPickupReminder.reminder === "correction_manual" ? (
+              <p id="manual-pickup-description">
+                No ready-for-pickup email reached <strong>{manualPickupReminder.customers?.name || "this customer"}</strong>.
+                If anyone already told them that order <strong>{manualPickupReminder.order_number}</strong> is ready (for example by phone), please contact them again to say it is not ready yet.
+              </p>
+            ) : (
+              <p id="manual-pickup-description">
+                <strong>{manualPickupReminder.customers?.name || "This customer"}</strong>{" "}
+                {manualPickupReminder.emailFailed ? "could not be emailed: the ready-for-pickup email failed to send." : "has no email address."}{" "}
+                Please contact them to let them know order <strong>{manualPickupReminder.order_number}</strong> is ready for pickup.
+              </p>
+            )}
             {manualPickupReminder.customers?.phone && <p>Phone: <strong>{manualPickupReminder.customers.phone}</strong></p>}
             <div className="order-correction-actions">
               <button type="button" className="btn btn-primary" autoFocus onClick={() => setManualPickupReminder(null)}>

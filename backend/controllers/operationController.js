@@ -1,6 +1,7 @@
 import { database } from '../config/supabase.js'
 import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
 import { assertUniqueInventoryName, assertWholeForUnit } from '../utils/recordRules.js'
+import { sendReadyCorrectionEmail } from './notificationController.js'
 
 function requireBranch(identity) {
   if (!identity.staffId) throw Object.assign(new Error('Your account must have a staff profile before it can process operations.'), { status: 403 })
@@ -226,6 +227,18 @@ export async function transitionOrder(body, identity) {
     p_correction_reason: correctionReason || null,
   })
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
+  // Marked ready by mistake and moved back: if the customer was emailed that
+  // it is ready, email them that it is not ready yet. The move itself has
+  // already been saved; the result only tells staff what the customer knows.
+  if (order.status === 'ready' && nextStatus === 'on_process') {
+    let readyCorrection
+    try {
+      readyCorrection = await sendReadyCorrectionEmail(orderId, identity)
+    } catch (correctionError) {
+      readyCorrection = { status: 'failed', error: correctionError.message || 'The correction email could not be checked or sent.' }
+    }
+    return { data, readyCorrection }
+  }
   return { data }
 }
 

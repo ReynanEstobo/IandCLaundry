@@ -15,7 +15,7 @@ import { chartGrouping } from '../frontend/src/utils/chartDates.js'
 import { canStaffUndoStage, moveBackStatus, undoSecondsLeft, withUndoDeadline } from '../frontend/src/utils/orderStageRules.js'
 import { orderTimingProblem } from '../frontend/src/utils/settingsRules.js'
 import { COUNTABLE_UNITS, stockStep, wholeNumberProblem } from '../frontend/src/utils/inventoryUnits.js'
-import { isHideableToast, readToastPreference, toastPreferenceKey } from '../frontend/src/hooks/useToastPreference.js'
+import { installConfirmationFilter, readToastPreference, toastPreferenceKey } from '../frontend/src/hooks/useToastPreference.js'
 
 const admin = { role: 'admin', staffId: 'admin-a', authUserId: 'auth-a' }
 const source = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -103,23 +103,50 @@ test('the last administrator cannot be demoted to staff', async t => {
 })
 
 // 2. Toast preference is personal, and errors always show ---------------------
-test('the toast preference is per account and never hides errors or warnings', async () => {
+test('the toast preference is per account, and confirmations are not created while it is off', async () => {
   const store = new Map()
   const storage = { getItem: key => store.get(key) ?? null, setItem: (key, value) => store.set(key, value) }
   assert.equal(readToastPreference('user-1', storage), true)
   store.set(toastPreferenceKey('user-1'), 'off')
   assert.equal(readToastPreference('user-1', storage), false)
   assert.equal(readToastPreference('user-2', storage), true, 'another account keeps its own preference')
-  assert.equal(isHideableToast({ type: 'success' }), true)
-  assert.equal(isHideableToast({ type: 'loading' }), true)
-  assert.equal(isHideableToast({ type: 'error' }), false)
-  assert.equal(isHideableToast({ type: 'blank' }), false, 'warnings such as a restore notice always show')
+
+  // A stand-in for react-hot-toast that records what was created.
+  const created = []
+  const fake = Object.assign((message, options) => { created.push(['notice', message, options]); return 'n' }, {
+    success: (message, options) => { created.push(['success', message, options]); return 's' },
+    loading: message => { created.push(['loading', message]); return 'l' },
+    error: message => { created.push(['error', message]); return 'e' },
+  })
+  let enabled = false
+  installConfirmationFilter(fake, () => enabled)
+  installConfirmationFilter(fake, () => enabled) // installing twice changes nothing
+  fake.success('Order created!')
+  fake.loading('Saving…')
+  fake.error('Payment cannot exceed the remaining balance.')
+  fake('Restored without a recovery email.', { icon: '⚠️' })
+  assert.deepEqual(created.map(([kind]) => kind), ['error', 'notice'], 'off: no confirmation is created, so none can appear later')
+  enabled = true
+  fake.success('Order created!')
+  assert.equal(created.at(-1)[0], 'success', 'on: confirmations show again')
 
   const app = await source('frontend/src/App.jsx')
   assert.doesNotMatch(app, /if \(!notificationsEnabled\) return null/, 'the message area is never removed')
-  assert.match(app, /isHideableToast\(toast\)/)
+  assert.doesNotMatch(app, /ToastBar|isHideableToast/, 'nothing is hidden on screen after it was created')
   const settings = await source('frontend/src/pages/Settings.jsx')
   assert.doesNotMatch(settings, /saveAppearancePreference|\.update\(\{ \[field\]/, 'the switch no longer writes the shared settings row')
+  // The switch's own messages share one id (they replace each other) and "off" is a plain notice.
+  const preferences = await source('frontend/src/components/NotificationPreferences.jsx')
+  assert.match(preferences, /toast\.success\('Pop-up confirmations are on\.', \{ id: 'toast-preference', icon: undefined \}\)/)
+  assert.match(preferences, /toast\('Pop-up confirmations are off\. Errors and warnings will still show\.', \{ id: 'toast-preference', icon: '🔕' \}\)/)
+})
+
+test('staff have the same Notifications switch as administrators', async () => {
+  const settings = await source('frontend/src/pages/Settings.jsx')
+  assert.match(settings, /<NotificationPreferences idPrefix="settings" \/>/, 'administrators: Settings → Notifications')
+  const account = await source('frontend/src/pages/AccountSecurity.jsx')
+  assert.match(account, /\{ id: 'notifications', label: 'Notifications', icon: Bell \}/, 'staff: a Notifications tab in Account Security')
+  assert.match(account, /<NotificationPreferences idPrefix="account" \/>/)
 })
 
 // 3. Failed emails are reported to staff --------------------------------------
@@ -333,4 +360,17 @@ test('screen fixes: full board, all-page sorting, archive wording and custom ema
   const notifications = await source('frontend/src/pages/SMS.jsx')
   assert.match(notifications, /delivery\.subject \|\| "Custom email"/)
   assert.match(notifications, /delivery\.resent_successfully/)
+})
+
+test('signing out asks first, from the sidebar and from Account Security', async () => {
+  const confirm = await source('frontend/src/components/SignOutConfirm.jsx')
+  assert.match(confirm, /title="Sign out\?"/)
+  assert.match(confirm, /cancelLabel="Stay signed in"/)
+  assert.match(confirm, /toast\.success\('You have been signed out\.'\)/)
+  for (const file of ['frontend/src/components/Layout.jsx', 'frontend/src/pages/AccountSecurity.jsx']) {
+    const text = await source(file)
+    assert.match(text, /onClick=\{\(\) => setConfirmingSignOut\(true\)\}/, `${file}: the button opens the confirmation`)
+    assert.doesNotMatch(text, /onClick=\{signOut\}/, `${file}: no direct sign-out on click`)
+    assert.match(text, /<SignOutConfirm open=\{confirmingSignOut\}/)
+  }
 })

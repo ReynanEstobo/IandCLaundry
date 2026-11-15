@@ -10,6 +10,7 @@ export default function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Keep",
   variant = "danger",
+  icon = null,
   loading = false,
   onConfirm,
   onClose,
@@ -35,7 +36,7 @@ export default function ConfirmDialog({
       >
         <header className="confirm-dialog-header">
           <span className="confirm-dialog-icon">
-            {isRestore ? <RotateCcw size={22} /> : isPrimary ? <CheckCircle2 size={22} /> : <AlertTriangle size={22} />}
+            {icon || (isRestore ? <RotateCcw size={22} /> : isPrimary ? <CheckCircle2 size={22} /> : <AlertTriangle size={22} />)}
           </span>
           <div>
             <h3 id="confirm-dialog-title">{title}</h3>

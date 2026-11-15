@@ -1,12 +1,12 @@
 import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { Toaster, ToastBar } from 'react-hot-toast'
+import { Toaster } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
 import IdleSignOut from './components/IdleSignOut'
 import { AppErrorBoundary, PageLoader } from './components/AsyncState'
 import useUserTheme from './hooks/useUserTheme'
-import useToastPreference, { isHideableToast } from './hooks/useToastPreference'
+import useToastPreference from './hooks/useToastPreference'
 
 // Page modules (and their data effects) are loaded only after their route opens.
 const LandingPage = lazy(() => import('./pages/LandingPage'))
@@ -154,9 +154,10 @@ function TableMouseDragScroll() {
 function GlobalDisplayPreferences() {
   const { user } = useAuth()
   useUserTheme(user?.id)
-  // Each person chooses whether confirmations pop up. Errors and warnings
+  // Each person chooses whether confirmations pop up (see useToastPreference:
+  // confirmations are not created while it is off). Errors and warnings
   // always show, so a refused action is never left unexplained.
-  const { enabled: showConfirmations } = useToastPreference(user?.id)
+  useToastPreference(user?.id)
 
   return (
     <Toaster
@@ -171,9 +172,7 @@ function GlobalDisplayPreferences() {
           fontSize: '14px',
         },
       }}
-    >
-      {(toast) => (showConfirmations || !isHideableToast(toast) ? <ToastBar toast={toast} /> : null)}
-    </Toaster>
+    />
   )
 }
 

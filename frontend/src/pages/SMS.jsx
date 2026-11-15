@@ -16,10 +16,11 @@ const NOTIFICATION_TYPE_LABELS = {
   manual: "Manual email",
   order_received: "Order received",
   ready_for_pickup: "Ready for pickup",
+  ready_correction: "Not ready yet (correction)",
   password_otp: "Password OTP",
   email_change_otp: "Email-change OTP",
 };
-const RETRYABLE_NOTIFICATION_TYPES = new Set(["manual", "order_received", "ready_for_pickup"]);
+const RETRYABLE_NOTIFICATION_TYPES = new Set(["manual", "order_received", "ready_for_pickup", "ready_correction"]);
 
 function notificationTypeLabel(type) {
   return NOTIFICATION_TYPE_LABELS[type] || "Email notification";
@@ -584,6 +585,8 @@ I&C Laundry`,
                         <div className="row-actions">
                         {delivery.status === "failed" && delivery.resent_successfully ? (
                           <span className="notification-no-action">Sent later</span>
+                        ) : delivery.status === "failed" && delivery.order_moved_on ? (
+                          <span className="notification-no-action" title="The order has moved to another stage, so this email no longer matches it.">Order changed</span>
                         ) : delivery.status === "failed" && RETRYABLE_NOTIFICATION_TYPES.has(delivery.notification_type) ? (
                           <LoadingButton
                             className="btn btn-sm btn-primary"

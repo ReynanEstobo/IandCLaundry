@@ -1,4 +1,4 @@
-import { CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, MailCheck, ShieldCheck } from 'lucide-react'
+import { Bell, CheckCircle2, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, MailCheck, ShieldCheck } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
@@ -6,6 +6,8 @@ import { apiFetch } from '../services/api/client'
 import LoadingButton from '../components/LoadingButton'
 import FormAlert from '../components/FormAlert'
 import ChangeEmail from '../components/ChangeEmail'
+import SignOutConfirm from '../components/SignOutConfirm'
+import NotificationPreferences from '../components/NotificationPreferences'
 import useOtpCooldown from '../hooks/useOtpCooldown'
 import { clearOtpSession, readOtpSession, writeOtpSession } from '../utils/otpSession'
 import { passwordPolicyError } from '../utils/validation'
@@ -16,6 +18,7 @@ const OTP_COOLDOWN_KEY = 'ic-laundry:account-password-otp-cooldown'
 const ACCOUNT_TABS = [
   { id: 'password', label: 'Password', icon: ShieldCheck },
   { id: 'recovery-email', label: 'Recovery email', icon: MailCheck },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'session', label: 'Session', icon: LogOut },
 ]
 
@@ -40,7 +43,8 @@ function PasswordField({ label, value, onChange, visible, onToggle, placeholder,
 }
 
 export default function AccountSecurity() {
-  const { signOut, user, staffName, branch, contactEmail } = useAuth()
+  const { user, staffName, branch, contactEmail } = useAuth()
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false)
   const navigate = useNavigate()
   const [savedRequest] = useState(() => readOtpSession(OTP_SESSION_KEY))
   const [newPassword, setNewPassword] = useState('')
@@ -179,6 +183,9 @@ export default function AccountSecurity() {
     <div id="account-panel-recovery-email" role="tabpanel" aria-labelledby="account-tab-recovery-email" hidden={activeTab !== 'recovery-email'} className="settings-panel">
       <ChangeEmail onChanged={() => { clearOtpSession(OTP_SESSION_KEY); setOtp(''); setDestination(''); setOtpStatus('idle') }} />
     </div>
+    <section id="account-panel-notifications" role="tabpanel" aria-labelledby="account-tab-notifications" hidden={activeTab !== 'notifications'} className="card settings-section">
+      <NotificationPreferences idPrefix="account" />
+    </section>
     <section id="account-panel-session" role="tabpanel" aria-labelledby="account-tab-session" hidden={activeTab !== 'session'} className="card settings-section">
       <header className="settings-section-header">
         <h3>Session</h3>
@@ -198,9 +205,10 @@ export default function AccountSecurity() {
       </div>}
       <footer className="settings-section-footer">
         <span>You’ll need your username and password to sign in again.</span>
-        <button type="button" className="btn btn-danger" onClick={signOut}><LogOut size={16} /> Sign out</button>
+        <button type="button" className="btn btn-danger" onClick={() => setConfirmingSignOut(true)}><LogOut size={16} /> Sign out</button>
       </footer>
     </section>
+    <SignOutConfirm open={confirmingSignOut} onClose={() => setConfirmingSignOut(false)} />
     </div>
     {passwordChanged && <div className="modal-overlay account-security-success-overlay" role="presentation">
       <section className="account-security-success-dialog" role="alertdialog" aria-modal="true" aria-labelledby="password-success-title">

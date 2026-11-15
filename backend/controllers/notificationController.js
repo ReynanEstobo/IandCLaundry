@@ -2,8 +2,16 @@ import { database } from '../config/supabase.js'
 import { sendEmail, sendSms } from '../services/notificationService.js'
 import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
 
-const DELIVERY_TYPES = new Set(['manual', 'order_received', 'ready_for_pickup'])
-const RETRYABLE_TYPES = new Set(['manual', 'order_received', 'ready_for_pickup'])
+const DELIVERY_TYPES = new Set(['manual', 'order_received', 'ready_for_pickup', 'ready_correction'])
+const RETRYABLE_TYPES = new Set(['manual', 'order_received', 'ready_for_pickup', 'ready_correction'])
+// A ready-for-pickup email only fits an order that is ready; a "not ready yet"
+// correction only fits one that is back in Received or On Process. A failed
+// email of either kind is not retried once the order has moved on.
+const STAGES_EMAIL_FITS = {
+  ready_for_pickup: ['ready'],
+  ready_correction: ['received', 'on_process'],
+}
+const STAGE_NAMES = { received: 'Received', on_process: 'On Process', ready: 'Ready for Pick-up', released: 'Released', cancelled: 'Cancelled' }
 // Six concatenated SMS segments: room for the order-received template with a
 // long customer name and several services, while bounding provider cost.
 const SMS_MAX_LENGTH = 918
@@ -120,6 +128,46 @@ export async function sendAuditedEmail(body, identity) {
   return deliver(body, identity)
 }
 
+export function readyCorrectionMessage({ customerName, orderNumber, estimatedReadyAt }) {
+  const pickup = estimatedReadyAt
+    ? new Date(estimatedReadyAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : 'to be confirmed'
+  return {
+    subject: `Correction: your I&C Laundry order ${orderNumber} is not ready yet`,
+    body: `Hello ${customerName || 'Customer'},\n\nWe are sorry for the confusion. Our earlier email said your laundry (order ${orderNumber}) was ready for pickup. That message was sent by mistake: your order is still being processed, so please do not come to the shop for it yet.\n\nNew estimated pickup time: ${pickup}\n\nWe will email you again as soon as it is ready. Thank you for your patience.\n\nI&C Laundry`,
+  }
+}
+
+// An order marked Ready for Pick-up by mistake was moved back. If the
+// customer was emailed that it is ready, and has not been sent a correction
+// since, email them that it is not ready yet. Returns what happened so the
+// screen can tell staff: "sent", "failed" (call the customer), or
+// "not_needed" (no ready email reached them).
+export async function sendReadyCorrectionEmail(orderId, identity) {
+  requireActiveStaff(identity)
+  const { data: attempts, error } = await database.from('email_delivery_audit')
+    .select('notification_type, recipient_email, attempted_at')
+    .eq('order_id', orderId).eq('status', 'sent')
+    .in('notification_type', ['ready_for_pickup', 'ready_correction'])
+    .order('attempted_at', { ascending: false }).limit(1)
+  if (error) throw Object.assign(new Error('Unable to check which emails this customer received.'), { status: 500, details: error })
+  const latest = attempts?.[0]
+  if (!latest || latest.notification_type !== 'ready_for_pickup') return { status: 'not_needed' }
+
+  const { data: order, error: orderError } = await database.from('orders')
+    .select('order_number, estimated_ready_at, customers(name)').eq('id', orderId).maybeSingle()
+  if (orderError || !order) throw Object.assign(new Error('Order not found.'), { status: 404, details: orderError })
+  const message = readyCorrectionMessage({
+    customerName: order.customers?.name, orderNumber: order.order_number, estimatedReadyAt: order.estimated_ready_at,
+  })
+  try {
+    const result = await deliver({ to: latest.recipient_email, ...message, orderId, notificationType: 'ready_correction' }, identity)
+    return { status: 'sent', to: latest.recipient_email, auditRecorded: result?.auditRecorded !== false }
+  } catch (sendError) {
+    return { status: 'failed', to: latest.recipient_email, error: sendError.message || 'The email could not be sent.' }
+  }
+}
+
 // SMS is a paid provider call. Only staff may send it, and only to a phone
 // number that belongs to a registered customer, so a session cannot be used
 // to message arbitrary numbers.
@@ -142,6 +190,14 @@ const sameEmail = (sent, failed) => sent.notification_type === failed.notificati
   && (sent.order_id || null) === (failed.order_id || null)
   && (failed.notification_type !== 'manual' || sent.subject === failed.subject)
   && new Date(sent.attempted_at) > new Date(failed.attempted_at)
+
+async function orderStages(orderIds) {
+  const ids = [...new Set(orderIds.filter(Boolean))]
+  if (!ids.length) return new Map()
+  const { data, error } = await database.from('orders').select('id, status').in('id', ids)
+  if (error) throw Object.assign(new Error('Unable to check the orders of these emails.'), { status: 500, details: error })
+  return new Map((data || []).map(order => [order.id, order.status]))
+}
 
 async function laterSuccessfulSends(failedAttempts) {
   if (!failedAttempts.length) return []
@@ -171,8 +227,14 @@ export async function listEmailDeliveryAudit(identity, { page = 1, pageSize = 10
   const total = count || 0
   const failed = (data || []).filter(item => item.status === 'failed')
   const sent = await laterSuccessfulSends(failed)
+  const stages = await orderStages(failed.filter(item => STAGES_EMAIL_FITS[item.notification_type]).map(item => item.order_id))
   const items = (data || []).map(item => item.status === 'failed'
-    ? { ...item, resent_successfully: sent.some(attempt => sameEmail(attempt, item)) }
+    ? {
+      ...item,
+      resent_successfully: sent.some(attempt => sameEmail(attempt, item)),
+      order_moved_on: Boolean(STAGES_EMAIL_FITS[item.notification_type] && stages.has(item.order_id)
+        && !STAGES_EMAIL_FITS[item.notification_type].includes(stages.get(item.order_id))),
+    }
     : item)
   return {
     items,
@@ -196,6 +258,13 @@ export async function retryEmailDelivery(body, identity) {
   if (previous.status !== 'failed') throw badRequest('Only failed email deliveries can be retried.')
   if (!RETRYABLE_TYPES.has(previous.notification_type)) {
     throw badRequest('Security-code emails cannot be retried. Request a new verification code instead.')
+  }
+  const fits = STAGES_EMAIL_FITS[previous.notification_type]
+  if (fits && previous.order_id) {
+    const stage = (await orderStages([previous.order_id])).get(previous.order_id)
+    if (stage && !fits.includes(stage)) {
+      throw Object.assign(new Error(`This order is now ${STAGE_NAMES[stage] || stage}, so this email no longer matches it and was not sent.`), { status: 409 })
+    }
   }
   if ((await laterSuccessfulSends([previous])).some(attempt => sameEmail(attempt, previous))) {
     throw Object.assign(new Error('This email was already sent successfully after it failed, so it was not sent again.'), { status: 409 })
