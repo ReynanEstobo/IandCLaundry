@@ -35,7 +35,7 @@ import { useShowPageLoader, InlineSkeleton, LoadingVisual, PageError, PageLoader
 import LoadingButton from '../components/LoadingButton'
 import { analyticsPeriod, chartTooltipDate, dailyChartLabel, paymentChartData } from '../utils/chartDates'
 import { recordedPaymentAmount } from '../utils/businessForecast'
-import { analyticsDailyHistory, branchPerformance } from '../utils/analyticsMetrics'
+import { analyticsDailyHistory, branchPerformance, fromFirstRecordedDay } from '../utils/analyticsMetrics'
 import { buildAnalyticsReport } from '../utils/analyticsReport'
 import { aiCacheKey, aiServiceErrorReason, dataFingerprint, describeAiSource, lastGeminiResult, pruneLegacyAiCache, readAiCache, reusableAiCache, sharedAiRequest, writeAiCache } from '../utils/aiOutputCache'
 import AiSourceNote, { PENDING_AI_META } from '../components/AiSourceNote'
@@ -478,7 +478,9 @@ export default function Analytics() {
       // COMPUTE MOVING AVERAGE
       // ─────────────────────────────────────
       const historyPeriod = analyticsPeriod(range, customRange);
-      const dailyHistory = analyticsDailyHistory(orderData, paymentData, historyPeriod.start, historyPeriod.end);
+      // Start from the first day with any order or payment, so the months
+      // before the shop began recording are not read as zero-order days.
+      const dailyHistory = fromFirstRecordedDay(analyticsDailyHistory(orderData, paymentData, historyPeriod.start, historyPeriod.end));
       const forecastHistory = range === "yearly"
         ? [...dailyHistory.reduce((years, day) => {
             const year = day.date.slice(0, 4);

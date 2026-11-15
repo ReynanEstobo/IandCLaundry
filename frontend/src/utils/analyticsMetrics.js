@@ -16,6 +16,17 @@ function uniqueOrders(orders = []) {
  * Demand is based on orders created, while revenue is based on every valid
  * payment collection. Installments therefore cannot inflate order volume.
  */
+/**
+ * Forecasts learn only from days the shop was actually recording. Days in the
+ * selected range before the first order or payment are left out (for example
+ * January to the month the system went live, in a This-year view); a quiet
+ * day after that still counts as a real day with zero orders.
+ */
+export function fromFirstRecordedDay(history = []) {
+  const first = history.findIndex(day => (Number(day?.orders) || 0) > 0 || (Number(day?.revenue) || 0) > 0)
+  return first < 0 ? [] : history.slice(first)
+}
+
 export function analyticsDailyHistory(orders = [], payments = [], periodStart = null, periodEnd = null) {
   const totals = new Map()
   if (periodStart && periodEnd && +new Date(periodStart) <= +new Date(periodEnd)) {

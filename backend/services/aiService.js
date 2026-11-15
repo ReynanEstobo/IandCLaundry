@@ -339,6 +339,10 @@ export async function generateForecast({ history, forecastDates, branch, range, 
     throw Object.assign(new Error('Forecast dates are required'), { status: 400 })
   }
   history = Array.isArray(history) ? history : []
+  // Days before the first order or payment are not part of the shop's record:
+  // counting them as zero-order days would drag every average down.
+  const firstRecorded = history.findIndex(day => (Number(day?.orders) || 0) > 0 || (Number(day?.revenue) || 0) > 0)
+  if (firstRecorded > 0) history = history.slice(firstRecorded)
 
   // A newly opened branch or a narrow date filter may legitimately contain no
   // orders. There is nothing for Gemini to learn from, so say so plainly.
