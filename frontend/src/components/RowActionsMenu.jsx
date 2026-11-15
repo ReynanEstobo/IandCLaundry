@@ -4,7 +4,9 @@ import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from 'r
 /**
  * "More actions" menu for a table row. Each item keeps the handler and the
  * visibility rule its row already uses; this component only decides where the
- * actions are shown. The menu is positioned against the viewport so a
+ * actions are shown. An item may carry a `hint`: a short second line, for
+ * example why a greyed-out action cannot be used right now. The menu is
+ * positioned against the viewport so a
  * scrolling table can never clip it, and it opens upward near the bottom edge.
  */
 export default function RowActionsMenu({ label, items }) {
@@ -111,7 +113,7 @@ export default function RowActionsMenu({ label, items }) {
                 <button
                   type="button"
                   role="menuitem"
-                  className={`row-actions-menu-item ${item.tone === 'danger' ? 'is-danger' : ''}`}
+                  className={`row-actions-menu-item ${item.tone === 'danger' ? 'is-danger' : ''} ${item.hint ? 'has-hint' : ''}`}
                   disabled={item.disabled}
                   onClick={() => {
                     setOpen(false)
@@ -119,7 +121,9 @@ export default function RowActionsMenu({ label, items }) {
                   }}
                 >
                   {Icon && <Icon size={15} aria-hidden="true" />}
-                  <span>{item.label}</span>
+                  {item.hint
+                    ? <span className="row-actions-menu-text"><span>{item.label}</span><span className="row-actions-menu-hint">{item.hint}</span></span>
+                    : <span>{item.label}</span>}
                 </button>
               </Fragment>
             )

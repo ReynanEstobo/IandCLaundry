@@ -25,6 +25,7 @@ import InfoNote from "../components/InfoNote";
 import { useSearchPending, SearchStatusIcon, useChangedRows, DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
 import Pagination from "../components/Pagination";
 import useActiveBranches from "../hooks/useActiveBranches";
+import { isCountableUnit, stockStep, wholeNumberProblem } from "../utils/inventoryUnits";
 
 const UNIT_OPTIONS = [
   ["pcs", "Pieces"], ["kg", "Kilograms"], ["L", "Liters"], ["mL", "Milliliters"],
@@ -172,6 +173,9 @@ export default function Inventory() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (savingItem) return;
+    const unitProblem = wholeNumberProblem(form.unit, form.current_stock, "Current stock")
+      || wholeNumberProblem(form.unit, form.minimum_stock, "Minimum stock level");
+    if (unitProblem) return toast.error(unitProblem);
     setSavingItem(true);
     let error = null;
     try {
@@ -222,6 +226,8 @@ export default function Inventory() {
     if (restocking) return;
     const qty = parseFloat(restockQty);
     if (!qty || qty <= 0) return toast.error("Enter a valid quantity");
+    const unitProblem = wholeNumberProblem(showRestock.unit, restockQty, "Quantity to add");
+    if (unitProblem) return toast.error(unitProblem);
 
     setRestocking(true);
     try {
@@ -617,7 +623,7 @@ export default function Inventory() {
                       className={`form-control ${editing && !isAdmin ? "is-readonly" : ""}`}
                       type="number"
                       min="0"
-                      step="0.01"
+                      step={stockStep(form.unit)}
                       placeholder="0"
                       value={form.current_stock}
                       disabled={Boolean(editing) && !isAdmin}
@@ -642,7 +648,7 @@ export default function Inventory() {
                       className="form-control"
                       type="number"
                       min="0"
-                      step="0.01"
+                      step={stockStep(form.unit)}
                       placeholder="0"
                       value={form.minimum_stock}
                       onChange={(e) =>
@@ -732,8 +738,8 @@ export default function Inventory() {
                   <input id="restock-quantity" autoComplete="off"
                     className="form-control"
                     type="number"
-                    step="0.01"
-                    min="0.01"
+                    step={stockStep(showRestock.unit)}
+                    min={isCountableUnit(showRestock.unit) ? "1" : "0.01"}
                     placeholder="0"
                     value={restockQty}
                     onChange={(e) => setRestockQty(e.target.value)}
@@ -773,7 +779,7 @@ export default function Inventory() {
         open={Boolean(itemToDelete)}
         title="Archive inventory item?"
         message={itemToDelete ? <>
-          <strong>{itemToDelete.name}</strong> will no longer be available for branch stock checks or new orders.
+          <strong>{itemToDelete.name}</strong> will no longer be available for branch stock checks or new orders.{" "}
           {(itemToDelete.activeRecipes > 0 || itemToDelete.activeAddons > 0) && <> Archiving will automatically disable {itemToDelete.activeRecipes + itemToDelete.activeAddons} active service link{itemToDelete.activeRecipes + itemToDelete.activeAddons === 1 ? "" : "s"} ({itemToDelete.activeRecipes} automatic deduction and {itemToDelete.activeAddons} optional add-on). Those services will stop consuming or offering this item. </>}
           An administrator can restore the item later, but its service links must be re-enabled in Service Configuration.
         </> : ""}

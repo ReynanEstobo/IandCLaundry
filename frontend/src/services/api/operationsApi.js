@@ -11,9 +11,13 @@ export async function getOrdersPage({ page = 0, pageSize = 10, status = '', sear
   return apiFetch(`/api/orders/page?${parameters.toString()}`)
 }
 
-export async function getCustomersPage({ page = 0, pageSize = 10, search = '' } = {}) {
+export async function getCustomersPage({ page = 0, pageSize = 10, search = '', sort = null, direction = 'asc' } = {}) {
   const parameters = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
   if (search) parameters.set('search', search)
+  if (sort) {
+    parameters.set('sort', sort)
+    parameters.set('direction', direction === 'desc' ? 'desc' : 'asc')
+  }
   return apiFetch(`/api/customers/page?${parameters.toString()}`)
 }
 

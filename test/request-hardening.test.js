@@ -51,7 +51,6 @@ test('malformed queries do not describe the database schema', async t => {
     [{ code: 'PGRST100', message: 'failed to parse select parameter' }, 'The request could not be processed.'],
     // Messages the app's screens show are unchanged.
     [{ code: 'P0001', message: 'You can only process service items assigned to your branch' }, 'You can only process service items assigned to your branch'],
-    [{ code: '23505', message: 'duplicate key value violates unique constraint "branches_name_key"' }, 'duplicate key value violates unique constraint "branches_name_key"'],
     [{ code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' }, 'JSON object requested, multiple (or no) rows returned'],
   ]) {
     await t.test(error.code, async t => {
@@ -61,6 +60,21 @@ test('malformed queries do not describe the database schema', async t => {
         assert.equal(failure.message, expected)
         return true
       })
+    })
+  }
+})
+
+test('a duplicate value is refused with a plain message, not the constraint name', async t => {
+  for (const [error, expected] of [
+    [{ code: '23505', message: 'duplicate key value violates unique constraint "customers_active_phone_unique"' }, 'This phone number is already used by another customer. Each customer needs their own number.'],
+    [{ code: '23505', message: 'duplicate key value violates unique constraint "branches_name_key"' }, 'This value is already used by another record.'],
+  ]) {
+    databaseReturning(t, { data: null, error, count: null })
+    await assert.rejects(handleData('settings', { operation: 'select', selection: '*' }, admin), failure => {
+      assert.equal(failure.status, 409)
+      assert.equal(failure.message, expected)
+      assert.doesNotMatch(failure.message, /constraint|duplicate key/)
+      return true
     })
   }
 })

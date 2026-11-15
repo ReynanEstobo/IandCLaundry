@@ -13,6 +13,7 @@ import {
   Clock, AlertTriangle, ShoppingBag, CheckCircle2, Timer, User, Radio,
   Brain, Zap, TrendingUp, Inbox, LoaderCircle, PackageCheck, LayoutList
 } from 'lucide-react'
+import { formatPeso } from '../utils/money'
 
 const STATUS_FLOW = ['received', 'on_process', 'ready']
 const CARDS_PER_COLUMN = 8
@@ -246,7 +247,7 @@ export default function StaffDashboard() {
                       <span className="kanban-card-kg">{order.weight_kg} kg</span>
                     </div>
                     <div className="staff-kanban-meta">
-                      <span className="kanban-card-price">₱{Number(order.total_price).toLocaleString()}</span>
+                      <span className="kanban-card-price">{formatPeso(order.total_price)}</span>
                       <span className={`staff-kanban-time ${status === 'ready' ? 'ready' : ''} ${status !== 'ready' && getTimeRemaining(order.estimated_ready_at) === 'Overdue' ? 'overdue' : ''}`}>
                         {status !== 'ready' && (
                           <><Clock size={12} /> {getTimeRemaining(order.estimated_ready_at) || 'ETA unavailable'}</>
@@ -309,7 +310,7 @@ export default function StaffDashboard() {
             <span className="staff-dss-icon"><TrendingUp size={19} /></span>
             <div>
               <span>Revenue forecast · next 30 days</span>
-              <strong>₱{branchForecast.nextMonthRevenue.toLocaleString()}</strong>
+              <strong>{formatPeso(branchForecast.nextMonthRevenue)}</strong>
               <small className="staff-dss-next">Estimate · compare with expenses</small>
               <small>Simple estimate based on recent 30-day collections; not guaranteed income.</small>
               <small className="staff-dss-option"><strong>Option:</strong> Compare with expenses before budgeting.</small>

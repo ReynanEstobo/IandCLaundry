@@ -1,12 +1,12 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { Toaster } from 'react-hot-toast'
+import { Toaster, ToastBar } from 'react-hot-toast'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import Layout from './components/Layout'
 import IdleSignOut from './components/IdleSignOut'
 import { AppErrorBoundary, PageLoader } from './components/AsyncState'
-import { supabase } from './lib/supabase'
 import useUserTheme from './hooks/useUserTheme'
+import useToastPreference, { isHideableToast } from './hooks/useToastPreference'
 
 // Page modules (and their data effects) are loaded only after their route opens.
 const LandingPage = lazy(() => import('./pages/LandingPage'))
@@ -153,35 +153,10 @@ function TableMouseDragScroll() {
 
 function GlobalDisplayPreferences() {
   const { user } = useAuth()
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true)
   useUserTheme(user?.id)
-
-  useEffect(() => {
-    let mounted = true
-
-    const applySettings = (settings) => {
-      if (!settings || !mounted) return
-      setNotificationsEnabled(settings.notifications !== false)
-    }
-
-    const loadSettings = async () => {
-      const { data, error } = await supabase.from('settings').select('notifications').single()
-      if (!error) applySettings(data)
-    }
-
-    loadSettings()
-    const channel = supabase
-      .channel('global-display-preferences')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, loadSettings)
-      .subscribe()
-
-    return () => {
-      mounted = false
-      supabase.removeChannel(channel)
-    }
-  }, [])
-
-  if (!notificationsEnabled) return null
+  // Each person chooses whether confirmations pop up. Errors and warnings
+  // always show, so a refused action is never left unexplained.
+  const { enabled: showConfirmations } = useToastPreference(user?.id)
 
   return (
     <Toaster
@@ -196,7 +171,9 @@ function GlobalDisplayPreferences() {
           fontSize: '14px',
         },
       }}
-    />
+    >
+      {(toast) => (showConfirmations || !isHideableToast(toast) ? <ToastBar toast={toast} /> : null)}
+    </Toaster>
   )
 }
 

@@ -564,8 +564,8 @@ I&C Laundry`,
                       </td>
                       <td data-label="Order / Garment" data-card-primary>
                         <div className="notification-garment">
-                          <strong>{delivery.order_number || (delivery.notification_type?.includes("otp") ? "Security verification" : "Manual email")}</strong>
-                          <span>{garmentLabel(delivery)}</span>
+                          <strong>{delivery.order_number || (delivery.notification_type?.includes("otp") ? "Security verification" : delivery.subject || "Custom email")}</strong>
+                          {(delivery.order_number || delivery.notification_type !== "manual") && <span>{garmentLabel(delivery)}</span>}
                         </div>
                       </td>
                       <td data-label="Recipient"><span className="notification-recipient">{delivery.recipient_email}</span></td>
@@ -582,7 +582,9 @@ I&C Laundry`,
                       </td>
                       <td data-label="Action" data-card-actions>
                         <div className="row-actions">
-                        {delivery.status === "failed" && RETRYABLE_NOTIFICATION_TYPES.has(delivery.notification_type) ? (
+                        {delivery.status === "failed" && delivery.resent_successfully ? (
+                          <span className="notification-no-action">Sent later</span>
+                        ) : delivery.status === "failed" && RETRYABLE_NOTIFICATION_TYPES.has(delivery.notification_type) ? (
                           <LoadingButton
                             className="btn btn-sm btn-primary"
                             onClick={() => retryFailedEmail(delivery)}

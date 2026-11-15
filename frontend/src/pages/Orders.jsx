@@ -41,6 +41,8 @@ import { isValidPhilippineMobile } from "../utils/validation";
 import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
 import { getAvailableOrderAddons, resolveBranchId, retainAvailableOrderAddons } from "../utils/orderAddons";
 import useActiveBranches from "../hooks/useActiveBranches";
+import { quantity, unitName } from "../utils/alertText";
+import { canStaffUndoStage, moveBackStatus, undoSecondsLeft, withUndoDeadline } from "../utils/orderStageRules";
 
 const PROCESS_FLOW = [
   "received",
@@ -147,10 +149,13 @@ async function sendReadyEmail(order, customerName, customerEmail) {
     if (res.success) {
       toast.success(`Email notification sent to ${customerEmail}`);
       if (res.auditRecorded === false) toast.error("Email was sent, but its audit record could not be saved.");
+      return true;
     }
   } catch {
-    // Silently fail - email is best-effort (won't work in local dev, only on Netlify)
+    // Reported below: staff must know the customer was not told.
   }
+  toast.error(`The ready-for-pickup email to ${customerEmail} could not be sent. Contact the customer, or retry it from Notifications → Delivery Audit.`, { duration: 8000 });
+  return false;
 }
 
 async function sendOrderReceivedEmail(
@@ -179,15 +184,17 @@ async function sendOrderReceivedEmail(
     if (res.success) {
       toast.success(`Order confirmation email sent to ${customerEmail}`);
       if (res.auditRecorded === false) toast.error("Email was sent, but its audit record could not be saved.");
+      return;
     }
   } catch {
-    // Silently fail - email is best-effort
+    // Reported below; the order itself was saved.
   }
+  toast.error(`The order was saved, but the confirmation email to ${customerEmail} could not be sent. You can retry it from Notifications → Delivery Audit.`, { duration: 8000 });
 }
 
 export default function Orders() {
   const branchNames = useActiveBranches();
-  const { role, branch } = useAuth();
+  const { role, branch, staffId } = useAuth();
   const isAdmin = role === "admin";
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [releaseConfirmationOrder, setReleaseConfirmationOrder] = useState(null);
@@ -200,8 +207,36 @@ export default function Orders() {
   const [isCancelling, setIsCancelling] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [orders, setOrders] = useState([]);
+  // The board loads each active stage on its own (up to BOARD_STAGE_LIMIT
+  // orders per column) with its real total, instead of grouping the 10 orders
+  // on the current table page.
+  const [boardColumns, setBoardColumns] = useState({});
+  // The end of this person's own undo time per order, as last seen. It tells
+  // "your time ran out" apart from "someone else changed the order since".
+  const undoMemory = useRef(new Map());
+  const lastStageError = useRef("");
+  function rememberUndo(order) {
+    if (order?.undo_until && order.undo_staff_id === staffId) undoMemory.current.set(order.id, order.undo_until);
+  }
+  useEffect(() => {
+    [...orders, ...Object.values(boardColumns).flatMap((column) => column.orders || [])].forEach(rememberUndo);
+  }); // after every render: cheap, and always uses the current staff id
+  // Re-render when the next staff undo window ends, so "Move back" disappears
+  // exactly then.
+  const [clock, setClock] = useState(() => Date.now());
+  useEffect(() => {
+    if (role === "admin") return undefined;
+    const now = Date.now();
+    const deadlines = [...orders, ...Object.values(boardColumns).flatMap((column) => column.orders || [])]
+      .map((order) => order.undo_until)
+      .filter((deadline) => deadline && deadline > now);
+    if (!deadlines.length) return undefined;
+    const timer = window.setTimeout(() => setClock(Date.now()), Math.min(...deadlines) - now + 50);
+    return () => window.clearTimeout(timer);
+  }, [role, orders, boardColumns, clock]);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 10;
+  const BOARD_STAGE_LIMIT = 50;
   const [totalCount, setTotalCount] = useState(0);
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
@@ -371,12 +406,22 @@ export default function Orders() {
 
     if (tableOnly) setTableLoading(true);
 
+    // Undo deadlines count from the moment the list was requested.
+    const requestedAt = Date.now();
     const ordersQuery = getOrdersPage({
       page,
       pageSize: PAGE_SIZE,
       status: filter === "all" ? "" : filter,
       search: searchQuery,
     });
+    const boardQuery = viewMode === "board"
+      ? Promise.all(PROCESS_FLOW.map((stage) => (filter === "all" || filter === stage
+        ? getOrdersPage({ page: 0, pageSize: BOARD_STAGE_LIMIT, status: stage, search: searchQuery })
+        : Promise.resolve({ data: [], count: 0 }))))
+      : null;
+    // Awaited below inside the try; this only stops a failed board request
+    // from being reported as unhandled when an earlier request fails first.
+    boardQuery?.catch(() => {});
 
     try {
     const [ordersRes, soapRes, servicesRes, branchesRes] = await Promise.all([
@@ -391,8 +436,14 @@ export default function Orders() {
     const error = soapRes.error || servicesRes.error || branchesRes.error;
     if (error) throw error;
 
-    setOrders(ordersRes.data || []);
+    setOrders((ordersRes.data || []).map((order) => withUndoDeadline(order, requestedAt)));
     setTotalCount(Number(ordersRes.count || 0));
+    if (boardQuery) {
+      const stages = await boardQuery;
+      setBoardColumns(Object.fromEntries(PROCESS_FLOW.map((stage, index) => [stage, {
+        orders: (stages[index]?.data || []).map((order) => withUndoDeadline(order, requestedAt)), count: Number(stages[index]?.count || 0),
+      }])));
+    }
     setBranchRecords(branchesRes.data || []);
     setSoapItems((soapRes.data || []).map(option => ({
       id: option.id, branch_id: option.branch_id, service_type_id: option.service_type_id, unit_price: option.unit_price,
@@ -409,7 +460,25 @@ export default function Orders() {
       if (!background) setLoading(false);
       if (tableOnly) setTableLoading(false);
     }
-  }, [page, filter, searchQuery]);
+  }, [page, filter, searchQuery, viewMode]);
+
+  const [correctionNow, setCorrectionNow] = useState(() => Date.now());
+  const correctionDeadline = !isAdmin ? correctionOrder?.undo_until : null;
+  useEffect(() => {
+    if (!correctionDeadline) return undefined;
+    setCorrectionNow(Date.now());
+    const timer = window.setInterval(() => setCorrectionNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [correctionDeadline]);
+  const correctionSecondsLeft = correctionDeadline ? undoSecondsLeft(correctionOrder, correctionNow) : null;
+  useEffect(() => {
+    if (correctionSecondsLeft !== 0 || updatingOrderId) return;
+    setCorrectionOrder(null);
+    setCorrectionTarget("");
+    setCorrectionReason("");
+    toast.error("Your undo time ran out before the correction was confirmed. Ask an administrator to move this order back.");
+    loadData(true);
+  }, [correctionSecondsLeft, updatingOrderId, loadData]);
 
   useEffect(() => {
     const isInitialLoad = !hasLoadedOrders.current;
@@ -791,6 +860,7 @@ export default function Orders() {
   }
 
   async function updateStatus(order, newStatus, correctionNote = "", releaseConfirmed = false) {
+    lastStageError.current = "";
     if (newStatus === "released" && !releaseConfirmed) {
       const total = Number(order.total_price) || 0;
 
@@ -829,6 +899,7 @@ export default function Orders() {
         if (error) throw error;
       }
     } catch (error) {
+      lastStageError.current = error.message || "";
       toast.error(error.message || "Unable to update the order stage");
       setUpdatingOrderId(null);
       return false;
@@ -838,7 +909,10 @@ export default function Orders() {
 
     if (newStatus === "ready") {
       if (String(order.customers?.email || "").trim()) {
-        sendReadyEmail(order, order.customers.name, order.customers.email);
+        // When the email fails, staff get the same reminder to call the customer.
+        sendReadyEmail(order, order.customers.name, order.customers.email).then((sent) => {
+          if (!sent) setManualPickupReminder({ ...order, emailFailed: true });
+        });
       } else {
         setManualPickupReminder(order);
       }
@@ -865,13 +939,59 @@ export default function Orders() {
   function canDropIntoStage(order, targetStatus) {
     const currentIndex = PROCESS_FLOW.indexOf(order?.status);
     const targetIndex = PROCESS_FLOW.indexOf(targetStatus);
-    return currentIndex >= 0 && targetIndex >= 0 && Math.abs(targetIndex - currentIndex) === 1;
+    if (currentIndex < 0 || targetIndex < 0 || Math.abs(targetIndex - currentIndex) !== 1) return false;
+    // Dragging a card back is a correction: the same rule as "Move back".
+    return targetIndex > currentIndex || canMoveBack(order);
   }
 
-  function openCorrection(order, targetStatus) {
+  // The order's latest state, because the list on screen can be up to 30
+  // seconds old. Falls back to what is on screen if the check itself fails
+  // (the server still checks when the correction is saved).
+  async function latestOrder(order) {
+    try {
+      const requestedAt = Date.now();
+      const result = await getOrdersPage({ page: 0, pageSize: 10, search: order.order_number });
+      const fresh = (result.data || []).find((row) => row.id === order.id);
+      return fresh ? withUndoDeadline(fresh, requestedAt) : order;
+    } catch {
+      return order;
+    }
+  }
+
+  // Why this correction can no longer be made, in words someone can act on;
+  // null when it still can. `shownStatus` is the stage the person saw.
+  function correctionProblem(current, shownStatus) {
+    if (current.status !== shownStatus) {
+      return `${current.order_number} is now ${STATUS_LABELS[current.status] || current.status}. Someone changed it in the meantime, so nothing was changed. Check the order again.`;
+    }
+    if (!isAdmin) {
+      rememberUndo(current);
+      const status = moveBackInfo(current, Date.now());
+      if (!status.allowed) return status.message;
+    }
+    return null;
+  }
+
+  // Before the correction box opens, and again before it is saved, the order
+  // is checked: someone else may have worked on it, or the undo time may have
+  // ended. Then the reason is shown at once and the list is refreshed.
+  async function openCorrection(order, targetStatus) {
     setDragOrder(null);
-    setCorrectionOrder(order);
+    const current = await latestOrder(order);
+    const problem = correctionProblem(current, order.status);
+    if (problem) {
+      toast.error(problem);
+      loadData(true);
+      return;
+    }
+    setCorrectionOrder(current);
     setCorrectionTarget(targetStatus);
+    setCorrectionReason("");
+  }
+
+  function closeCorrection() {
+    setCorrectionOrder(null);
+    setCorrectionTarget("");
     setCorrectionReason("");
   }
 
@@ -880,12 +1000,23 @@ export default function Orders() {
     if (!correctionOrder || !correctionTarget || !correctionReason.trim()) {
       return toast.error("Please provide a reason for this correction");
     }
-    const changed = await updateStatus(correctionOrder, correctionTarget, correctionReason.trim());
+    const shown = correctionOrder;
+    const problem = correctionProblem(await latestOrder(shown), shown.status);
+    if (problem) {
+      closeCorrection();
+      toast.error(problem);
+      loadData(true);
+      return;
+    }
+    const changed = await updateStatus(shown, correctionTarget, correctionReason.trim());
     if (changed) {
-      setCorrectionOrder(null);
-      setCorrectionTarget("");
-      setCorrectionReason("");
+      closeCorrection();
       toast.success("Order stage corrected and recorded in history");
+    } else if (/only an administrator can correct this order now|one stage forward or one stage backward/i.test(lastStageError.current)) {
+      // The order changed in the moment between the check and the save: close
+      // the box and show the current list.
+      closeCorrection();
+      loadData(true);
     }
   }
 
@@ -950,6 +1081,20 @@ export default function Orders() {
 
   function toggleView(mode) {
     setViewMode(mode);
+  }
+
+  // Staff may undo only their own most recent stage change within the undo
+  // window; the database enforces it, and the option is hidden otherwise.
+  function canMoveBack(order) {
+    return isAdmin || canStaffUndoStage(order, { staffId, now: clock });
+  }
+
+  // Whether this person may move the order back now, and if not, why.
+  function moveBackInfo(order, now = clock) {
+    if (isAdmin) return { allowed: true };
+    return moveBackStatus(order, {
+      staffId, now, rememberedDeadline: undoMemory.current.get(order.id), undoSeconds: settings?.status_undo_seconds,
+    });
   }
 
   const filtered = orders;
@@ -1034,7 +1179,8 @@ export default function Orders() {
       {viewMode === "board" && (
         <div className="kanban-board">
           {PROCESS_FLOW.map((status) => {
-            const columnOrders = filtered.filter((o) => o.status === status);
+            const columnOrders = boardColumns[status]?.orders || [];
+            const columnTotal = boardColumns[status]?.count ?? columnOrders.length;
             return (
               <div
                 key={status}
@@ -1049,7 +1195,7 @@ export default function Orders() {
                       {STATUS_ICONS[status]}
                     </span>
                     <span>{STATUS_LABELS[status]}</span>
-                    <span className="kanban-count">{columnOrders.length}</span>
+                    <span className="kanban-count">{columnTotal.toLocaleString()}</span>
                   </div>
                 </div>
                 <div className="kanban-cards">
@@ -1131,7 +1277,7 @@ export default function Orders() {
                           )}
                           {order.eta_revised_at && <div className="kanban-order-note">ETA revised after correction</div>}
                           <div className="kanban-card-actions">
-                            {PROCESS_FLOW.includes(order.status) && order.status !== "received" && (
+                            {PROCESS_FLOW.includes(order.status) && order.status !== "received" && canMoveBack(order) && (
                               <button
                                 className="btn-icon"
                                 disabled={updatingOrderId === order.id}
@@ -1155,6 +1301,9 @@ export default function Orders() {
                         </div>
                       );
                     })
+                  )}
+                  {columnTotal > columnOrders.length && (
+                    <div className="kanban-empty">Showing the first {columnOrders.length} of {columnTotal.toLocaleString()}. Use the table view to see the rest.</div>
                   )}
                 </div>
               </div>
@@ -1281,7 +1430,9 @@ export default function Orders() {
                                 ? [{ key: "payment", label: "Record payment", icon: Banknote, onSelect: () => openAdditionalPayment(order) }]
                                 : []),
                               ...(PROCESS_FLOW.includes(order.status) && order.status !== "received"
-                                ? [{ key: "move-back", label: `Move back to ${STATUS_LABELS[previousStage]}`, icon: RotateCcw, disabled: isUpdating, onSelect: () => openCorrection(order, previousStage) }]
+                                ? [moveBackInfo(order).allowed
+                                  ? { key: "move-back", label: `Move back to ${STATUS_LABELS[previousStage]}`, icon: RotateCcw, disabled: isUpdating, onSelect: () => openCorrection(order, previousStage) }
+                                  : { key: "move-back", label: `Move back to ${STATUS_LABELS[previousStage]}`, hint: moveBackInfo(order).hint, icon: RotateCcw, disabled: true, onSelect: () => {} }]
                                 : []),
                               ...(!isFinal
                                 ? [{ key: "cancel", label: "Cancel order", icon: X, tone: "danger", onSelect: () => openCancellation(order) }]
@@ -1331,7 +1482,8 @@ export default function Orders() {
           }}>
             <h3 id="manual-pickup-title">Manually notify the customer</h3>
             <p id="manual-pickup-description">
-              <strong>{manualPickupReminder.customers?.name || "This customer"}</strong> has no email address.
+              <strong>{manualPickupReminder.customers?.name || "This customer"}</strong>{" "}
+              {manualPickupReminder.emailFailed ? "could not be emailed: the ready-for-pickup email failed to send." : "has no email address."}{" "}
               Please contact them to let them know order <strong>{manualPickupReminder.order_number}</strong> is ready for pickup.
             </p>
             {manualPickupReminder.customers?.phone && <p>Phone: <strong>{manualPickupReminder.customers.phone}</strong></p>}
@@ -1353,6 +1505,11 @@ export default function Orders() {
               Move <strong>{correctionOrder.order_number}</strong> back from {STATUS_LABELS[correctionOrder.status]} to <strong>{STATUS_LABELS[correctionTarget]}</strong>.
               This correction is recorded in the order history and may revise the customer ETA.
             </p>
+            {correctionSecondsLeft !== null && (
+              <p className="order-correction-countdown">
+                You can undo your step for <strong>{correctionSecondsLeft}</strong> more second{correctionSecondsLeft === 1 ? "" : "s"}.
+              </p>
+            )}
             <form onSubmit={confirmCorrection}>
               <label htmlFor="correction-reason">Reason for correction</label>
               <textarea autoComplete="off"
@@ -1367,7 +1524,7 @@ export default function Orders() {
               />
               <div className="order-correction-actions">
                 <button type="button" className="btn btn-secondary" disabled={Boolean(updatingOrderId)} onClick={() => setCorrectionOrder(null)}>Keep current stage</button>
-                <button type="submit" className="btn btn-primary" disabled={Boolean(updatingOrderId)}>
+                <button type="submit" className="btn btn-primary" disabled={Boolean(updatingOrderId) || correctionSecondsLeft === 0}>
                   {updatingOrderId ? <><Loader2 size={16} className="button-spinner" /> Saving…</> : <><RotateCcw size={16} /> Confirm correction</>}
                 </button>
               </div>
@@ -1599,8 +1756,8 @@ export default function Orders() {
                             <span className="addon-name">{item.name}</span>
                             <span className="addon-stock">
                               {serviceTypes.find((service) => String(service.id) === String(item.service_type_id))?.name || "Service"}
-                              {" · "}₱{Number(item.unit_price || 0).toLocaleString()} / {item.unit}
-                              {" · "}{item.current_stock} {item.unit} in stock
+                              {" · "}₱{Number(item.unit_price || 0).toLocaleString()} / {unitName(item.unit)}
+                              {" · "}{quantity(item.current_stock, item.unit)} in stock
                             </span>
                           </div>
                           <div className="addon-qty">

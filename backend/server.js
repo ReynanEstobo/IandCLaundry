@@ -183,7 +183,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && path === 'customers/lookup') return write(response, 200, await lookupCustomer(url.searchParams.get('phone'), await signedIn()))
     if (request.method === 'GET' && (path === 'audit-log' || path === 'recycle-bin')) {
       return write(response, 200, await listAuditLog(await signedIn(), {
-        page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'),
+        page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'), direction: url.searchParams.get('direction'),
       }))
     }
     if (request.method === 'POST' && path === 'recycle-bin/restore') return write(response, 200, await restoreRecord(await readBody(request), await signedIn()))

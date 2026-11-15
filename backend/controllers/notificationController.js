@@ -134,6 +134,26 @@ export async function sendCustomerSms(body, identity) {
   return sendSms({ phone, message })
 }
 
+// A failed email counts as handled once the same email to the same person
+// was later sent successfully (by a retry or a fresh send). Retrying it again
+// would send the customer a second copy.
+const sameEmail = (sent, failed) => sent.notification_type === failed.notification_type
+  && String(sent.recipient_email || '').toLowerCase() === String(failed.recipient_email || '').toLowerCase()
+  && (sent.order_id || null) === (failed.order_id || null)
+  && (failed.notification_type !== 'manual' || sent.subject === failed.subject)
+  && new Date(sent.attempted_at) > new Date(failed.attempted_at)
+
+async function laterSuccessfulSends(failedAttempts) {
+  if (!failedAttempts.length) return []
+  const recipients = [...new Set(failedAttempts.map(attempt => attempt.recipient_email).filter(Boolean))]
+  const earliest = failedAttempts.map(attempt => attempt.attempted_at).sort()[0]
+  const { data, error } = await database.from('email_delivery_audit')
+    .select('id, order_id, notification_type, recipient_email, subject, attempted_at')
+    .eq('status', 'sent').in('recipient_email', recipients).gte('attempted_at', earliest)
+  if (error) throw Object.assign(new Error('Unable to check later email attempts.'), { status: 500, details: error })
+  return data || []
+}
+
 export async function listEmailDeliveryAudit(identity, { page = 1, pageSize = 10 } = {}) {
   requireActiveStaff(identity)
   const safePage = Math.max(1, Number.parseInt(page, 10) || 1)
@@ -149,8 +169,13 @@ export async function listEmailDeliveryAudit(identity, { page = 1, pageSize = 10
   const { data, error, count } = await query
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
   const total = count || 0
+  const failed = (data || []).filter(item => item.status === 'failed')
+  const sent = await laterSuccessfulSends(failed)
+  const items = (data || []).map(item => item.status === 'failed'
+    ? { ...item, resent_successfully: sent.some(attempt => sameEmail(attempt, item)) }
+    : item)
   return {
-    items: data || [],
+    items,
     page: safePage,
     pageSize: safePageSize,
     total,
@@ -171,6 +196,9 @@ export async function retryEmailDelivery(body, identity) {
   if (previous.status !== 'failed') throw badRequest('Only failed email deliveries can be retried.')
   if (!RETRYABLE_TYPES.has(previous.notification_type)) {
     throw badRequest('Security-code emails cannot be retried. Request a new verification code instead.')
+  }
+  if ((await laterSuccessfulSends([previous])).some(attempt => sameEmail(attempt, previous))) {
+    throw Object.assign(new Error('This email was already sent successfully after it failed, so it was not sent again.'), { status: 409 })
   }
   return deliver({
     to: previous.recipient_email,

@@ -1,5 +1,9 @@
 import { database } from '../config/supabase.js'
 import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
+import {
+  assertAdministratorRemains, assertCustomerPhoneAvailable, assertUniqueInventoryName,
+  assertUniqueServiceName, assertWholeForUnit,
+} from '../utils/recordRules.js'
 
 // This is intentionally a whitelist: it preserves existing Supabase query shapes
 // while preventing the browser from selecting arbitrary database tables.
@@ -157,6 +161,42 @@ async function assertCustomerServedOnlyAtStaffBranch(filters, identity) {
   if (error) throw Object.assign(new Error('Unable to check which branches serve this customer.'), { status: 500 })
   if ((data || []).some(link => link.branch_id !== identity.branchId)) {
     throw Object.assign(new Error('This customer is also served at another branch, so only an administrator can archive them.'), { status: 403 })
+  }
+}
+
+function recordIdFrom(filters = []) {
+  return filters.find(({ type, column }) => type === 'eq' && column === 'id')?.value || null
+}
+
+// Rules that need the database: one active customer per phone number, one
+// active service per name, one active item per name at each branch, and whole
+// numbers for items counted in pieces, packs, bottles or sachets.
+async function assertRecordRules(table, request) {
+  if (!['customers', 'service_types', 'inventory_items'].includes(table)) return
+  const recordId = request.operation === 'update' ? recordIdFrom(request.filters) : null
+  const entries = Array.isArray(request.payload) ? request.payload : [request.payload || {}]
+  for (const entry of entries) {
+    const has = field => Object.hasOwn(entry, field)
+    if (table === 'customers' && has('phone')) {
+      await assertCustomerPhoneAvailable(database, { phone: entry.phone, exceptId: recordId })
+    }
+    if (table === 'service_types' && has('name')) {
+      await assertUniqueServiceName(database, { name: entry.name, exceptId: recordId })
+    }
+    if (table === 'inventory_items' && ['name', 'branch_id', 'unit', 'current_stock', 'minimum_stock'].some(has)) {
+      let current = {}
+      if (recordId) {
+        const { data, error } = await database.from('inventory_items').select('id, name, unit, branch, branch_id').eq('id', recordId).maybeSingle()
+        if (error) throw Object.assign(new Error('Unable to load the inventory item.'), { status: 500, details: error })
+        current = data || {}
+      }
+      const item = { ...current, ...entry }
+      if (has('name') || has('branch_id')) {
+        await assertUniqueInventoryName(database, { name: item.name, branchId: item.branch_id, branchName: item.branch, exceptId: recordId })
+      }
+      if (has('current_stock')) assertWholeForUnit(item.unit, entry.current_stock, 'Current stock')
+      if (has('minimum_stock')) assertWholeForUnit(item.unit, entry.minimum_stock, 'Minimum stock level')
+    }
   }
 }
 
@@ -340,6 +380,29 @@ function validateResourcePayload(table, payload, operation) {
       if (has('phone') && value.phone) value.phone = assertPhilippineMobile(value.phone)
       if (has('address')) value.address = assertText(value.address, { label: 'Address', max: 240, required: false }) || null
     }
+    if (table === 'settings') {
+      // Blank or zero timing values used to be saved and made every new
+      // order's pickup estimate only a few minutes away.
+      const wholeNumber = (field, label, min, max) => {
+        if (!has(field)) return
+        const amount = Number(value[field])
+        if (value[field] === '' || value[field] === null || !Number.isInteger(amount) || amount < min || amount > max) {
+          throw Object.assign(new Error(`${label} must be a whole number from ${min.toLocaleString()} to ${max.toLocaleString()}.`), { status: 400 })
+        }
+        value[field] = amount
+      }
+      wholeNumber('default_processing_minutes', 'Default processing time', 1, 10_080)
+      wholeNumber('eta_buffer_minutes', 'ETA safety buffer', 0, 1_440)
+      wholeNumber('eta_min_completed_orders', 'Minimum completed orders', 1, 1_000)
+      wholeNumber('status_undo_seconds', 'Staff undo window', 1, 3_600)
+      wholeNumber('loyalty_discount_milestone', 'Discount reward order', 1, 1_000)
+      wholeNumber('loyalty_free_load_milestone', 'Free load order', 2, 1_000)
+      wholeNumber('loyalty_discount_percent', 'Discount percentage', 1, 100)
+      wholeNumber('loyalty_reward_expiry_days', 'Reward expiry', 1, 3_650)
+      if (has('loyalty_discount_milestone') && has('loyalty_free_load_milestone') && value.loyalty_free_load_milestone <= value.loyalty_discount_milestone) {
+        throw Object.assign(new Error('The free load order must come after the discount reward order.'), { status: 400 })
+      }
+    }
     if (table === 'orders') {
       if (has('weight_kg')) {
         const weight = Number(value.weight_kg)
@@ -442,6 +505,7 @@ export async function execute(table, request, identity) {
   }
   if (['insert', 'update'].includes(request.operation)) {
     request = { ...request, payload: validateResourcePayload(table, request.payload, request.operation) }
+    await assertRecordRules(table, request)
   }
   const { operation, selection = '*', filters, orders = [], range, limit, payload, count, head, single, returning } = request
   if (operation === 'delete' && PROTECTED_TRANSACTION_TABLES.has(table)) {
@@ -454,6 +518,15 @@ export async function execute(table, request, identity) {
     const existing = await applyFilters(database.from(table).select('*'), filters)
     if (existing.error) return { data: null, error: existing.error, count: null }
     if (!existing.data?.length) return { data: [], error: null, count: 0 }
+    if (table === 'staff') {
+      // Archiving your own account signs you out at once, and archiving the
+      // last administrator would leave nobody able to manage the shop.
+      if (existing.data.some(row => row.id === identity.staffId)) {
+        throw Object.assign(new Error('You cannot archive your own account. Another administrator must do it.'), { status: 403 })
+      }
+      const leavingAdmins = existing.data.filter(row => String(row.role || '').toLowerCase() === 'admin').map(row => row.id)
+      if (leavingAdmins.length) await assertAdministratorRemains(database, { leavingIds: leavingAdmins })
+    }
 
     let archiveQuery = database.from(table).update({
       deleted_at: new Date().toISOString(),

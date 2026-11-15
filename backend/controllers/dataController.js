@@ -1,5 +1,6 @@
 import { execute } from '../models/databaseModel.js'
 import { events } from '../services/realtimeService.js'
+import { knownDatabaseProblem } from '../utils/databaseErrors.js'
 
 function validate(table, { operation, payload = {} }) {
   if (!['insert', 'update'].includes(operation)) return
@@ -26,7 +27,13 @@ function publicDatabaseMessage(error) {
 export async function handleData(table, body, identity) {
   validate(table, body)
   const result = await execute(table, body, identity)
-  if (result.error) throw Object.assign(new Error(publicDatabaseMessage(result.error)), { status: 400, details: result.error })
+  if (result.error) {
+    // A duplicate value or known rule gets a plain message instead of the
+    // database's own wording (for example a unique-constraint name).
+    const known = knownDatabaseProblem(result.error)
+    if (known) throw Object.assign(known, { details: result.error })
+    throw Object.assign(new Error(publicDatabaseMessage(result.error)), { status: 400, details: result.error })
+  }
   // Do not broadcast changed record data to other browser sessions.
   if (body.operation !== 'select') events.emit('change', { table })
   return result

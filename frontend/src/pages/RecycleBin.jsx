@@ -27,9 +27,11 @@ export default function RecycleBin() {
   const [restoringId, setRestoringId] = useState('')
   const [recordToRestore, setRecordToRestore] = useState(null)
   const [archivedPage, setArchivedPage] = useState(1)
+  // Activity is sorted by time on the server, so the order covers every page.
+  const [activityDirection, setActivityDirection] = useState('desc')
   const hasLoaded = useRef(false)
 
-  const load = useCallback(async (page = 1, background = false) => {
+  const load = useCallback(async (page = 1, background = false, direction = activityDirection) => {
     const isInitialLoad = !hasLoaded.current
     if (!background) {
       if (isInitialLoad) setLoading(true)
@@ -37,7 +39,7 @@ export default function RecycleBin() {
       setError('')
     }
     try {
-      const data = await getAuditLog({ page, pageSize: 25 })
+      const data = await getAuditLog({ page, pageSize: 25, direction })
       setRecords(data.records || [])
       setAudit(data.audit || { items: [], page, pageSize: 25, total: 0, totalPages: 1 })
       hasLoaded.current = true
@@ -51,7 +53,7 @@ export default function RecycleBin() {
         setAuditLoading(false)
       }
     }
-  }, [])
+  }, [activityDirection])
 
   useEffect(() => { load(1) }, [load])
 
@@ -60,8 +62,9 @@ export default function RecycleBin() {
     if (!record) return
     setRestoringId(`${record.table_name}:${record.id}`)
     try {
-      await restoreDeletedRecord(record.table_name, record.id)
-      toast.success(`${labels[record.table_name] || 'Record'} restored`)
+      const result = await restoreDeletedRecord(record.table_name, record.id)
+      if (result?.notice) toast(result.notice, { icon: '⚠️', duration: 8000 })
+      else toast.success(`${labels[record.table_name] || 'Record'} restored`)
       setRecordToRestore(null)
       await load(audit.page, true)
     } catch (requestError) {
@@ -82,12 +85,8 @@ export default function RecycleBin() {
     const from = (archivedPage - 1) * ARCHIVED_PAGE_SIZE
     return archivedSort.sortedRows.slice(from, from + ARCHIVED_PAGE_SIZE)
   }, [archivedPage, archivedSort.sortedRows])
-  const activitySort = useSortableRows(audit.items, 'when', {
-    activity: log => log.description,
-    branch: log => log.table_name === 'orders' ? log.branch?.name : '',
-    actor: log => log.staff?.full_name || 'System / unassigned',
-    when: log => new Date(log.created_at).getTime(),
-  }, 'desc')
+  const activitySort = { key: 'when', direction: activityDirection === 'asc' ? 'asc' : 'desc' }
+  const sortActivityByTime = () => setActivityDirection(current => current === 'desc' ? 'asc' : 'desc')
 
   useEffect(() => {
     setArchivedPage(current => Math.min(current, archivedTotalPages))
@@ -153,16 +152,16 @@ export default function RecycleBin() {
       </div>
       {auditLoading ? <TableSkeleton label="Loading audit page…" rows={5} columns={4} /> : <DataTable ariaLabel="Audit activity">
         <thead><tr>
-          <SortableHeader label="Activity" column="activity" sort={activitySort.sort} onSort={activitySort.requestSort} />
-          <SortableHeader label="Branch" column="branch" sort={activitySort.sort} onSort={activitySort.requestSort} />
-          <SortableHeader label="Performed by" column="actor" sort={activitySort.sort} onSort={activitySort.requestSort} />
-          <SortableHeader label="When" column="when" sort={activitySort.sort} onSort={activitySort.requestSort} />
+          <th>Activity</th>
+          <th>Branch</th>
+          <th>Performed by</th>
+          <SortableHeader label="When" column="when" sort={activitySort} onSort={sortActivityByTime} />
         </tr></thead>
         <tbody>
-          {!audit.items.length ? <EmptyState colSpan={4} message="No audit activity recorded yet" /> : activitySort.sortedRows.map(log => <tr key={log.id}>
+          {!audit.items.length ? <EmptyState colSpan={4} message="No audit activity recorded yet" /> : audit.items.map(log => <tr key={log.id}>
             <td data-card-primary data-label="Activity" className="audit-description">{log.description}</td>
             <td data-label="Branch">{log.table_name === 'orders' ? log.branch?.name || 'Not recorded' : '—'}</td>
-            <td data-label="Performed by">{log.staff?.full_name || 'System / unassigned'}</td>
+            <td data-label="Performed by">{log.staff?.full_name || 'System (automatic)'}</td>
             <td data-label="When">{new Date(log.created_at).toLocaleString('en-PH')}</td>
           </tr>)}
         </tbody>

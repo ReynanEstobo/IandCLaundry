@@ -14,6 +14,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [role, setRole] = useState(null)
   const [staffName, setStaffName] = useState(null)
+  const [staffId, setStaffId] = useState(null)
   const [branch, setBranch] = useState(null)
   const [contactEmail, setContactEmail] = useState(null)
   const [mustChangePassword, setMustChangePassword] = useState(false)
@@ -22,7 +23,7 @@ export function AuthProvider({ children }) {
 
   async function fetchStaffRole(authUser) {
     const version = ++profileVersion.current
-    if (!authUser) { setRole(null); setStaffName(null); setBranch(null); setContactEmail(null); setMustChangePassword(false); return }
+    if (!authUser) { setRole(null); setStaffName(null); setStaffId(null); setBranch(null); setContactEmail(null); setMustChangePassword(false); return }
     // The API intentionally blocks every normal data endpoint until a
     // provisioned staff member changes their temporary password.  Use the
     // signed-in session flag first, otherwise this profile request would be
@@ -30,6 +31,7 @@ export function AuthProvider({ children }) {
     if (getStoredSession()?.hc_must_change_password) {
       setRole(getStoredSession()?.hc_role || null)
       setStaffName(null)
+      setStaffId(null)
       setBranch(null)
       setContactEmail(null)
       setMustChangePassword(true)
@@ -37,13 +39,14 @@ export function AuthProvider({ children }) {
     }
     const { data } = await supabase
       .from('staff')
-      .select('role, full_name, branch, contact_email, must_change_password')
+      .select('id, role, full_name, branch, contact_email, must_change_password')
       .eq('auth_id', authUser.id)
       .maybeSingle()
     if (version !== profileVersion.current) return
     if (data) {
       setRole(String(data.role || 'unassigned').toLowerCase())
       setStaffName(data.full_name)
+      setStaffId(data.id || null)
       setBranch(data.branch || null)
       setContactEmail(data.contact_email || null)
       setMustChangePassword(Boolean(data.must_change_password))
@@ -51,6 +54,7 @@ export function AuthProvider({ children }) {
       // No staff record — treat as admin (for seed user / owner)
       setRole('unassigned')
       setStaffName(null)
+      setStaffId(null)
       setBranch(null)
       setContactEmail(null)
       setMustChangePassword(false)
@@ -115,7 +119,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, role, staffName, branch, contactEmail, mustChangePassword, loading, signIn, signOut, refreshProfile: () => fetchStaffRole(user) }}>
+    <AuthContext.Provider value={{ user, role, staffName, staffId, branch, contactEmail, mustChangePassword, loading, signIn, signOut, refreshProfile: () => fetchStaffRole(user) }}>
       {children}
     </AuthContext.Provider>
   )

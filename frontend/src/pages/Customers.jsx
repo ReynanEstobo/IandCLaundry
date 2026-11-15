@@ -11,7 +11,7 @@ import { useShowPageLoader, InlineSkeleton, PageError, PageLoader } from "../com
 import RowActionsMenu from "../components/RowActionsMenu";
 import ConfirmDialog from "../components/ConfirmDialog";
 import LoadingButton from "../components/LoadingButton";
-import { useSearchPending, SearchStatusIcon, useChangedRows, DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
+import { useSearchPending, SearchStatusIcon, useChangedRows, DataTable, EmptyState, SortableHeader, TableToolbar } from "../components/DataView";
 import Pagination from "../components/Pagination";
 import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
 import useActiveBranches from "../hooks/useActiveBranches";
@@ -43,6 +43,9 @@ export default function Customers() {
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 10;
   const [totalCount, setTotalCount] = useState(0);
+  // Sorting runs on the server so it covers every customer, not only the 10
+  // on screen. With no column chosen, the most recently served come first.
+  const [sort, setSort] = useState({ key: null, direction: "asc" });
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
@@ -56,7 +59,7 @@ export default function Customers() {
       // Admin receives the master customer directory. Staff receive only customers
       // associated with their branch through customer_branches. Preserve the
       // server order because it reflects the correct recency for each role.
-      const result = await getCustomersPage({ page, pageSize: PAGE_SIZE, search: searchQuery });
+      const result = await getCustomersPage({ page, pageSize: PAGE_SIZE, search: searchQuery, sort: sort.key, direction: sort.direction });
       setCustomers(result.data || []);
       setTotalCount(Number(result.count || 0));
     } catch (error) {
@@ -70,7 +73,7 @@ export default function Customers() {
 
     if (!background) setLoading(false);
     else setRefreshing(false);
-  }, [page, searchQuery]);
+  }, [page, searchQuery, sort]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -147,14 +150,11 @@ export default function Customers() {
 
   // 🔥 SAME LOGIC AS ORDERS
   const filtered = customers;
-  const { sortedRows, sort, requestSort } = useSortableRows(filtered, "name", {
-    name: (customer) => customer.name,
-    phone: (customer) => customer.phone,
-    email: (customer) => customer.email,
-    branch: (customer) => customer.branch,
-    rewards: (customer) => customer.loyaltyRewards?.length || 0,
-    added: (customer) => new Date(customer.created_at).getTime(),
-  });
+  const sortedRows = filtered;
+  const requestSort = (key) => {
+    setSort((current) => ({ key, direction: current.key === key && current.direction === "asc" ? "desc" : "asc" }));
+    setPage(0);
+  };
   const changedRows = useChangedRows(filtered);
 
   const rewardLabel = (reward) => {

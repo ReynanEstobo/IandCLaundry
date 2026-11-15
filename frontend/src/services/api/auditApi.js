@@ -11,9 +11,9 @@ function legacyDescription(log) {
   return `${row} was ${String(log.action || 'updated').replaceAll('_', ' ')}.`
 }
 
-export async function getAuditLog({ page = 1, pageSize = 25 } = {}) {
+export async function getAuditLog({ page = 1, pageSize = 25, direction = 'desc' } = {}) {
   try {
-    return await apiFetch(`/api/audit-log?page=${page}&pageSize=${pageSize}`)
+    return await apiFetch(`/api/audit-log?page=${page}&pageSize=${pageSize}&direction=${direction === 'asc' ? 'asc' : 'desc'}`)
   } catch (error) {
     // Supports an already-deployed Worker while its API routes are catching
     // up with the renamed Audit Log page. Remove once every environment has

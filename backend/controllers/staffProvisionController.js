@@ -3,6 +3,7 @@ import { database } from '../config/supabase.js'
 import { events } from '../services/realtimeService.js'
 import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
 import { databaseProblem } from '../utils/databaseErrors.js'
+import { assertAdministratorRemains } from '../utils/recordRules.js'
 
 function cleanName(value) {
   return String(value || '').trim().replace(/\s+/g, ' ')
@@ -64,7 +65,7 @@ async function assertRecoveryEmailAvailable(contactEmail, exceptStaffId = null) 
   }
 }
 
-async function writeAudit(action, staff, actorStaffId, before = {}, after = {}) {
+async function writeAudit(action, staff, actorStaffId, before = {}, after = {}, changedFields = undefined) {
   const { error } = await database.from('audit_logs').insert({
     action,
     table_name: 'staff',
@@ -73,6 +74,7 @@ async function writeAudit(action, staff, actorStaffId, before = {}, after = {}) 
     branch_id: staff.branch_id || null,
     before_data: before,
     after_data: after,
+    ...(changedFields ? { changed_fields: changedFields } : {}),
   })
   if (error) throw Object.assign(new Error(error.message), { status: 400 })
 }
@@ -126,7 +128,7 @@ export async function provisionStaff(body, identity) {
     throw databaseProblem(staffError, 'Could not save the staff account.')
   }
 
-  await writeAudit('provision', staff, identity.staffId, {}, { staff_code: staffCode, username, branch: branch?.name || null, role })
+  await writeAudit('provision', staff, identity.staffId, {}, { full_name: staff.full_name, staff_code: staffCode, username, branch: branch?.name || null, role })
   events.emit('change', { table: 'staff' })
   return { staff, credentials: { staffCode, username, temporaryPassword, branch: branch?.name || null, role } }
 }
@@ -134,6 +136,10 @@ export async function provisionStaff(body, identity) {
 export async function resetStaffCredentials(body, identity) {
   const staffId = body?.staffId
   if (!staffId) throw Object.assign(new Error('Staff member is required.'), { status: 400 })
+  // Resetting your own credentials would replace the password you are using.
+  if (staffId === identity.staffId) {
+    throw Object.assign(new Error('To change your own password, use Account Security in Settings.'), { status: 403 })
+  }
   const { data: staff, error } = await database.from('staff').select('*').eq('id', staffId).is('deleted_at', null).maybeSingle()
   if (error || !staff?.auth_id) throw Object.assign(new Error('This staff member has no active sign-in account.'), { status: 404 })
 
@@ -159,7 +165,7 @@ export async function resetStaffCredentials(body, identity) {
   }).eq('id', account.id).select('*').single()
   if (updateError) throw databaseProblem(updateError, 'Could not update the staff account.')
 
-  await writeAudit('credentials_reset', updated, identity.staffId, { must_change_password: staff.must_change_password }, { must_change_password: true })
+  await writeAudit('credentials_reset', updated, identity.staffId, { full_name: staff.full_name, must_change_password: staff.must_change_password }, { full_name: updated.full_name, must_change_password: true })
   events.emit('change', { table: 'staff' })
   return { credentials: { staffCode: updated.staff_code, username: updated.username, temporaryPassword, branch: updated.branch, role: updated.role } }
 }
@@ -173,6 +179,15 @@ export async function updateProvisionedStaff(body, identity) {
   const role = ['admin', 'staff'].includes(String(body?.role || '').toLowerCase())
     ? String(body.role).toLowerCase()
     : existing.role
+  const currentRole = String(existing.role || '').toLowerCase()
+  if (role !== currentRole) {
+    // Changing your own role would remove your access mid-session, and the
+    // shop must always keep one administrator.
+    if (staffId === identity.staffId) {
+      throw Object.assign(new Error('You cannot change your own role. Another administrator must do it.'), { status: 403 })
+    }
+    if (currentRole === 'admin') await assertAdministratorRemains(database, { leavingIds: [staffId] })
+  }
   const contactEmail = assertEmail(body?.contact_email, { label: 'Contact email' }) || null
   if (role === 'admin' && !contactEmail) {
     throw Object.assign(new Error('A contact email is required for an administrator account.'), { status: 400 })
@@ -190,7 +205,16 @@ export async function updateProvisionedStaff(body, identity) {
   }
   const { data: updated, error: updateError } = await database.from('staff').update(updates).eq('id', staffId).select('*').single()
   if (updateError) throw databaseProblem(updateError, 'Could not update the staff account.')
-  await writeAudit('update', updated, identity.staffId, { role: existing.role, branch: existing.branch }, { role, branch: branch?.name || null })
+  // This entry names who made the change and which details changed. (The
+  // database's own record of a staff update cannot see who made it, so the
+  // Audit Log shows this entry instead.)
+  const changedFields = Object.fromEntries(Object.keys(updates)
+    .filter(field => String(existing[field] ?? '') !== String(updated[field] ?? ''))
+    .map(field => [field, true]))
+  await writeAudit('update', updated, identity.staffId,
+    { full_name: existing.full_name, role: existing.role, branch: existing.branch },
+    { full_name: updated.full_name, role, branch: branch?.name || null },
+    changedFields)
   events.emit('change', { table: 'staff' })
   return { staff: updated }
 }

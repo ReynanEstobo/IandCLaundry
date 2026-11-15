@@ -30,3 +30,8 @@ export function byBranch(entries, describe, limit = 6) {
   const text = [...groups].map(([branch, items]) => `${branch}: ${items.join(', ')}`).join(' · ')
   return entries.length > limit ? `${text} · +${entries.length - limit} more` : text
 }
+
+// The unit for one item: "sachets" → "sachet", "pcs" → "pc", "kg" → "kg".
+export function unitName(unit = '') {
+  return quantity(1, unit).replace(/^1\s*/, '')
+}

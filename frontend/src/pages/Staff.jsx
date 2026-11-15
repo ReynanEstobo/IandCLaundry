@@ -18,6 +18,7 @@ import InfoNote from "../components/InfoNote";
 import { useChangedRows, useClientPagination, DataTable, EmptyState, SortableHeader, TableToolbar, useSortableRows } from "../components/DataView";
 import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
 import useActiveBranches from "../hooks/useActiveBranches";
+import { useAuth } from "../context/AuthContext";
 
 // ─────────────────────────────────────
 // ROLES
@@ -39,6 +40,10 @@ const ROLES = [
 // ─────────────────────────────────────
 export default function Staff() {
   const branchNames = useActiveBranches();
+  const { user } = useAuth();
+  // Your own account cannot be archived, reset or given another role here:
+  // that would sign you out or remove your access.
+  const isSelf = (account) => Boolean(account?.auth_id && user?.id && account.auth_id === user.id);
   // ─────────────────────────────────────
   // STATES
   // ─────────────────────────────────────
@@ -409,7 +414,7 @@ export default function Staff() {
                         >
                           <Edit2 size={14} aria-hidden="true" /> Edit
                         </button>
-                        <RowActionsMenu
+                        {!isSelf(s) && <RowActionsMenu
                           label={`More actions for ${s.full_name}`}
                           items={[
                             ...(s.auth_id
@@ -417,7 +422,7 @@ export default function Staff() {
                               : []),
                             { key: "archive", label: "Archive staff", icon: Trash2, tone: "danger", onSelect: () => setStaffToDelete(s) },
                           ]}
-                        />
+                        />}
                       </div>
                     </td>
                   </tr>
@@ -578,6 +583,8 @@ export default function Staff() {
 
                   <select id="staff-role"
                     className="form-control"
+                    disabled={isSelf(editing)}
+                    aria-describedby={isSelf(editing) ? "staff-role-self-hint" : undefined}
                     value={form.role}
                     onChange={(e) =>
                       setForm((f) => ({
@@ -593,6 +600,9 @@ export default function Staff() {
                       </option>
                     ))}
                   </select>
+                  {isSelf(editing) && (
+                    <span id="staff-role-self-hint" className="form-hint">You cannot change your own role. Another administrator must do it.</span>
+                  )}
                   {form.role === "admin" && !editing && (
                     <InfoNote compact tone="warning" title="Administrator access">
                       Administrators are global accounts with no branch assignment. They can access all branches, reports, settings, staff accounts, and the Audit Log. Only create this role for a trusted owner or manager.

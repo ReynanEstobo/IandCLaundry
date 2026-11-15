@@ -1,5 +1,6 @@
 import { database } from '../config/supabase.js'
 import { assertEmail, assertPhilippineMobile, assertText } from '../utils/validation.js'
+import { assertUniqueInventoryName, assertWholeForUnit } from '../utils/recordRules.js'
 
 function requireBranch(identity) {
   if (!identity.staffId) throw Object.assign(new Error('Your account must have a staff profile before it can process operations.'), { status: 403 })
@@ -129,6 +130,7 @@ export async function restockInventory(body, identity) {
   const { data: item, error: itemError } = await database.from('inventory_items').select('id, name, current_stock, unit, branch, branch_id').eq('id', itemId).maybeSingle()
   if (itemError || !item) throw Object.assign(new Error('Inventory item not found.'), { status: 404 })
   if (identity.role !== 'admin' && item.branch_id !== identity.branchId) throw Object.assign(new Error('You can only restock inventory assigned to your branch.'), { status: 403 })
+  assertWholeForUnit(item.unit, added, 'Quantity to add')
   const { data, error } = await database.rpc('restock_branch_inventory', {
     p_item_id: item.id,
     p_quantity: added,
@@ -156,7 +158,10 @@ export async function createInventoryItem(body, identity) {
     throw Object.assign(new Error('Enter a valid total cost. Initial stock must be greater than zero when a cost is recorded.'), { status: 400 })
   }
 
+  assertWholeForUnit(unit, quantity, 'Current stock')
+  assertWholeForUnit(unit, minimumStock, 'Minimum stock level')
   const selectedBranch = await resolveBranch(identity, requestedBranch)
+  await assertUniqueInventoryName(database, { name, branchId: selectedBranch.id, branchName: selectedBranch.name })
   const { data, error } = await database.rpc('create_branch_inventory_item', {
     p_branch_id: selectedBranch.id,
     p_staff_id: identity.staffId,

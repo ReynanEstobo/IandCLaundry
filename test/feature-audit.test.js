@@ -17,7 +17,7 @@ test('cancelled orders are described with their reason in the Audit Log', () => 
     action: 'cancel', table_name: 'orders',
     after_data: { order_number: 'ORD-1001', branch: 'Main', cancellation_reason: 'Customer request' },
   })
-  assert.equal(description, 'order ORD-1001 was cancelled: Customer request at Main.')
+  assert.equal(description, 'Order ORD-1001 was cancelled: Customer request at Main.')
 })
 
 test('paginated order listing keeps staff branch-scoped and bounds client paging', async t => {
@@ -54,8 +54,16 @@ test('customer and inventory pages enforce staff branch scope and bounded result
   await listCustomersPage({ page: '1', pageSize: '1000', search: 'Ana' }, staff)
   assert.deepEqual(calls.at(-1), {
     rpc: 'list_customers_page',
-    args: { p_branch_id: 'branch-a', p_search: 'Ana', p_limit: 50, p_offset: 50 },
+    args: { p_branch_id: 'branch-a', p_search: 'Ana', p_limit: 50, p_offset: 50, p_sort: null, p_direction: 'asc' },
   })
+
+  await listCustomersPage({ sort: 'name', direction: 'desc' }, staff)
+  assert.equal(calls.at(-1).args.p_sort, 'name')
+  assert.equal(calls.at(-1).args.p_direction, 'desc')
+  // Unknown columns are ignored rather than passed to the database.
+  await listCustomersPage({ sort: 'id; drop table', direction: 'desc' }, staff)
+  assert.equal(calls.at(-1).args.p_sort, null)
+  assert.equal(calls.at(-1).args.p_direction, 'asc')
 
   await listInventoryPage({ page: '2', pageSize: '1000', branch: 'Other branch', search: 'Detergent' }, staff)
   assert.deepEqual(calls.at(-1), {

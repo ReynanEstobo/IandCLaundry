@@ -15,6 +15,20 @@ export function analyticsPeriod(range, customRange = {}, now = new Date()) {
   }
 }
 
+// How a chart groups its points. A custom date range is grouped by its own
+// length (by day up to two months, by month up to two years, then by year),
+// not by whichever period button was selected before.
+export function chartGrouping(range, customRange = {}) {
+  if (!(customRange?.start && customRange?.end)) return range
+  const start = parseISO(customRange.start)
+  const end = parseISO(customRange.end)
+  if (Number.isNaN(+start) || Number.isNaN(+end)) return range
+  const days = Math.round((end - start) / 86_400_000) + 1
+  if (days <= 62) return 'weekly'
+  if (days <= 731) return 'monthly'
+  return 'yearly'
+}
+
 export function dailyChartLabel(value) {
   return format(typeof value === 'string' ? parseISO(value) : value, 'EEE, MMM d')
 }

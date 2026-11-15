@@ -23,6 +23,8 @@ import InfoNote from "../components/InfoNote";
 import useOtpCooldown from "../hooks/useOtpCooldown";
 import { clearOtpSession, readOtpSession, writeOtpSession } from "../utils/otpSession";
 import { passwordPolicyError } from "../utils/validation";
+import useToastPreference from "../hooks/useToastPreference";
+import { orderTimingProblem } from "../utils/settingsRules";
 
 const PASSWORD_OTP_SESSION_KEY = "ic-laundry:settings-password-otp";
 const PASSWORD_OTP_COOLDOWN_KEY = "ic-laundry:settings-password-otp-cooldown";
@@ -60,7 +62,6 @@ export default function Settings() {
   const clearPasswordError = () => setPasswordError({ field: "", message: "" });
   const [passwordChanged, setPasswordChanged] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
-  const [appearanceSaving, setAppearanceSaving] = useState(false);
   const passwordOtpCooldown = useOtpCooldown(PASSWORD_OTP_COOLDOWN_KEY);
 
   // One settings tab is shown at a time; the URL hash keeps it linkable.
@@ -130,7 +131,8 @@ export default function Settings() {
   // Business settings
   const [settings, setSettings] = useState(null);
 
-  const [notifications, setNotifications] = useState(true);
+  // Personal: stored for this account on this browser, like the theme.
+  const { enabled: notifications, setPreference: setNotifications } = useToastPreference(user?.id);
 
   // ETA settings
   const [defaultProcessingMinutes, setDefaultProcessingMinutes] = useState(100);
@@ -154,8 +156,6 @@ export default function Settings() {
         setSettings(data);
 
         // populate UI fields
-
-        setNotifications(data.notifications !== false);
 
         setDefaultProcessingMinutes(data.default_processing_minutes || ((data.etawash || 45) + (data.etadrying || 40) + (data.etafolding || 15)));
         setEtaBufferMinutes(data.eta_buffer_minutes ?? 15);
@@ -182,7 +182,6 @@ export default function Settings() {
 
           if (data) {
             setSettings(data);
-            setNotifications(data.notifications !== false);
 
             setDefaultProcessingMinutes(data.default_processing_minutes || ((data.etawash || 45) + (data.etadrying || 40) + (data.etafolding || 15)));
             setEtaBufferMinutes(data.eta_buffer_minutes ?? 15);
@@ -245,6 +244,13 @@ export default function Settings() {
       toast.error("Check the loyalty milestones, percentage, and expiry period.");
       return;
     }
+    if (group === "timing") {
+      const problem = orderTimingProblem({ defaultProcessingMinutes, etaBufferMinutes, etaMinCompletedOrders, statusUndoSeconds });
+      if (problem) {
+        toast.error(problem);
+        return;
+      }
+    }
     const changes = group === "timing"
       ? {
           default_processing_minutes: Number(defaultProcessingMinutes),
@@ -274,35 +280,10 @@ export default function Settings() {
     }
   };
 
-  const saveAppearancePreference = async (field, nextValue, previousValue) => {
-    if (!settings?.id || appearanceSaving) return false;
-    setAppearanceSaving(true);
-    try {
-      const { data, error } = await supabase
-        .from("settings")
-        .update({ [field]: nextValue })
-        .eq("id", settings.id)
-        .select("id, notifications")
-        .single();
-      if (error) throw error;
-
-      setSettings((current) => ({ ...current, ...data }));
-      toast.success("Notification preference saved");
-      return true;
-    } catch (error) {
-      if (field === "notifications") setNotifications(previousValue);
-      toast.error(error?.message || "Failed to save appearance preference");
-      return false;
-    } finally {
-      setAppearanceSaving(false);
-    }
-  };
-
-  const handleNotificationsToggle = async () => {
-    if (appearanceSaving) return;
+  const handleNotificationsToggle = () => {
     const next = !notifications;
     setNotifications(next);
-    await saveAppearancePreference("notifications", next, notifications);
+    toast.success(next ? "Confirmations will pop up again." : "Confirmations hidden. Errors and warnings still show.");
   };
 
   // Format time for display
@@ -440,12 +421,12 @@ export default function Settings() {
         <section id="settings-panel-notifications" role="tabpanel" aria-labelledby="settings-tab-notifications" hidden={activeTab !== "notifications"} className="card settings-section">
           <header className="settings-section-header">
             <h3 id="settings-notifications-title">Notifications and display</h3>
-            <p>Your on-screen preferences. Changes here save automatically.</p>
+            <p>Your own on-screen preferences on this browser. They do not change anyone else&apos;s screen.</p>
           </header>
           <div className="settings-row">
             <div className="settings-row-text">
               <span className="settings-row-label" id="settings-notifications-label">Action notifications</span>
-              <p>Show toast notifications for actions.</p>
+              <p>Show pop-up confirmations for completed actions. Errors and warnings always show.</p>
             </div>
             <div className="settings-row-control">
               <button
@@ -453,7 +434,6 @@ export default function Settings() {
                 role="switch"
                 className={`settings-toggle ${notifications ? "active" : ""}`}
                 onClick={handleNotificationsToggle}
-                disabled={appearanceSaving}
                 aria-checked={notifications}
                 aria-labelledby="settings-notifications-label"
               >
@@ -468,7 +448,7 @@ export default function Settings() {
             </div>
           </div>
           <p className="settings-auto-save-status" role="status">
-            {appearanceSaving ? "Saving notification preference…" : "Notification changes are saved automatically."}
+            Notification changes are saved automatically for your account on this browser.
           </p>
         </section>
 
@@ -485,7 +465,7 @@ export default function Settings() {
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
-                <input autoComplete="off" id="setting-default-processing" className="form-control" type="number" min="1" value={defaultProcessingMinutes} onChange={(e) => setDefaultProcessingMinutes(e.target.value)} />
+                <input autoComplete="off" id="setting-default-processing" className="form-control" type="number" min="1" step="1" value={defaultProcessingMinutes} onChange={(e) => setDefaultProcessingMinutes(e.target.value)} />
                 <span>min</span>
               </div>
             </div>
@@ -497,7 +477,7 @@ export default function Settings() {
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
-                <input autoComplete="off" id="setting-undo-window" className="form-control" type="number" min="1" value={statusUndoSeconds} onChange={(e) => setStatusUndoSeconds(e.target.value)} />
+                <input autoComplete="off" id="setting-undo-window" className="form-control" type="number" min="1" step="1" value={statusUndoSeconds} onChange={(e) => setStatusUndoSeconds(e.target.value)} />
                 <span>sec</span>
               </div>
             </div>
@@ -509,7 +489,7 @@ export default function Settings() {
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
-                <input autoComplete="off" id="setting-eta-buffer" className="form-control" type="number" min="1" value={etaBufferMinutes} onChange={(e) => setEtaBufferMinutes(e.target.value)} />
+                <input autoComplete="off" id="setting-eta-buffer" className="form-control" type="number" min="0" step="1" value={etaBufferMinutes} onChange={(e) => setEtaBufferMinutes(e.target.value)} />
                 <span>min</span>
               </div>
             </div>
@@ -521,7 +501,7 @@ export default function Settings() {
             </div>
             <div className="settings-row-control">
               <div className="settings-unit-input">
-                <input autoComplete="off" id="setting-eta-history" className="form-control" type="number" min="1" value={etaMinCompletedOrders} onChange={(e) => setEtaMinCompletedOrders(e.target.value)} />
+                <input autoComplete="off" id="setting-eta-history" className="form-control" type="number" min="1" step="1" value={etaMinCompletedOrders} onChange={(e) => setEtaMinCompletedOrders(e.target.value)} />
                 <span>orders</span>
               </div>
             </div>

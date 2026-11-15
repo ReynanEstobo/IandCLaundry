@@ -210,7 +210,7 @@ async function api(request, env) {
   if (method === 'GET' && path === 'customers/visible') return json(await listVisibleCustomers(await signedIn()))
   if (method === 'GET' && path === 'customers/lookup') return json(await lookupCustomer(url.searchParams.get('phone'), await signedIn()))
   if (method === 'GET' && (path === 'audit-log' || path === 'recycle-bin')) return json(await listAuditLog(await signedIn(), {
-    page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'),
+    page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'), direction: url.searchParams.get('direction'),
   }))
   if (method === 'POST' && path === 'recycle-bin/restore') return json(await restoreRecord(await body(request), await signedIn()))
 

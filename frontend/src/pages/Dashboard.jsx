@@ -31,6 +31,7 @@ import { paymentTimestamp, recordedPaymentAmount, rollingDemandForecast } from "
 import { byBranch, days, quantity, shortBranch } from "../utils/alertText";
 import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorderQuantity } from "../utils/inventoryForecast";
 import { loadInventoryForecastHistory } from "../services/inventoryForecastHistory";
+import { formatPeso } from "../utils/money";
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -600,7 +601,7 @@ export default function Dashboard() {
             <PhilippinePeso size={22} />
           </div>
           <div className="stat-value">
-            ₱{stats.todayRevenue.toLocaleString()}
+            {formatPeso(stats.todayRevenue)}
           </div>
           <div className="stat-label">Today's Revenue</div>
         </div>
@@ -768,7 +769,7 @@ export default function Dashboard() {
               <div>
                 <span>Revenue forecast · next 30 days</span>
                 <strong>
-                  ₱{forecasts.predictedMonthlyRevenue.toLocaleString()}
+                  {formatPeso(forecasts.predictedMonthlyRevenue)}
                 </strong>
                 <small>Estimate from recent collections · not guaranteed</small>
                 <small className="staff-dss-option"><strong>Next:</strong> Compare with expenses.</small>
@@ -1014,7 +1015,7 @@ export default function Dashboard() {
                       data-label="Amount"
                       style={{ fontWeight: 600, color: "var(--text-primary)" }}
                     >
-                      ₱{Number(order.total_price).toLocaleString()}
+                      {formatPeso(order.total_price)}
                     </td>
                   </tr>
                 ))

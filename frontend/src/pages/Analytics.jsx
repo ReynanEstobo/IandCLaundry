@@ -33,7 +33,8 @@ import { useRealtime } from "../lib/useRealtime";
 import { generateAiForecast, generateDecisionSupport } from "../services/geminiService";
 import { useShowPageLoader, InlineSkeleton, LoadingVisual, PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from '../components/LoadingButton'
-import { analyticsPeriod, chartTooltipDate, dailyChartLabel, paymentChartData } from '../utils/chartDates'
+import { analyticsPeriod, chartGrouping, chartTooltipDate, dailyChartLabel, paymentChartData } from '../utils/chartDates'
+import { formatPeso } from '../utils/money'
 import { recordedPaymentAmount } from '../utils/businessForecast'
 import { analyticsDailyHistory, branchPerformance, fromFirstRecordedDay } from '../utils/analyticsMetrics'
 import { buildAnalyticsReport } from '../utils/analyticsReport'
@@ -85,7 +86,7 @@ const CustomTooltip = ({ active, payload, label }) => {
           </span>
 
           <span style={{ fontWeight: 600 }}>
-            ₱{Number(p.value).toLocaleString()}
+            {formatPeso(p.value)}
           </span>
 
           {p.payload?.isPrediction && (
@@ -698,8 +699,8 @@ export default function Analytics() {
           totalOrders: orderData.length,
           averageOrderValue: stats.avgOrderValue || 0,
           operationalSignals: [
-            ...operationalSummary.topServices.map((service) => `Service ${service.name}: ${service.orders} requests, ₱${service.revenue.toLocaleString()} in service sales.`),
-            ...operationalSummary.topBranches.map((branchMetric) => `Branch ${branchMetric.name}: ${branchMetric.orders} ${branchMetric.orders === 1 ? "order" : "orders"} created, ₱${branchMetric.revenue.toLocaleString()} received.`),
+            ...operationalSummary.topServices.map((service) => `Service ${service.name}: ${service.orders} requests, ${formatPeso(service.revenue)} in service sales.`),
+            ...operationalSummary.topBranches.map((branchMetric) => `Branch ${branchMetric.name}: ${branchMetric.orders} ${branchMetric.orders === 1 ? "order" : "orders"} created, ${formatPeso(branchMetric.revenue)} received.`),
             ...operationalSummary.staffPerformance.map((staff) => `${staff.name}: ${staff.completed} released, ${staff.created} created orders.`),
             ...operationalSummary.lowStockItems.map((item) => `Low stock: ${item.name} has ${item.current_stock} ${item.unit} left at ${item.branch || "the selected branch"}.`),
             `Repeat customers in the selected scope: ${operationalSummary.repeatCustomers}.`,
@@ -828,7 +829,8 @@ Rules:
     }
   }
 
-  const descriptiveData = paymentChartData(payments, expenses, range, customRange);
+  // A custom date range is grouped by its own length, not by the period button.
+  const descriptiveData = paymentChartData(payments, expenses, chartGrouping(range, customRange), customRange);
 
   const formatAiCacheTime = (timestamp) => timestamp
     ? new Date(timestamp).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })
@@ -1065,9 +1067,11 @@ Rules:
           ))}
         </select>
 
+        {/* With a custom date range no period button is selected; choosing one
+            clears the custom range. */}
         <SubFilter
-          value={range}
-          onChange={setRange}
+          value={hasCustomRange ? null : range}
+          onChange={(value) => { if (hasCustomRange) clearCustomRange(); setRange(value); }}
           disabled={filterLoading}
           options={[
             { value: "weekly", label: "Weekly" },
@@ -1101,7 +1105,7 @@ Rules:
           </div>
 
           <div className="stat-value">
-            ₱{stats.totalRevenue?.toLocaleString()}
+            {formatPeso(stats.totalRevenue)}
           </div>
 
           <div className="stat-label">Cash Received</div>
@@ -1113,7 +1117,7 @@ Rules:
           </div>
 
           <div className="stat-value">
-            ₱{stats.totalExpenses?.toLocaleString()}
+            {formatPeso(stats.totalExpenses)}
           </div>
 
           <div className="stat-label">Total Expenses</div>
@@ -1124,7 +1128,7 @@ Rules:
             <Percent size={22} />
           </div>
 
-          <div className="stat-value">₱{stats.profit?.toLocaleString()}</div>
+          <div className="stat-value">{formatPeso(stats.profit)}</div>
 
           <div className="stat-label">Net Profit</div>
         </div>
@@ -1178,8 +1182,8 @@ Rules:
         </div>
 
         <div className="operational-lists">
-          <OperationalList icon={<TrendingUp size={17} />} title="High-Performing Services" accent="#8b5cf6" empty="No service data yet" items={operationalSummary.topServices.map((service) => `${service.name} · ${service.orders} service requests · ₱${service.revenue.toLocaleString()}`)} />
-          <OperationalList icon={<Building2 size={17} />} title="Top Branches" accent="#0ea5e9" empty="No branch data yet" items={operationalSummary.topBranches.map((branchMetric) => `${branchMetric.name} · ${branchMetric.orders} ${branchMetric.orders === 1 ? "order" : "orders"} created · ₱${branchMetric.revenue.toLocaleString()}`)} />
+          <OperationalList icon={<TrendingUp size={17} />} title="High-Performing Services" accent="#8b5cf6" empty="No service data yet" items={operationalSummary.topServices.map((service) => `${service.name} · ${service.orders} service requests · ${formatPeso(service.revenue)}`)} />
+          <OperationalList icon={<Building2 size={17} />} title="Top Branches" accent="#0ea5e9" empty="No branch data yet" items={operationalSummary.topBranches.map((branchMetric) => `${branchMetric.name} · ${branchMetric.orders} ${branchMetric.orders === 1 ? "order" : "orders"} created · ${formatPeso(branchMetric.revenue)}`)} />
           <OperationalList icon={<Users size={17} />} title="Staff Productivity" accent="#10b981" empty="No staff activity yet" items={operationalSummary.staffPerformance.slice(0, 3).map((staff) => `${staff.name} · ${staff.completed} released / ${staff.created} created`)} />
           <OperationalList icon={<Users size={17} />} title="Daily New Customers" accent="#0284c7" empty="No new customer profiles in this scope" ranked={false} limit={7} items={[...operationalSummary.dailyNewCustomers].reverse().map((item) => `${format(new Date(`${item.date}T00:00:00`), "MMM d, yyyy")} · ${item.count} new customer${item.count === 1 ? "" : "s"}`)} />
         </div>
