@@ -8,6 +8,7 @@ import { paymentTimestamp, rollingDemandForecast } from '../utils/businessForeca
 import { analyticsPeriod, staffDashboardChartData } from '../utils/chartDates'
 import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorderQuantity } from '../utils/inventoryForecast'
 import DashboardCharts from '../components/DashboardCharts'
+import { days, quantity } from '../utils/alertText'
 import {
   Clock, AlertTriangle, ShoppingBag, CheckCircle2, Timer, User, Radio,
   Brain, Zap, TrendingUp, Inbox, LoaderCircle, PackageCheck, LayoutList
@@ -327,10 +328,10 @@ export default function StaffDashboard() {
                   <span className="staff-dss-alert-dot" aria-hidden="true" />
                   <div>
                     <strong>{item.name}</strong>
-                    <small className="staff-dss-next">{Number(item.current_stock)} {item.unit} left · {item.forecastDaysLeft == null ? 'limited history' : item.forecastDaysLeft <= 0 ? 'may run out today' : `~${item.forecastDaysLeft} days`} · reorder {item.suggestedReorder} {item.unit}</small>
+                    <small className="staff-dss-next">{quantity(item.current_stock, item.unit)} left · {item.forecastDaysLeft == null ? 'no usage history yet' : item.forecastDaysLeft <= 0 ? 'may run out today' : `~${days(item.forecastDaysLeft)} left`} · reorder {quantity(item.suggestedReorder, item.unit)}</small>
                     <span>{Number(item.current_stock)} {item.unit} remaining · Minimum: {Number(item.minimum_stock)} {item.unit}</span>
                     <span className="staff-dss-forecast">{inventoryRunOutLabel(item.forecastDaysLeft)}</span>
-                    <span className="staff-dss-reorder staff-dss-option">Option: Verify stock; ask your supervisor about ~{item.suggestedReorder} {item.unit}.</span>
+                    <span className="staff-dss-reorder staff-dss-option">Option: check the shelf, then ask your supervisor to reorder about {quantity(item.suggestedReorder, item.unit)}.</span>
                   </div>
                 </div>
               ))}

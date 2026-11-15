@@ -28,6 +28,7 @@ import DashboardCharts from "../components/DashboardCharts";
 import Pagination from "../components/Pagination";
 import { compareOrdersForList } from "../utils/orderListPriority";
 import { paymentTimestamp, recordedPaymentAmount, rollingDemandForecast } from "../utils/businessForecast";
+import { byBranch, days, quantity, shortBranch } from "../utils/alertText";
 import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorderQuantity } from "../utils/inventoryForecast";
 import { loadInventoryForecastHistory } from "../services/inventoryForecastHistory";
 
@@ -439,53 +440,54 @@ export default function Dashboard() {
   function generateSuggestions(inventory, forecastHistory, orders, readyCount) {
     const tips = [];
 
-    // 1. Low stock / out of stock items - suggest buying
+    // 1. Out of stock and low stock, grouped by branch.
     const lowItems = inventory.filter(
       (i) => Number(i.current_stock) <= Number(i.minimum_stock),
     );
     const outOfStock = inventory.filter((i) => Number(i.current_stock) === 0);
+    const byBranchThenStock = (a, b) => shortBranch(a.branch).localeCompare(shortBranch(b.branch))
+      || (Number(a.current_stock) / Math.max(Number(a.minimum_stock), 1)) - (Number(b.current_stock) / Math.max(Number(b.minimum_stock), 1));
 
     if (outOfStock.length > 0) {
       tips.push({
         type: "critical",
         icon: AlertTriangle,
-        title: "Out of Stock!",
+        title: `Out of Stock (${outOfStock.length})`,
         items: outOfStock.map((i) => i.name),
-        message: `Buy ${outOfStock.map((i) => i.name).join(", ")} immediately — you have zero stock remaining.`,
+        message: `${byBranch([...outOfStock].sort(byBranchThenStock), (i) => i.name)}. Restock now.`,
         action: "Go to Inventory",
         link: "/dashboard/inventory",
       });
     }
 
-    if (lowItems.length > 0 && outOfStock.length !== lowItems.length) {
-      const needRestock = lowItems.filter((i) => Number(i.current_stock) > 0);
-      if (needRestock.length > 0) {
-        tips.push({
-          type: "critical",
-          icon: ShoppingCart,
-          title: "Restock Needed",
-          message: `Running low on ${needRestock.map((i) => `${i.name}${i.branch ? ` at ${i.branch}` : ""} (${i.current_stock} ${i.unit} left)`).join(", ")}. Consider restocking soon.`,
-          action: "Review Inventory",
-          link: "/dashboard/inventory",
-        });
-      }
+    const needRestock = lowItems.filter((i) => Number(i.current_stock) > 0).sort(byBranchThenStock);
+    if (needRestock.length > 0) {
+      tips.push({
+        type: "critical",
+        icon: ShoppingCart,
+        title: `Low Stock (${needRestock.length})`,
+        message: `${byBranch(needRestock, (i) => `${i.name} ${quantity(i.current_stock, i.unit)}`)}. Restock soon.`,
+        action: "Review Inventory",
+        link: "/dashboard/inventory",
+      });
     }
 
-    // 2. Stock prediction - items that will run out within 7 days
-    inventory.forEach((item) => {
-      const daysLeft = itemDaysLeft(item, forecastHistory);
-      if (daysLeft !== null && daysLeft <= 7 && daysLeft > 0 && !lowItems.find((l) => l.id === item.id)) {
-        const itemLabel = `${item.name}${item.branch ? ` at ${item.branch}` : ""}`;
-        tips.push({
-          type: "critical",
-          icon: TrendingUp,
-          title: `${item.name} Running Out`,
-          message: `Based on usage trends, ${itemLabel} will run out in ~${daysLeft} day${daysLeft !== 1 ? "s" : ""}. Buy more to avoid shortage.`,
-          action: "View Predictions",
-          link: "/dashboard/inventory",
-        });
-      }
-    });
+    // 2. Supplies expected to run out within 7 days, in one card.
+    const runningOut = inventory
+      .filter((item) => !lowItems.find((l) => l.id === item.id))
+      .map((item) => ({ ...item, daysLeft: itemDaysLeft(item, forecastHistory) }))
+      .filter((item) => item.daysLeft !== null && item.daysLeft <= 7 && item.daysLeft > 0)
+      .sort((a, b) => a.daysLeft - b.daysLeft);
+    if (runningOut.length > 0) {
+      tips.push({
+        type: "critical",
+        icon: TrendingUp,
+        title: `Running Out Soon (${runningOut.length})`,
+        message: `${byBranch(runningOut, (i) => `${i.name} ~${days(i.daysLeft)}`)}. Based on recent usage.`,
+        action: "View Predictions",
+        link: "/dashboard/inventory",
+      });
+    }
 
     // 3. Ready for pickup - notify customers
     if (readyCount > 0) {
@@ -493,7 +495,7 @@ export default function Dashboard() {
         type: "info",
         icon: Bell,
         title: `${readyCount} Order${readyCount > 1 ? "s" : ""} Ready for Pickup`,
-        message: `Send Email notifications to customers about their completed laundry. Don't keep them waiting!`,
+        message: "Let the customers know their laundry is ready.",
         action: "Send Notifications",
         link: "/dashboard/sms",
       });
@@ -512,7 +514,7 @@ export default function Dashboard() {
         type: "warning",
         icon: PhilippinePeso,
         title: `${unpaidOrders.length} Unpaid Order${unpaidOrders.length > 1 ? "s" : ""}`,
-        message: `You have ₱${unpaidTotal.toLocaleString()} in outstanding payments. Follow up with customers to collect.`,
+        message: `₱${unpaidTotal.toLocaleString()} still to collect.`,
         action: "View Orders",
         link: "/dashboard/orders",
       });
@@ -524,8 +526,7 @@ export default function Dashboard() {
         type: "info",
         icon: Package,
         title: "Set Up Your Inventory",
-        message:
-          "Add your supplies like detergent sachets, fabric softener, plastic bags, and hangers to track stock levels and get restock alerts.",
+        message: "Add detergent, fabric conditioner, bags and hangers to track stock and get restock alerts.",
         action: "Add Items",
         link: "/dashboard/inventory",
       });
@@ -536,9 +537,8 @@ export default function Dashboard() {
       tips.push({
         type: "success",
         icon: CheckCircle2,
-        title: "All Good!",
-        message:
-          "Everything is running smoothly. Inventory is stocked, no pending actions needed.",
+        title: "All Good",
+        message: "Stock is fine and nothing needs action.",
         action: null,
         link: null,
       });
@@ -692,9 +692,7 @@ export default function Dashboard() {
                         lineHeight: 1.5,
                       }}
                     >
-                      {tip.items?.length
-                        ? `Option: verify the physical count for ${tip.items.join(", ")}; if confirmed, consider requesting replenishment before scheduling work that needs these items.`
-                        : tip.message}
+                      {tip.message}
                     </div>
                   </div>
                   {tip.action && tip.link && (
@@ -800,12 +798,12 @@ export default function Dashboard() {
                     <span className="staff-dss-alert-dot" aria-hidden="true" />
                     <div>
                       <strong>{activeRestockAlert.name}</strong>
-                      <small className="staff-dss-next">{activeRestockAlert.branch ? `${activeRestockAlert.branch} · ` : ""}{activeRestockAlert.currentStock} {activeRestockAlert.unit} left · {activeRestockAlert.daysLeft == null ? "limited history" : activeRestockAlert.daysLeft <= 0 ? "may run out today" : `~${activeRestockAlert.daysLeft} days left`} · reorder {activeRestockAlert.suggestedReorder} {activeRestockAlert.unit}</small>
+                      <small className="staff-dss-next">{activeRestockAlert.branch ? `${shortBranch(activeRestockAlert.branch)} · ` : ""}{quantity(activeRestockAlert.currentStock, activeRestockAlert.unit)} left · {activeRestockAlert.daysLeft == null ? "no usage history yet" : activeRestockAlert.daysLeft <= 0 ? "may run out today" : `~${days(activeRestockAlert.daysLeft)} left`} · reorder {quantity(activeRestockAlert.suggestedReorder, activeRestockAlert.unit)}</small>
                       <span>
                         {inventoryRunOutLabel(activeRestockAlert.daysLeft)}
                       </span>
                       <span className="staff-dss-forecast staff-dss-option">
-                        Option: Verify stock; consider ~{activeRestockAlert.suggestedReorder} {activeRestockAlert.unit}.
+                        Option: check the shelf, then reorder about {quantity(activeRestockAlert.suggestedReorder, activeRestockAlert.unit)}.
                       </span>
                     </div>
                     <button
