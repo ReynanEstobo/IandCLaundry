@@ -374,3 +374,11 @@ test('signing out asks first, from the sidebar and from Account Security', async
     assert.match(text, /<SignOutConfirm open=\{confirmingSignOut\}/)
   }
 })
+
+test('the low-stock heading agrees with its count: "1 item needs", "2 items need"', async () => {
+  for (const file of ['frontend/src/pages/Dashboard.jsx', 'frontend/src/pages/StaffDashboard.jsx']) {
+    const text = await source(file)
+    assert.match(text, /low-stock item\{[^}]*=== 1 \? ["'] needs["'] : ["']s need["']\} attention/, `${file}: verb follows the count`)
+    assert.doesNotMatch(text, /\? ["']{2} : ["']s["']\} need attention/, `${file}: no "1 item need attention"`)
+  }
+})

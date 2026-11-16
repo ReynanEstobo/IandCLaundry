@@ -793,7 +793,7 @@ export default function Dashboard() {
                 <div className="staff-dss-alert-group admin-dss-alert-group">
                   <div className="staff-dss-alert-summary">
                     <AlertTriangle size={17} />
-                    <strong>{restockAlertCount} low-stock item{restockAlertCount === 1 ? "" : "s"} need attention</strong>
+                    <strong>{restockAlertCount} low-stock item{restockAlertCount === 1 ? " needs" : "s need"} attention</strong>
                   </div>
                   <div className="staff-dss-alert admin-dss-alert">
                     <span className="staff-dss-alert-dot" aria-hidden="true" />

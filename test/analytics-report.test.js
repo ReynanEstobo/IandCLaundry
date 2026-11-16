@@ -66,6 +66,9 @@ test('staff rows show orders created and released separately, with the release r
 test('turnaround is described as receiving to ready for pickup', () => {
   assert.match(report.printHtml, /Average turnaround from receiving to ready for pickup was 4\.5 hours/)
   assert.doesNotMatch(report.printHtml, /released-order turnaround/i)
+  // The summary tile measures the same thing as the sentence above it.
+  assert.match(report.printHtml, /<span>Average time from order to ready for pickup<\/span><strong>4\.5 hours<\/strong>/)
+  assert.doesNotMatch(report.printHtml, /order to release/i)
 })
 
 test('spreadsheet export is a styled multi-sheet I&C management workbook', async () => {

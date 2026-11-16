@@ -322,7 +322,7 @@ export default function StaffDashboard() {
             <div className="staff-dss-alert-group">
               <div className="staff-dss-alert-summary">
                 <AlertTriangle size={17} />
-                <strong>{branchForecast.restockItems.length} low-stock item{branchForecast.restockItems.length === 1 ? '' : 's'} need attention</strong>
+                <strong>{branchForecast.restockItems.length} low-stock item{branchForecast.restockItems.length === 1 ? ' needs' : 's need'} attention</strong>
               </div>
               {branchForecast.restockItems.map(item => (
                 <div className="staff-dss-alert" key={item.id}>
