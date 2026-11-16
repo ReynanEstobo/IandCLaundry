@@ -1,3 +1,4 @@
+import { decisionTitle } from './decisionAreas.js'
 const text = (value) => String(value ?? '')
 const html = (value) => text(value)
   .replaceAll('&', '&amp;')
@@ -224,7 +225,7 @@ export function buildAnalyticsReport(input) {
     [],
     ['RECOMMENDED MANAGEMENT ACTIONS'],
     ['Priority', 'Management Area', 'Recommended Action'],
-    ...model.aiInsights.map((item, index) => [index + 1, item.title, item.description]),
+    ...model.aiInsights.map((item, index) => [index + 1, decisionTitle(item), item.description]),
     ['Decision-Support Source', model.decisionSupportSource],
     [],
     ['REPORT GOVERNANCE'],
@@ -256,7 +257,7 @@ export function buildAnalyticsReport(input) {
     ? model.forecastData.map((item) => `<tr><td>${html(item.forecastPeriod || item.forecastDate || item.date)}</td><td class="money">${peso(item.predicted)}</td><td class="number">${number(item.predictedOrders)}</td><td><span class="confidence ${html(text(item.confidence).toLowerCase())}">${html(confidenceLabel(item.confidence))}</span></td></tr>`).join('')
     : emptyRow(4, 'No forecast is available for this reporting scope.')
   const insightMarkup = model.aiInsights.length
-    ? model.aiInsights.map((item, index) => `<article class="priority"><span>${index + 1}</span><div><h3>${html(item.title)}</h3><p>${html(item.description)}</p></div></article>`).join('')
+    ? model.aiInsights.map((item, index) => `<article class="priority"><span>${index + 1}</span><div><h3>${html(decisionTitle(item))}</h3><p>${html(item.description)}</p></div></article>`).join('')
     : '<div class="empty-panel">No decision-support priorities are available for this reporting scope.</div>'
   const highlightMarkup = highlights.map((item, index) => `<article class="plain-finding"><span>${index + 1}</span><div><h3>${html(item.title)}</h3><p>${html(item.detail)}</p></div></article>`).join('')
 

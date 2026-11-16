@@ -111,11 +111,11 @@ test('ai forecast: a missing API key is named as the reason', async () => {
 })
 
 test('ai decision support: Gemini insights are labelled with their source', async t => {
-  const insights = ['Cash', 'Demand', 'Stock'].map(title => ({ title, description: 'Signal.', recommendation: 'Option: check.' }))
+  const insights = ['service_demand', 'staffing', 'inventory', 'branch_performance'].map(area => ({ area, title: area, description: 'Signal.', recommendation: 'Option: check.' }))
   withGemini(t, () => geminiReply(`\`\`\`json\n${JSON.stringify({ insights })}\n\`\`\``))
   const result = await generateDecisionSupport({ metrics: { totalRevenue: historyCounter += 1 }, trendData: [], forecastData: [], range: 'weekly' })
   assert.equal(result.source, 'gemini')
-  assert.equal(result.insights.length, 3)
+  assert.equal(result.insights.length, 4)
 })
 
 // Runs last: the daily-limit pause it sets stays in place for the rest of this process.

@@ -32,6 +32,9 @@ import { byBranch, days, quantity, shortBranch } from "../utils/alertText";
 import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorderQuantity } from "../utils/inventoryForecast";
 import { loadInventoryForecastHistory } from "../services/inventoryForecastHistory";
 import { loadNextMonthForecast } from "../services/revenueForecast";
+import { branchPerformance } from "../utils/analyticsMetrics";
+import { UNAVAILABLE_DECISION_INSIGHTS } from "../utils/decisionAreas";
+import DecisionInsights from "../components/DecisionInsights";
 import RevenueForecastFigure from "../components/RevenueForecastFigure";
 import { formatPeso } from "../utils/money";
 
@@ -47,7 +50,7 @@ export default function Dashboard() {
   });
   const [recentOrders, setRecentOrders] = useState([]);
   const [loadError, setLoadError] = useState("");
-  const [aiInsights, setAiInsights] = useState("");
+  const [aiInsights, setAiInsights] = useState([]);
   const [currentAIModel, setCurrentAIModel] = useState("");
   const [aiSourceMeta, setAiSourceMeta] = useState(PENDING_AI_META);
   const [aiLoading, setAiLoading] = useState(false);
@@ -214,20 +217,21 @@ export default function Dashboard() {
       paymentsByPaidAtRes,
       paymentsByPaymentDateRes,
       expensesRes,
+      serviceItemsRes,
     ] = await Promise.all([
       supabase
         .from("orders")
-        .select("id, created_at, status, payment_status, total_price, amount_paid")
+        .select("id, created_at, status, payment_status, total_price, amount_paid, branch")
         .gte("created_at", historyStartIso),
       // Active work and unpaid balances must remain visible even when an
       // order was created before the chart-history window.
       supabase
         .from("orders")
-        .select("id, created_at, status, payment_status, total_price, amount_paid")
+        .select("id, created_at, status, payment_status, total_price, amount_paid, branch")
         .not("status", "in", '("released","cancelled")'),
       supabase
         .from("orders")
-        .select("id, created_at, status, payment_status, total_price, amount_paid")
+        .select("id, created_at, status, payment_status, total_price, amount_paid, branch")
         .eq("payment_status", "unpaid")
         .not("status", "eq", "cancelled"),
       supabase.from("customers").select("id", { count: "exact", head: true }),
@@ -245,16 +249,18 @@ export default function Dashboard() {
       // Read both timestamp indexes, then retain the same preferred
       // `paid_at || payment_date` timestamp used by the existing dashboard.
       // The order status lets cancelled orders' payments be left out, as in Analytics.
-      supabase.from("payments").select("id, amount, paid_at, payment_date, orders!inner(status)").gte("paid_at", historyStartIso),
-      supabase.from("payments").select("id, amount, paid_at, payment_date, orders!inner(status)").gte("payment_date", historyStartIso),
+      supabase.from("payments").select("id, amount, paid_at, payment_date, branch, orders!inner(status, branch)").gte("paid_at", historyStartIso),
+      supabase.from("payments").select("id, amount, paid_at, payment_date, branch, orders!inner(status, branch)").gte("payment_date", historyStartIso),
       supabase.from("expenses").select("amount, expense_date").gte("expense_date", historyStart.toISOString().slice(0, 10)),
+      // Service requests, for the service-demand recommendation.
+      supabase.from("order_items").select("service_name_snapshot, subtotal, created_at, orders!inner(status)").gte("created_at", historyStartIso),
     ]);
     const { data: settingsData } = await supabase
       .from("settings")
       .select("*")
       .single();
 
-    const requestError = historicalOrdersRes.error || activeOrdersRes.error || unpaidOrdersRes.error || customersRes.error || inventoryRes.error || recentRes.error || paymentsByPaidAtRes.error || paymentsByPaymentDateRes.error || expensesRes.error;
+    const requestError = historicalOrdersRes.error || activeOrdersRes.error || unpaidOrdersRes.error || customersRes.error || inventoryRes.error || recentRes.error || paymentsByPaidAtRes.error || paymentsByPaymentDateRes.error || expensesRes.error || serviceItemsRes.error;
     if (requestError) throw requestError;
 
     setSettings(settingsData || {});
@@ -273,6 +279,7 @@ export default function Dashboard() {
       return timestamp && new Date(timestamp) >= historyStart && payment.orders?.status !== "cancelled";
     });
     const expenses = expensesRes.data || [];
+    const serviceItems = serviceItemsRes.data || [];
     const reportableOrders = orders.filter((o) => o.status !== "cancelled");
     const todayOrders = reportableOrders.filter((o) => o.created_at >= today);
     const todayRevenue = payments
@@ -338,6 +345,25 @@ export default function Dashboard() {
         else if (range === "monthly") periodStart.setDate(now.getDate() - 29);
         else periodStart.setFullYear(now.getFullYear() - 4, 0, 1);
         periodStart.setHours(0, 0, 0, 0);
+        // Evidence for each recommendation area over the same period:
+        // services, staffing, inventory and branches.
+        const inPeriod = (value) => Boolean(value) && new Date(value) >= periodStart;
+        const serviceTotals = new Map();
+        serviceItems
+          .filter((item) => item.orders?.status !== "cancelled" && inPeriod(item.created_at))
+          .forEach((item) => {
+            const name = item.service_name_snapshot || "Unspecified service";
+            const total = serviceTotals.get(name) || { name, requests: 0, sales: 0 };
+            total.requests += 1;
+            total.sales += Number(item.subtotal) || 0;
+            serviceTotals.set(name, total);
+          });
+        const topServices = [...serviceTotals.values()].sort((a, b) => b.sales - a.sales || b.requests - a.requests).slice(0, 3);
+        const branchTotals = branchPerformance(
+          reportableOrders.filter((order) => inPeriod(order.created_at)),
+          payments.filter((payment) => inPeriod(paymentTimestamp(payment))),
+        ).sort((a, b) => b.revenue - a.revenue || b.orders - a.orders);
+        const lowStockList = inventory.filter((item) => Number(item.current_stock) <= Number(item.minimum_stock));
         const periodExpenses = expenses
           .filter((expense) => new Date(`${expense.expense_date}T00:00:00`) >= periodStart)
           .reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
@@ -351,9 +377,14 @@ export default function Dashboard() {
               ? periodRevenue / periodOrders
               : 0,
             operationalSignals: [
+              ...topServices.map((service) => `Service ${service.name}: ${service.requests} requests, ₱${Math.round(service.sales).toLocaleString()} in service sales.`),
               `${activeOrders} active orders and ${readyForPickup} orders ready for pickup.`,
-              `${lowStockItems} low-stock inventory items.`,
               `Forecast workload today: ${fc.workloadLevel}. ${fc.workloadSummary}.`,
+              ...(fc.peakDay !== "Not enough data" ? [`Busiest weekday in the last 30 days: ${fc.peakDay} (${fc.peakDayOrders} orders).`] : []),
+              ...(lowStockList.length
+                ? lowStockList.slice(0, 8).map((item) => `Low stock: ${item.name} has ${Number(item.current_stock)} ${item.unit} left at ${item.branch || "its branch"} (minimum ${Number(item.minimum_stock)}).`)
+                : ["No inventory item is at or below its minimum stock."]),
+              ...branchTotals.map((branch) => `Branch ${branch.name}: ${branch.orders} orders created, ₱${Math.round(branch.revenue).toLocaleString()} received.`),
               nextMonth
                 ? `Forecast for ${nextMonth.fullDate}: ₱${Number(nextMonth.predicted || 0).toLocaleString()} from about ${nextMonth.predictedOrders} orders.`
                 : `Collections in the last 30 days: ₱${fc.predictedMonthlyRevenue.toLocaleString()}.`,
@@ -368,7 +399,7 @@ export default function Dashboard() {
         };
         // Reuse this browser's recent Gemini result so each visit does not
         // spend a Gemini request; see utils/aiOutputCache.js.
-        const cacheKey = aiCacheKey("dashboard", [range]);
+        const cacheKey = aiCacheKey("dashboard_decisions", [range]);
         const dataVersion = dataFingerprint(dssRequest);
         const cachedEntry = readAiCache(cacheKey);
         let entry = reusableAiCache(cachedEntry, dataVersion);
@@ -391,17 +422,14 @@ export default function Dashboard() {
             isCached = !entry.baseline;
           }
         }
-        const normalizedInsights = entry.data
-          .map((insight) => `${insight.title || "Decision support"}: ${(insight.recommendation || "Review the signal before acting.").replace(/^Option(?:\s+to\s+consider)?:\s*/i, "")} Signal: ${insight.description || "No supporting signal is available."}`)
-          .join("\n");
-        setAiInsights(normalizedInsights || "Operational Recommendation: No decision-support recommendation is available for the current data.");
+        setAiInsights(Array.isArray(entry.data) && entry.data.length ? entry.data : UNAVAILABLE_DECISION_INSIGHTS);
         setCurrentAIModel(entry.baseline ? "Local baseline" : `Gemini AI · ${geminiModelLabel(entry.model).replace(/^Gemini /, "")}`);
         setAiSourceMeta(entry.baseline
           ? { ...PENDING_AI_META, source: "baseline", reason }
           : { source: "gemini", model: entry.model, savedAt: entry.savedAt, isCached, staleData: entry.dataVersion !== dataVersion, reason });
       } catch (error) {
         console.error("AI error:", error);
-        setAiInsights("Operational Recommendation: AI insight unavailable. Check live orders and stock before acting. Signal: dashboard data is still available.");
+        setAiInsights(UNAVAILABLE_DECISION_INSIGHTS);
         setCurrentAIModel("Local baseline");
         setAiSourceMeta({ ...PENDING_AI_META, source: "baseline", reason: error.message || "The AI service could not be reached." });
       } finally {
@@ -879,89 +907,10 @@ export default function Dashboard() {
             <span className="dashboard-ai-model">{currentAIModel || "Preparing analysis"}</span>
           </header>
 
-          {/* CONTENT */}
-          {aiLoading ? (
-            // 🔥 LOADING SKELETON
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="dashboard-ai-skeleton"
-                  style={{
-                    height: 60,
-                    borderRadius: 12,
-                  }}
-                />
-              ))}
-            </div>
-          ) : (
-            // 🔥 YOUR EXISTING AI CONTENT
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <AiSourceNote meta={aiSourceMeta} label="decision support" />
-              {aiInsights
-                .split("\n")
-                .map((line, i) => {
-                  if (!line.trim()) return null;
-
-                  const clean = line.replace(/\*\*/g, "").trim();
-
-                  let icon = Lightbulb;
-                  let tone = "general";
-
-                  if (clean.toLowerCase().includes("operational") || clean.toLowerCase().includes("inventory")) {
-                    icon = Zap;
-                    tone = "operational";
-                  } else if (clean.toLowerCase().includes("revenue") || clean.toLowerCase().includes("financial") || clean.toLowerCase().includes("payment")) {
-                    icon = TrendingUp;
-                    tone = "revenue";
-                  } else if (clean.toLowerCase().includes("demand") || clean.toLowerCase().includes("service")) {
-                    icon = Package;
-                    tone = "inventory";
-                  }
-
-                  const Icon = icon;
-
-                  return (
-                    <div
-                      key={i}
-                      className={`dashboard-ai-insight dashboard-ai-insight-${tone}`}
-                      style={{
-                        display: "flex",
-                        gap: 12,
-                        padding: "14px 16px",
-                        borderRadius: 12,
-                      }}
-                    >
-                      <div
-                        className="dashboard-ai-insight-icon"
-                        style={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: 10,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <Icon size={18} />
-                      </div>
-
-                      <div>
-                        <div className="dashboard-ai-insight-title">
-                          {clean.split(":")[0]}
-                        </div>
-                        <div className="dashboard-ai-insight-copy" style={{ fontSize: 13.5 }}>
-                          <strong>Option:</strong> {clean.split(":").slice(1).join(":").split(" Signal:")[0]}
-                        </div>
-                        <div className="dashboard-ai-insight-copy" style={{ fontSize: 12.5, marginTop: 5 }}>
-                          <strong>Signal:</strong> {clean.includes(" Signal:") ? clean.split(" Signal:").slice(1).join(" Signal:") : "Check the current dashboard data before acting."}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          )}
+          <div className="dashboard-ai-body">
+            {!aiLoading && <AiSourceNote meta={aiSourceMeta} label="decision support" />}
+            <DecisionInsights insights={aiInsights} loading={aiLoading} loadingLabel="Preparing decision support" />
+          </div>
         </section>
       )}
       <DashboardCharts data={weeklyData} range={range} onRangeChange={setRange} loading={chartLoading} />

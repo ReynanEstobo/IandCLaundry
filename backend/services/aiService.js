@@ -242,57 +242,53 @@ function localForecast(history, forecastDates, monthTotals = false) {
   })
 }
 
+// Objective 3 asks for recommendations on these areas, so every decision-
+// support result has exactly one recommendation for each, in this order.
+export const DECISION_AREAS = ['service_demand', 'staffing', 'inventory', 'branch_performance']
+const AREA_ALIASES = {
+  service: 'service_demand', services: 'service_demand', service_demand: 'service_demand', high_performing_service: 'service_demand',
+  staff: 'staffing', staffing: 'staffing', staff_coverage: 'staffing',
+  inventory: 'inventory', inventory_usage: 'inventory', stock: 'inventory',
+  branch: 'branch_performance', branches: 'branch_performance', branch_performance: 'branch_performance',
+}
+const decisionArea = value => AREA_ALIASES[String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')] || null
+
 function localDecisionSupport(metrics, forecastData) {
-  const totalRevenue = Number(metrics?.totalRevenue) || 0
-  const totalExpenses = Number(metrics?.totalExpenses) || 0
-  const profit = Number(metrics?.profit) || 0
-  const totalOrders = Number(metrics?.totalOrders) || 0
-  const averageForecastRevenue = forecastData.length
-    ? Math.round(forecastData.reduce((sum, item) => sum + (Number(item?.predictedRevenue ?? item?.predicted) || 0), 0) / forecastData.length)
-    : 0
+  const signals = (metrics?.operationalSignals || []).map(String)
   const averageForecastOrders = forecastData.length
     ? Math.round(forecastData.reduce((sum, item) => sum + (Number(item?.predictedOrders) || 0), 0) / forecastData.length)
     : 0
-  const lowStock = (metrics?.operationalSignals || []).find(signal => /low[- ]stock/i.test(String(signal)))
-  const shortDescriptions = [
-    `PHP ${totalRevenue.toLocaleString()} collected across ${totalOrders} orders; PHP ${totalExpenses.toLocaleString()} expenses; net ${profit >= 0 ? 'profit' : 'loss'} PHP ${Math.abs(profit).toLocaleString()}.`,
-    averageForecastRevenue || averageForecastOrders
-      ? `Baseline: ${averageForecastOrders} orders and PHP ${averageForecastRevenue.toLocaleString()} per period.`
-      : 'No orders recorded; forecast confidence is low.',
-    lowStock ? `Stock alert: ${lowStock}` : 'No low-stock alert in this snapshot.',
-  ]
-
+  const topService = signals.find(signal => /^Service /.test(signal))
+  const peak = signals.find(signal => /^Forecast peak|^No distinct peak/i.test(signal))
+  const lowStock = signals.find(signal => /^Low stock:/i.test(signal))
+  const topBranch = signals.find(signal => /^Branch /.test(signal))
   const insights = [
     {
-      title: 'Financial snapshot',
-      description: `The selected scope has received ₱${totalRevenue.toLocaleString()} from ${totalOrders} orders, with ₱${totalExpenses.toLocaleString()} in recorded expenses and a net ${profit >= 0 ? 'profit' : 'loss'} of ₱${Math.abs(profit).toLocaleString()}.`,
+      title: 'Service demand',
+      description: topService ? `Top service by sales: ${topService.replace(/^Service /, '')}` : 'No service sales were recorded in this scope.',
+      recommendation: topService ? 'Option: Keep supplies and machines ready for this service on busy days.' : 'Option: Review service demand again after more orders.',
     },
     {
-      title: 'Demand baseline',
-      description: averageForecastRevenue || averageForecastOrders
-        ? `Local low-confidence baseline: about ${averageForecastOrders} orders and PHP ${averageForecastRevenue.toLocaleString()} received per forecast period.`
-        : 'There is not enough recorded demand data for a reliable forecast in this selected period.',
+      title: 'Staff coverage',
+      description: peak || (averageForecastOrders ? `Local estimate: about ${averageForecastOrders} orders per forecast period.` : 'Not enough recorded orders to estimate workload.'),
+      recommendation: 'Option: Check the live queue before adjusting staff coverage.',
     },
     {
-      title: 'Operational follow-up',
-      description: lowStock
-        ? `Reported inventory signal: ${lowStock}`
-        : 'No specific low-stock item was included in the supplied operational signals. The local analysis is conservative while Gemini is unavailable.',
+      title: 'Inventory usage',
+      description: lowStock ? `Stock alert: ${lowStock.replace(/^Low stock:\s*/i, '')}` : 'No item is at or below its minimum stock.',
+      recommendation: lowStock ? 'Option: Verify the shelf count, then consider a restock.' : 'Option: Keep routine stock checks before busy periods.',
     },
-  ]
-  const recommendations = [
-    'Option: Compare collections with expenses before changing prices or spending.',
-    averageForecastRevenue || averageForecastOrders
-      ? 'Option: Check the live queue before adjusting staff coverage.'
-      : 'Option: Keep the staffing plan and use the live queue.',
-    lowStock
-      ? 'Option: Verify the shelf count, then consider a restock request.'
-      : 'Option: Check inventory before the next busy period.',
+    {
+      title: 'Branch performance',
+      description: topBranch ? `Highest collections: ${topBranch.replace(/^Branch /, '')}` : 'No branch comparison is available for this scope.',
+      recommendation: topBranch ? 'Option: Compare branch results before moving staff or supplies.' : 'Option: Review branch results after more records.',
+    },
   ]
   return insights.map((insight, index) => ({
+    area: DECISION_AREAS[index],
     title: limitInsightWords(insight.title, 4),
-    description: limitInsightWords(shortDescriptions[index] || insight.description, 16),
-    recommendation: limitInsightWords(recommendations[index]),
+    description: limitInsightWords(insight.description, 18),
+    recommendation: limitInsightWords(insight.recommendation),
   }))
 }
 
@@ -336,15 +332,19 @@ function forecastPredictions(parsed, forecastDates) {
   return { parsed, items: aligned }
 }
 
+// Accepts a reply only when it holds one complete recommendation for every
+// decision area. A reply that names its areas is matched by area; one that
+// names none is read in the requested order.
 function decisionSupportInsights(parsed) {
-  const insights = (Array.isArray(parsed?.insights) ? parsed.insights : [])
-    .filter(item => typeof item?.title === 'string'
-      && typeof item?.description === 'string'
-      && typeof item?.recommendation === 'string'
-      && item.recommendation.trim().length > 0)
-    .slice(0, 3)
-  if (insights.length !== 3) throw new Error('Incomplete decision support')
-  return insights
+  const usable = (Array.isArray(parsed?.insights) ? parsed.insights : [])
+    .filter(item => ['title', 'description', 'recommendation'].every(field => typeof item?.[field] === 'string' && item[field].trim()))
+  const named = usable.some(item => item.area)
+  const byArea = new Map(usable.map(item => [decisionArea(item.area), item]))
+  const insights = named
+    ? (DECISION_AREAS.every(area => byArea.has(area)) ? DECISION_AREAS.map(area => byArea.get(area)) : null)
+    : (usable.length === DECISION_AREAS.length ? usable : null)
+  if (!insights) throw new Error('Incomplete decision support')
+  return insights.map((item, index) => ({ ...item, area: DECISION_AREAS[index] }))
 }
 
 export async function generateForecast({ history, forecastDates, branch, range, refresh = false }) {
@@ -462,7 +462,7 @@ export async function generateDecisionSupport({ metrics, trendData, forecastData
     profit: Number(metrics?.profit) || 0,
     totalOrders: Number(metrics?.totalOrders) || 0,
     averageOrderValue: Number(metrics?.averageOrderValue) || 0,
-    operationalSignals: Array.isArray(metrics?.operationalSignals) ? metrics.operationalSignals.slice(0, 12) : [],
+    operationalSignals: Array.isArray(metrics?.operationalSignals) ? metrics.operationalSignals.slice(0, 30).map(signal => String(signal).slice(0, 240)) : [],
   }
   const safeTrendData = Array.isArray(trendData) ? trendData.slice(-60) : []
   const safeForecastData = Array.isArray(forecastData) ? forecastData.slice(0, 30) : []
@@ -478,15 +478,18 @@ Trend data: ${JSON.stringify(safeTrendData)}
 Forecast: ${JSON.stringify(safeForecastData)}
 
 Return ONLY valid JSON in this exact format:
-{"insights":[{"title":"short title","description":"brief data signal","recommendation":"brief optional action"}]}
+{"insights":[{"area":"service_demand","title":"short title","description":"brief data signal","recommendation":"brief optional action"}]}
 
 Rules:
-- Return exactly 3 insights.
-- Cover financial performance, service demand, and operations (staffing, inventory, or branch productivity when supported by signals).
+- Return exactly 4 insights, one for each area, in this order: "service_demand", "staffing", "inventory", "branch_performance". Set "area" to that name.
+- service_demand: name the high-performing service from the service signals and what its demand suggests.
+- staffing: use the workload, staff, turnaround and forecast signals, including any forecast peak, to suggest staff coverage.
+- inventory: use the low-stock signals to suggest restocking or careful use of supplies.
+- branch_performance: compare the branch signals (for one branch, its own results) and suggest an improvement.
+- When the signals hold no evidence for an area, say so in the description and recommend keeping the current practice with a quick check of live records.
 - Keep titles to 2–4 words. Keep descriptions and recommendations to 18 words maximum.
 - Recommendations should be practical, optional next steps; include a quick verification when needed.
 - In descriptions, state the supplied evidence and uncertainty; never invent causes or facts.
-- When data is limited, recommend maintaining the current plan and checking live records rather than acting on a weak forecast.
 - Avoid generic advice and markdown.`, text => decisionSupportInsights(parseJsonObject(text)), refresh)
 
   if (!response.data) {
@@ -503,6 +506,7 @@ Rules:
   }
   const insights = response.data
   const conciseInsights = insights.map(item => ({
+    area: item.area,
     title: limitInsightWords(item.title, 4),
     description: limitInsightWords(item.description),
     recommendation: limitInsightWords(item.recommendation),

@@ -762,6 +762,61 @@ table tbody tr:last-child td { border-bottom: 0; }
 .dashboard-ai-insight-title { color: var(--text-primary); font-weight: 600; }
 .dashboard-ai-insight-icon { border: 0; background: var(--bg-secondary); color: var(--insight-accent); box-shadow: none; }
 
+/* Decision-support options (Analytics and the Dashboard): one neutral card
+   per objective-3 area. Like the other AI cards, only the icon carries the
+   area colour; the area name is a quiet label above the title. Two columns
+   where the panel is wide, a single list where it is not. */
+.decision-insights {
+  container-type: inline-size;
+  --skeleton-base: #ecebe6;
+  --skeleton-highlight: #f7f6f3;
+}
+[data-theme="dark"] .decision-insights { --skeleton-base: #23272b; --skeleton-highlight: #2e3337; }
+.decision-insight-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+@container (min-width: 760px) {
+  .decision-insight-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.decision-insight {
+  --insight-accent: var(--violet);
+  --insight-tint: var(--violet-light);
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+}
+.decision-insight-service_demand { --insight-accent: var(--success); --insight-tint: var(--success-light); }
+.decision-insight-staffing { --insight-accent: var(--violet); --insight-tint: var(--violet-light); }
+.decision-insight-inventory { --insight-accent: var(--warning); --insight-tint: var(--warning-light); }
+.decision-insight-branch_performance { --insight-accent: var(--primary); --insight-tint: var(--primary-50); }
+.decision-insight-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--insight-tint);
+  color: var(--insight-accent);
+}
+.decision-insight-body { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 3px; }
+.decision-insight-area { color: var(--text-muted); font-size: 12px; font-weight: 500; line-height: 1.3; }
+.decision-insight-title { margin: 0 0 3px; color: var(--text-primary); font-size: 14px; font-weight: 600; line-height: 1.35; }
+.decision-insight-action { margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.5; }
+.decision-insight-signal { margin: 0; color: var(--text-secondary); font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.decision-insight-action strong, .decision-insight-signal strong { color: var(--text-primary); font-weight: 600; }
+.decision-insight-skeleton { min-height: 104px; border-radius: var(--radius-sm); }
+.decision-support-header { flex-wrap: wrap; gap: 6px 16px; }
+.decision-support-header .decision-support-scope { max-width: 380px; margin: 0; text-align: right; line-height: 1.4; }
+.decision-support-loading { margin: 0 0 12px; }
+.dashboard-ai-body { display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 640px) {
+  .decision-support-header .decision-support-scope { max-width: none; text-align: left; }
+}
+
 /* ---------- Order board (Orders page and staff dashboard) ---------- */
 .kanban-column { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-secondary); box-shadow: none; }
 .kanban-column::before { display: none; }
@@ -1294,6 +1349,40 @@ td .btn-danger.btn-sm:hover:not(:disabled) { background: var(--danger-light); bo
 .analytics-ai-regenerate:hover:not(:disabled) { border-color: var(--border-strong); background: var(--bg-hover); }
 .analytics-demand-forecast-title > span { display: none; }
 .analytics-demand-forecast-description { border: 0; background: transparent; color: var(--text-muted); padding: 0; font-size: 13px; }
+/* Expected busiest period, above the demand chart. Built like the AI
+   provenance strip: a neutral panel, an icon tile, a quiet label, the value,
+   and one line of detail. Primary when a peak stands out, muted when not. */
+.forecast-peak {
+  --peak-accent: var(--primary);
+  --peak-tint: var(--primary-50);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+}
+.forecast-peak.is-flat { --peak-accent: var(--text-muted); --peak-tint: var(--bg-secondary); }
+.forecast-peak-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: var(--peak-tint);
+  color: var(--peak-accent);
+}
+.forecast-peak-copy { display: flex; min-width: 0; flex-direction: column; gap: 1px; }
+.forecast-peak-label { color: var(--text-muted); font-size: 12px; font-weight: 500; }
+.forecast-peak-value { color: var(--text-primary); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.forecast-peak-detail { color: var(--text-secondary); font-size: 12.5px; line-height: 1.45; }
+/* The peak's bar in the demand chart takes the same colour as its icon. */
+.recharts-rectangle.forecast-peak-bar { fill: var(--primary); }
+[data-theme="dark"] .recharts-rectangle.forecast-peak-bar { fill: #bfe3f6; }
 /* Where an AI output came from: Gemini or the local baseline, with the reason. */
 .ai-source-badge { display: inline-flex; flex: 0 0 auto; align-items: center; font-weight: 600; white-space: nowrap; }
 .ai-source-gemini { background: var(--violet-light); color: var(--violet); }

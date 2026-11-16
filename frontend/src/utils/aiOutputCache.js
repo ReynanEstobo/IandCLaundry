@@ -4,7 +4,8 @@ export const AI_CACHE_FRESH_MS = 6 * 60 * 60 * 1000 // same data as when it was 
 export const AI_CACHE_REUSE_MS = 60 * 60 * 1000 // the data has changed since
 export const AI_CACHE_KEEP_MS = 24 * 60 * 60 * 1000 // last Gemini result, shown while Gemini cannot answer
 
-const LEGACY_PREFIXES = ['ai_forecast_v5_', 'ai_insights_v4_']
+// Older decision support held three recommendations; it now holds one per area.
+const LEGACY_PREFIXES = ['ai_forecast_v5_', 'ai_insights_v4_', 'ai_insights_v6:', 'ai_dashboard_v6:']
 const inFlight = new Map()
 
 // Joins an identical AI request that is already on its way instead of asking Gemini twice.

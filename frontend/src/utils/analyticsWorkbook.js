@@ -1,3 +1,4 @@
+import { decisionTitle } from './decisionAreas.js'
 import ExcelJS from 'exceljs'
 
 const COLORS = {
@@ -388,7 +389,7 @@ function addActionsSheet(workbook, model) {
   sheet.columns = [{ width: 11 }, { width: 28 }, { width: 70 }, { width: 19 }]
   titleBand(sheet, 'RECOMMENDED MANAGEMENT ACTIONS', 'AI-assisted suggestions written for practical management use', 4)
   sheet.addRow([])
-  const rows = model.aiInsights.map((item, index) => [index + 1, item.title, item.description, 'For review'])
+  const rows = model.aiInsights.map((item, index) => [index + 1, decisionTitle(item), item.description, 'For review'])
   addTable(sheet,
     ['Priority', 'Management Area', 'Recommended Action', 'Management Decision'],
     rows,

@@ -3,6 +3,8 @@ import {
   Building2,
   Download,
   PhilippinePeso,
+  Activity,
+  CalendarClock,
   Lightbulb,
   Percent,
   ShoppingBag,
@@ -22,6 +24,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
   ResponsiveContainer,
   Tooltip,
@@ -39,6 +42,9 @@ import { formatPeso } from '../utils/money'
 import { recordedPaymentAmount } from '../utils/businessForecast'
 import { branchPerformance } from '../utils/analyticsMetrics'
 import { buildAnalyticsReport } from '../utils/analyticsReport'
+import { UNAVAILABLE_DECISION_INSIGHTS } from '../utils/decisionAreas'
+import DecisionInsights from '../components/DecisionInsights'
+import { describeForecastPeak, forecastPeak } from '../utils/forecastPeak'
 import { aiCacheKey, aiServiceErrorReason, dataFingerprint, describeAiSource, lastGeminiResult, pruneLegacyAiCache, readAiCache, reusableAiCache, sharedAiRequest, writeAiCache } from '../utils/aiOutputCache'
 import AiSourceNote, { PENDING_AI_META } from '../components/AiSourceNote'
 import FormAlert from '../components/FormAlert'
@@ -506,8 +512,9 @@ export default function Analytics() {
       setAiLoading(true);
 
       const insightForecast = forecastOverride || forecastData;
+      const insightPeak = forecastPeak(insightForecast, chartGrouping(range, customRange));
       const dataVersion = dataFingerprint(`${orderData.length}-${expenseData.length}-${stats.totalRevenue || 0}-${stats.totalExpenses || 0}-${insightForecast.map((item) => `${item.predicted}:${item.predictedOrders}`).join(",")}`);
-      const cacheKey = aiCacheKey("insights", [selectedBranch, range, customRange.start, customRange.end]);
+      const cacheKey = aiCacheKey("decisions", [selectedBranch, range, customRange.start, customRange.end]);
       const cachedEntry = readAiCache(cacheKey);
       const showGeminiInsights = (entry, { isCached, reason = "" }) => {
         setAiInsights(entry.data);
@@ -536,11 +543,16 @@ export default function Analytics() {
           profit,
           totalOrders: orderData.length,
           averageOrderValue: stats.avgOrderValue || 0,
+          // Evidence for each recommendation area: services, staffing (forecast
+          // peak, staff, turnaround), inventory and branches.
           operationalSignals: [
+            ...(insightPeak ? [`Forecast peak · ${describeForecastPeak(insightPeak)}`] : []),
             ...operationalSummary.topServices.map((service) => `Service ${service.name}: ${service.orders} requests, ${formatPeso(service.revenue)} in service sales.`),
             ...operationalSummary.topBranches.map((branchMetric) => `Branch ${branchMetric.name}: ${branchMetric.orders} ${branchMetric.orders === 1 ? "order" : "orders"} created, ${formatPeso(branchMetric.revenue)} received.`),
             ...operationalSummary.staffPerformance.map((staff) => `${staff.name}: ${staff.completed} released, ${staff.created} created orders.`),
-            ...operationalSummary.lowStockItems.map((item) => `Low stock: ${item.name} has ${item.current_stock} ${item.unit} left at ${item.branch || "the selected branch"}.`),
+            ...(operationalSummary.lowStockItems.length
+              ? operationalSummary.lowStockItems.map((item) => `Low stock: ${item.name} has ${item.current_stock} ${item.unit} left at ${item.branch || "the selected branch"} (minimum ${item.minimum_stock}).`)
+              : ["No inventory item is at or below its minimum stock."]),
             `Repeat customers in the selected scope: ${operationalSummary.repeatCustomers}.`,
             `Released orders: ${operationalSummary.completedOrders}.`,
             operationalSummary.averageTurnaroundHours == null ? "Turnaround time is not yet available." : `Average turnaround from receiving to ready for pickup: ${operationalSummary.averageTurnaroundHours.toFixed(1)} hours.`,
@@ -645,23 +657,7 @@ Rules:
 
       setInsightAiMeta({ ...PENDING_AI_META, source: "baseline", reason: err.message || "Gemini did not return decision support." });
 
-      setAiInsights([
-        {
-          title: "Revenue Trend",
-          description: "AI insight unavailable; actual totals are shown above.",
-          recommendation: "Option: Compare periods before changing prices or spending.",
-        },
-        {
-          title: "Expense Monitoring",
-          description: "AI insight unavailable; recorded expenses are shown above.",
-          recommendation: "Option: Check unusual expenses before changing the budget.",
-        },
-        {
-          title: "Forecast Observation",
-          description: "AI insight unavailable; treat the forecast as an estimate.",
-          recommendation: "Option: Check live orders before changing staff coverage.",
-        },
-      ]);
+      setAiInsights(UNAVAILABLE_DECISION_INSIGHTS);
     } finally {
       if (requestId === insightRequestId.current) setAiLoading(false);
     }
@@ -669,6 +665,8 @@ Rules:
 
   // A custom date range is grouped by its own length, not by the period button.
   const descriptiveData = paymentChartData(payments, expenses, chartGrouping(range, customRange), customRange);
+  // The busiest forecast period, named above the demand chart.
+  const demandPeak = forecastPeak(forecastData, chartGrouping(range, customRange));
 
   const formatAiCacheTime = (timestamp) => timestamp
     ? new Date(timestamp).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })
@@ -1170,6 +1168,26 @@ Rules:
             </p>
           </div>
           {!forecastLoading && <AiSourceNote meta={forecastAiMeta} label="forecast" />}
+          {!forecastLoading && demandPeak && (
+            <div className={`forecast-peak${demandPeak.distinct ? "" : " is-flat"}`} role="note" aria-label={describeForecastPeak(demandPeak)}>
+              <span className="forecast-peak-icon" aria-hidden="true">
+                {demandPeak.distinct ? <CalendarClock size={18} /> : <Activity size={18} />}
+              </span>
+              <div className="forecast-peak-copy">
+                <span className="forecast-peak-label">
+                  {demandPeak.distinct ? `Expected busiest ${demandPeak.unit}` : "No distinct peak expected"}
+                </span>
+                <strong className="forecast-peak-value">
+                  {demandPeak.distinct ? demandPeak.label : `About ${demandPeak.average.toLocaleString("en-PH")} orders per ${demandPeak.unit}`}
+                </strong>
+                <span className="forecast-peak-detail">
+                  {demandPeak.distinct
+                    ? `About ${demandPeak.orders.toLocaleString("en-PH")} orders, against an average of ${demandPeak.othersAverage.toLocaleString("en-PH")} on other ${demandPeak.unit}s. Highlighted in the chart below.`
+                    : `No ${demandPeak.unit} stands more than 10% above the rest of the forecast.`}
+                </span>
+              </div>
+            </div>
+          )}
           {forecastLoading ? (
             <div className="analytics-demand-forecast-loading">
               <LoadingVisual label="Estimating order demand…" compact />
@@ -1182,7 +1200,15 @@ Rules:
                 <YAxis allowDecimals={false} />
                 <Tooltip content={<DemandForecastTooltip />} />
                 <Legend />
-                <Bar dataKey="predictedOrders" name="Estimated orders" fill="#0ea5e9" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="predictedOrders" name="Estimated orders" fill="#0ea5e9" radius={[6, 6, 0, 0]}>
+                  {forecastData.map((point, index) => (
+                    <Cell
+                      key={point.forecastDate || index}
+                      className={demandPeak?.distinct && index === demandPeak.index ? "forecast-peak-bar" : undefined}
+                      fill={demandPeak?.distinct && index === demandPeak.index ? "#0369a1" : "#0ea5e9"}
+                    />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           ) : (
@@ -1195,7 +1221,7 @@ Rules:
           className="card"
           style={{ gridColumn: "1 / -1" }}
         >
-          <div className="card-header">
+          <div className="card-header decision-support-header">
             <h3
               style={{
                 display: "flex",
@@ -1206,175 +1232,17 @@ Rules:
               <Lightbulb size={18} style={{ color: "#7c3aed" }} />
               Decision Support Options
             </h3>
+            <p className="decision-support-scope">
+              One option for each area: service demand, staffing, inventory usage, and branch performance.
+            </p>
           </div>
           {!aiLoading && <AiSourceNote meta={insightAiMeta} label="decision support" />}
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 14,
-            }}
-          >
-            {aiLoading && (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  color: "#a78bfa",
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                <InlineSkeleton label="AI is analyzing PHP revenue, demand, and operations…" />
-              </div>
-            )}
-            {aiLoading
-              ? [...Array(3)].map((_, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      display: "flex",
-                      gap: 14,
-                      padding: "16px",
-                      borderRadius: 14,
-                      background: "var(--bg-secondary)",
-                      border: "1px solid var(--border)",
-                      animation: "pulse 1.5s infinite",
-                    }}
-                  >
-                    {/* ICON SKELETON */}
-                    <div
-                      style={{
-                        width: 42,
-                        height: 42,
-                        borderRadius: 12,
-                        background: "var(--border)",
-                        flexShrink: 0,
-                      }}
-                    />
-
-                    {/* TEXT SKELETON */}
-                    <div style={{ flex: 1 }}>
-                      <div
-                        style={{
-                          height: 14,
-                          width: "35%",
-                          background: "var(--border)",
-                          borderRadius: 6,
-                          marginBottom: 10,
-                        }}
-                      />
-
-                      <div
-                        style={{
-                          height: 12,
-                          width: "100%",
-                          background: "var(--border)",
-                          borderRadius: 6,
-                          marginBottom: 8,
-                        }}
-                      />
-
-                      <div
-                        style={{
-                          height: 12,
-                          width: "80%",
-                          background: "var(--border)",
-                          borderRadius: 6,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ))
-              : aiInsights.map((item, i) => {
-                  let Icon = TrendingUp;
-                  let color = "#8b5cf6";
-                  let bg = "#faf5ff";
-
-                  if (item.title.toLowerCase().includes("revenue")) {
-                    Icon = PhilippinePeso;
-                    color = "#10b981";
-                    bg = "#ecfdf5";
-                  }
-
-                  if (item.title.toLowerCase().includes("expense")) {
-                    Icon = Wallet;
-                    color = "#ef4444";
-                    bg = "#fef2f2";
-                  }
-
-                  if (item.title.toLowerCase().includes("branch")) {
-                    Icon = Building2;
-                    color = "#3b82f6";
-                    bg = "#eff6ff";
-                  }
-
-                  return (
-                    <div
-                      key={i}
-                      style={{
-                        display: "flex",
-                        gap: 14,
-                        padding: "16px",
-                        borderRadius: 14,
-                        background: `color-mix(in srgb, ${color} 10%, var(--bg-card))`,
-                        border: "1px solid var(--border)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: 42,
-                          height: 42,
-                          borderRadius: 12,
-                          background: "var(--bg-card)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          flexShrink: 0,
-                        }}
-                      >
-                        <Icon size={20} style={{ color }} />
-                      </div>
-
-                      <div>
-                        <div
-                          style={{
-                            fontWeight: 700,
-                            marginBottom: 4,
-                            color,
-                          }}
-                        >
-                          {item.title}
-                        </div>
-
-                        <div
-                          style={{
-                            fontSize: 13.5,
-                            color: "var(--text-primary)",
-                            lineHeight: 1.6,
-                            fontWeight: 600,
-                            marginBottom: 5,
-                          }}
-                        >
-                          {item.recommendation || "Option to consider: review the signal below and verify current records before acting."}
-                        </div>
-
-                        <div
-                          style={{
-                            fontSize: 13.5,
-                            color: "var(--text-secondary)",
-                            lineHeight: 1.6,
-                          }}
-                        >
-                          <><strong>Signal:</strong> {item.description}</>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-          </div>
+          {aiLoading && (
+            <div className="decision-support-loading">
+              <InlineSkeleton label="AI is analyzing services, staffing, inventory, and branches…" />
+            </div>
+          )}
+          <DecisionInsights insights={aiInsights} loading={aiLoading} loadingLabel="Preparing decision-support options" />
         </div>
       </div>
       </div>
