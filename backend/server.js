@@ -10,7 +10,7 @@ import { listAuditLog, restoreRecord } from './controllers/auditController.js'
 import { signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from './controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from './controllers/staffProvisionController.js'
 import { getPublicServices, getPublicSettings, getPublicTurnstileConfig, sendContactMessage, trackOrder } from './controllers/publicController.js'
-import { generateFromPrompt, generateForecast, generateDecisionSupport } from './services/aiService.js'
+import { generateFromPrompt, generateForecastForAccount, generateDecisionSupport } from './services/aiService.js'
 import { events } from './services/realtimeService.js'
 import { resourceRoutes } from './routes/resourceRoutes.js'
 import { requestEmailChange, confirmEmailChange, verifyEmailChangeOtp } from './controllers/emailChangeController.js'
@@ -158,7 +158,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && path === 'notifications/email/retry') { const identity = await signedIn(); return write(response, 200, await retryEmailDelivery(await readBody(request), identity)) }
     if (request.method === 'POST' && path === 'notifications/sms') { const identity = await signedIn(); return write(response, 200, await sendCustomerSms(await readBody(request), identity)) }
     if (request.method === 'POST' && path === 'ai/generate') { requireAdmin(await signedIn()); return write(response, 200, await generateFromPrompt((await readBody(request)).prompt)) }
-    if (request.method === 'POST' && path === 'ai/forecast') { requireAdmin(await signedIn()); return write(response, 200, await generateForecast(await readBody(request))) }
+    if (request.method === 'POST' && path === 'ai/forecast') { const identity = await signedIn(); return write(response, 200, await generateForecastForAccount(await readBody(request), identity)) }
     if (request.method === 'POST' && path === 'ai/dss') { requireAdmin(await signedIn()); return write(response, 200, await generateDecisionSupport(await readBody(request))) }
     if (request.method === 'GET' && path === 'public/orders/track') return write(response, 200, await trackOrder(url.searchParams.get('q')))
     if (request.method === 'GET' && path === 'orders/page') return write(response, 200, await listOrdersPage(Object.fromEntries(url.searchParams), await signedIn()))

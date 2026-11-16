@@ -31,6 +31,8 @@ import { paymentTimestamp, recordedPaymentAmount, rollingDemandForecast } from "
 import { byBranch, days, quantity, shortBranch } from "../utils/alertText";
 import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorderQuantity } from "../utils/inventoryForecast";
 import { loadInventoryForecastHistory } from "../services/inventoryForecastHistory";
+import { loadNextMonthForecast } from "../services/revenueForecast";
+import RevenueForecastFigure from "../components/RevenueForecastFigure";
 import { formatPeso } from "../utils/money";
 
 export default function Dashboard() {
@@ -55,6 +57,9 @@ export default function Dashboard() {
   const [range, setRange] = useState("weekly");
   const [suggestions, setSuggestions] = useState([]);
   const [forecasts, setForecasts] = useState(null);
+  // Next month from the same Gemini forecast as Analytics → Monthly (all branches).
+  const [revenueForecast, setRevenueForecast] = useState({ status: "loading", result: null });
+  const revenueForecastRun = useRef(0);
   const [overviewAlertPage, setOverviewAlertPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [recentLoading, setRecentLoading] = useState(false);
@@ -181,6 +186,10 @@ export default function Dashboard() {
       setBackgroundRefreshing(true);
     }
     setRefreshError("");
+    // Loads beside the dashboard data; page and chart-range changes do not alter it.
+    const revenueForecastRequest = firstLoad || scope === "initial" || scope === "background"
+      ? refreshRevenueForecast()
+      : null;
     try {
     const todayStart = startOfToday();
     const today = todayStart.toISOString();
@@ -317,6 +326,8 @@ export default function Dashboard() {
     if (runAI && !aiInsights.length) {
       try {
         setAiLoading(true);
+        // Decision support reads the same forecast the revenue card shows.
+        const nextMonth = (await revenueForecastRequest)?.nextMonth || null;
         const reportableOrders = orders.filter((order) => order.status !== "cancelled");
         const trendData = buildChartData(reportableOrders, payments, range);
         const periodRevenue = trendData.reduce((sum, point) => sum + Number(point.revenue || 0), 0);
@@ -343,11 +354,15 @@ export default function Dashboard() {
               `${activeOrders} active orders and ${readyForPickup} orders ready for pickup.`,
               `${lowStockItems} low-stock inventory items.`,
               `Forecast workload today: ${fc.workloadLevel}. ${fc.workloadSummary}.`,
-              `Forecast monthly revenue: ₱${fc.predictedMonthlyRevenue.toLocaleString()}.`,
+              nextMonth
+                ? `Forecast for ${nextMonth.fullDate}: ₱${Number(nextMonth.predicted || 0).toLocaleString()} from about ${nextMonth.predictedOrders} orders.`
+                : `Collections in the last 30 days: ₱${fc.predictedMonthlyRevenue.toLocaleString()}.`,
             ],
           },
           trendData,
-          forecastData: [{ date: "next-month", predictedRevenue: fc.predictedMonthlyRevenue, predictedOrders: Math.round(fc.avgDailyOrders * 30) }],
+          forecastData: nextMonth
+            ? [{ date: nextMonth.forecastPeriod, predictedRevenue: nextMonth.predicted, predictedOrders: nextMonth.predictedOrders }]
+            : [],
           branch: "All branches",
           range,
         };
@@ -403,6 +418,20 @@ export default function Dashboard() {
       if (firstLoad || scope === "initial" || scope === "charts") setChartLoading(false);
       if (scope === "recent") setRecentLoading(false);
       if (scope === "background") setBackgroundRefreshing(false);
+    }
+  }
+
+  async function refreshRevenueForecast() {
+    const run = ++revenueForecastRun.current;
+    try {
+      const result = await loadNextMonthForecast(supabase);
+      if (run === revenueForecastRun.current) setRevenueForecast({ status: "ready", result });
+      return result;
+    } catch (error) {
+      console.error("Revenue forecast failed:", error);
+      // Keep the last figure on a failed background refresh.
+      if (run === revenueForecastRun.current) setRevenueForecast((current) => (current.result ? current : { status: "error", result: null }));
+      return null;
     }
   }
 
@@ -767,17 +796,12 @@ export default function Dashboard() {
                 <TrendingUp size={20} />
               </div>
               <div>
-                <span>Revenue forecast · next 30 days</span>
-                <strong>
-                  {formatPeso(forecasts.predictedMonthlyRevenue)}
-                </strong>
-                <small>Estimate from recent collections · not guaranteed</small>
-                <small className="staff-dss-option"><strong>Next:</strong> Compare with expenses.</small>
-                <small className="staff-dss-next">Estimate from recent collections · compare with expenses</small>
+                <RevenueForecastFigure forecast={revenueForecast} scopeNote="all branches · matches Analytics" />
                 {forecasts.revenueTrend !== 0 && (
                   <>
                   <span
                     className={`forecast-trend ${forecasts.revenueTrend > 0 ? "up" : "down"}`}
+                    title="Collections in the last 14 days compared with the 14 days before"
                   >
                     {forecasts.revenueTrend > 0 ? "↑" : "↓"}{" "}
                     {Math.abs(forecasts.revenueTrend)}%

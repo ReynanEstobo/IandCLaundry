@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useRealtime } from '../lib/useRealtime'
 import { useAuth } from '../context/AuthContext'
@@ -8,6 +8,8 @@ import { paymentTimestamp, rollingDemandForecast } from '../utils/businessForeca
 import { analyticsPeriod, staffDashboardChartData } from '../utils/chartDates'
 import { inventoryRunOutLabel, predictInventoryDaysLeft, suggestInventoryReorderQuantity } from '../utils/inventoryForecast'
 import DashboardCharts from '../components/DashboardCharts'
+import RevenueForecastFigure from '../components/RevenueForecastFigure'
+import { loadNextMonthForecast } from '../services/revenueForecast'
 import { days, quantity } from '../utils/alertText'
 import {
   Clock, AlertTriangle, ShoppingBag, CheckCircle2, Timer, User, Radio,
@@ -33,7 +35,6 @@ function buildBranchForecast(orderHistory, paymentHistory, lowStockItems) {
 
   return {
     ...baseline,
-    nextMonthRevenue: baseline.predictedMonthlyRevenue,
     restockItems: lowStockItems,
   }
 }
@@ -55,6 +56,22 @@ export default function StaffDashboard() {
   const [loadError, setLoadError] = useState('')
   const [chartRange, setChartRange] = useState('weekly')
   const [statusFilter, setStatusFilter] = useState('all')
+  // Next month from the same Gemini forecast as Analytics → Monthly, for this
+  // branch only: the database returns only this branch's records to staff.
+  const [revenueForecast, setRevenueForecast] = useState({ status: 'loading', result: null })
+  const revenueForecastRun = useRef(0)
+  const loadRevenueForecast = useCallback(async () => {
+    if (!branch) return
+    const run = ++revenueForecastRun.current
+    try {
+      const result = await loadNextMonthForecast(supabase, { branch })
+      if (run === revenueForecastRun.current) setRevenueForecast({ status: 'ready', result })
+    } catch (error) {
+      console.error('Branch revenue forecast failed:', error)
+      // Keep the last figure on a failed background refresh.
+      if (run === revenueForecastRun.current) setRevenueForecast(current => (current.result ? current : { status: 'error', result: null }))
+    }
+  }, [branch])
 
   const loadData = useCallback(async (background = false) => {
     if (!background) {
@@ -114,6 +131,7 @@ export default function StaffDashboard() {
   }, [chartRange])
 
   useEffect(() => { loadData() }, [loadData])
+  useEffect(() => { loadRevenueForecast() }, [loadRevenueForecast])
 
   // Realtime: refresh when orders or inventory change
   useRealtime([
@@ -124,7 +142,7 @@ export default function StaffDashboard() {
     'inventory_usage_log',
     'inventory_restocks',
     'service_inventory_requirements',
-  ], () => loadData(true))
+  ], () => { loadData(true); loadRevenueForecast() })
 
   function getTimeRemaining(estimatedCompletion) {
     if (!estimatedCompletion) return null
@@ -309,12 +327,7 @@ export default function StaffDashboard() {
           <div className="staff-dss-revenue">
             <span className="staff-dss-icon"><TrendingUp size={19} /></span>
             <div>
-              <span>Revenue forecast · next 30 days</span>
-              <strong>{formatPeso(branchForecast.nextMonthRevenue)}</strong>
-              <small className="staff-dss-next">Estimate · compare with expenses</small>
-              <small>Simple estimate based on recent 30-day collections; not guaranteed income.</small>
-              <small className="staff-dss-option"><strong>Option:</strong> Compare with expenses before budgeting.</small>
-              <small>Historical total, not cash on hand.</small>
+              <RevenueForecastFigure forecast={revenueForecast} scopeNote={`${branch || 'your branch'} only`} />
             </div>
           </div>
 

@@ -211,22 +211,35 @@ function limitInsightWords(text, maxWords = 18) {
   return `${words.slice(0, maxWords).join(' ').replace(/[.,;:!?]+$/, '')}…`
 }
 
-function localForecast(history, forecastDates) {
+// The monthly view asks for whole calendar months, each dated by its first
+// day and learned from daily observations. Older pages that still send 30
+// daily dates for the monthly view keep getting daily figures.
+const MONTH_START = /^\d{4}-\d{2}-01$/
+const daysInMonth = date => new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).getUTCDate()
+const asksForMonthTotals = (range, forecastDates) => range === 'monthly'
+  && forecastDates.every(date => MONTH_START.test(String(date)))
+
+function historyAverages(history) {
   const totals = history.reduce((result, day) => {
     result.revenue += Math.max(0, Number(day?.revenue) || 0)
     result.orders += Math.max(0, Number(day?.orders) || 0)
     return result
   }, { revenue: 0, orders: 0 })
   const days = Math.max(history.length, 1)
-  const averageRevenue = Math.round(totals.revenue / days)
-  const averageOrders = Math.round(totals.orders / days)
+  return { revenue: totals.revenue / days, orders: totals.orders / days }
+}
 
-  return forecastDates.map(date => ({
-    date,
-    predictedRevenue: averageRevenue,
-    predictedOrders: averageOrders,
-    confidence: 'low',
-  }))
+function localForecast(history, forecastDates, monthTotals = false) {
+  const average = historyAverages(history)
+  return forecastDates.map(date => {
+    const daysCovered = monthTotals ? daysInMonth(date) : 1
+    return {
+      date,
+      predictedRevenue: Math.round(average.revenue * daysCovered),
+      predictedOrders: Math.round(average.orders * daysCovered),
+      confidence: 'low',
+    }
+  })
 }
 
 function localDecisionSupport(metrics, forecastData) {
@@ -296,9 +309,9 @@ async function askGeminiSafely(prompt, validate, fresh = false) {
   }
 }
 
-function baselineForecast(history, forecastDates, { reason, reasonMessage, retryAfterMs = null }) {
+function baselineForecast(history, forecastDates, { reason, reasonMessage, retryAfterMs = null }, monthTotals = false) {
   return {
-    predictions: localForecast(history, forecastDates),
+    predictions: localForecast(history, forecastDates, monthTotals),
     insights: [{ title: 'Local trend baseline', description: `${reasonMessage} This forecast uses the average of the recorded data and should be treated as low confidence.` }],
     method: 'Local trend baseline · low confidence',
     model: 'Local fallback',
@@ -343,6 +356,10 @@ export async function generateForecast({ history, forecastDates, branch, range, 
   // counting them as zero-order days would drag every average down.
   const firstRecorded = history.findIndex(day => (Number(day?.orders) || 0) > 0 || (Number(day?.revenue) || 0) > 0)
   if (firstRecorded > 0) history = history.slice(firstRecorded)
+  const monthTotals = asksForMonthTotals(range, forecastDates)
+  // A month forecast reaches further ahead than a day forecast, so it needs
+  // more recorded days before its confidence may rise.
+  const [mediumAt, highAt] = monthTotals ? [90, 365] : [28, 90]
 
   // A newly opened branch or a narrow date filter may legitimately contain no
   // orders. There is nothing for Gemini to learn from, so say so plainly.
@@ -350,8 +367,20 @@ export async function generateForecast({ history, forecastDates, branch, range, 
     return baselineForecast(history, forecastDates, {
       reason: 'no_data',
       reasonMessage: 'No orders or payments were recorded in this period, so there was nothing to send to Gemini.',
-    })
+    }, monthTotals)
   }
+
+  const dailyAverage = historyAverages(history)
+  const monthInstructions = monthTotals
+    ? `
+Each forecast date is the first day of a calendar month. Predict the TOTAL revenue and TOTAL orders for that whole month (about the daily level times the days in the month), not a single day.
+Recorded daily averages: ${JSON.stringify({ revenue: Math.round(dailyAverage.revenue), orders: Math.round(dailyAverage.orders * 10) / 10 })}
+Days in each forecast month: ${JSON.stringify(Object.fromEntries(forecastDates.map(date => [date, daysInMonth(date)])))}`
+    : ''
+  // A month total far below the recorded daily pace means the model answered
+  // per day; such a reply is retried like any other unusable one.
+  const validMonthTotals = items => !monthTotals || items.every((item, index) =>
+    toAmount(item.predictedOrders) >= (dailyAverage.orders * daysInMonth(forecastDates[index])) / 4)
 
   const response = await askGeminiSafely(`You are assisting a laundry business manager with a revenue-and-demand forecast.
 Use only the supplied dated historical totals. Weekly and monthly selections use daily observations; yearly selections use yearly observations. Do not invent events, customers, or operational facts.
@@ -360,7 +389,7 @@ Branch scope: ${branch || 'All branches'}
 Report range: ${range}
 Currency: Philippine pesos (PHP / ₱). Every revenue amount is in PHP, never US dollars.
 Historical observations: ${JSON.stringify(history)}
-Forecast dates: ${JSON.stringify(forecastDates)}
+Forecast dates: ${JSON.stringify(forecastDates)}${monthInstructions}
 
 Return ONLY valid JSON in exactly this shape:
 {"predictions":[{"date":"YYYY-MM-DD","predictedRevenue":0,"predictedOrders":0,"confidence":"low|medium|high"}],"insights":[{"title":"...","description":"..."}],"method":"short description"}
@@ -370,13 +399,17 @@ Rules:
 - predictedRevenue and predictedOrders must be non-negative numbers.
 - predictedRevenue is a Philippine-peso (PHP) amount.
 - Make conservative forecasts when history is sparse.
-- Use low confidence with fewer than 28 historical observations, medium with 28–89, and high only with at least 90 observations and a consistent pattern. The server will enforce this ceiling.
+- Use low confidence with fewer than ${mediumAt} historical observations, medium with ${mediumAt}–${highAt - 1}, and high only with at least ${highAt} observations and a consistent pattern. The server will enforce this ceiling.
 - Provide 2 or 3 practical recommendations covering peak demand, staffing, inventory, service demand, or branch performance when supported by the data.
-- Do not use markdown.`, text => forecastPredictions(parseJsonObject(text), forecastDates), refresh)
+- Do not use markdown.`, text => {
+    const result = forecastPredictions(parseJsonObject(text), forecastDates)
+    if (!validMonthTotals(result.items)) throw new Error('Daily figures were returned for a monthly forecast')
+    return result
+  }, refresh)
 
   if (!response.data) {
     logGeminiFallback('forecasting', response.reasonMessage)
-    return baselineForecast(history, forecastDates, response)
+    return baselineForecast(history, forecastDates, response, monthTotals)
   }
   const { parsed, items } = response.data
   const historicalOrderCounts = history.map(day => Math.max(0, Number(day?.orders) || 0))
@@ -391,7 +424,7 @@ Rules:
   const predictions = forecastDates.map((date, index) => {
     const item = items[index]
     const modelConfidence = ['low', 'medium', 'high'].includes(item.confidence) ? item.confidence : 'low'
-    const confidenceCeiling = history.length >= 90 && stableOrderPattern ? 'high' : history.length >= 28 ? 'medium' : 'low'
+    const confidenceCeiling = history.length >= highAt && stableOrderPattern ? 'high' : history.length >= mediumAt ? 'medium' : 'low'
     const confidenceRank = { low: 0, medium: 1, high: 2 }
     return {
       date,
@@ -411,6 +444,15 @@ Rules:
     generatedAt: response.generatedAt,
     cached: Boolean(response.cached),
   }
+}
+
+// Administrators forecast any scope. A staff account may forecast only its
+// own branch: the records it can read are already limited to that branch,
+// and the forecast is always labelled with it, whatever the page sent.
+export function generateForecastForAccount(input, identity) {
+  if (identity?.role === 'admin') return generateForecast(input || {})
+  if (identity?.role === 'staff' && identity.branch) return generateForecast({ ...(input || {}), branch: identity.branch })
+  throw Object.assign(new Error('Only administrators and branch staff can use forecasts.'), { status: 403 })
 }
 
 export async function generateDecisionSupport({ metrics, trendData, forecastData, branch, range, refresh = false }) {

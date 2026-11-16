@@ -6,7 +6,7 @@ import { listAuditLog, restoreRecord } from '../backend/controllers/auditControl
 import { signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from '../backend/controllers/authController.js'
 import { provisionStaff, resetStaffCredentials, updateProvisionedStaff } from '../backend/controllers/staffProvisionController.js'
 import { getPublicServices, getPublicSettings, getPublicTurnstileConfig, sendContactMessage, trackOrder } from '../backend/controllers/publicController.js'
-import { generateFromPrompt, generateForecast, generateDecisionSupport } from '../backend/services/aiService.js'
+import { generateFromPrompt, generateForecastForAccount, generateDecisionSupport } from '../backend/services/aiService.js'
 import { resourceRoutes } from '../backend/routes/resourceRoutes.js'
 import { configureRuntimeEnv } from '../backend/config/supabase.js'
 import { requestEmailChange, confirmEmailChange, verifyEmailChangeOtp } from '../backend/controllers/emailChangeController.js'
@@ -186,7 +186,7 @@ async function api(request, env) {
   if (method === 'POST' && path === 'notifications/email/retry') { const identity = await signedIn(); return json(await retryEmailDelivery(await body(request), identity)) }
   if (method === 'POST' && path === 'notifications/sms') { const identity = await signedIn(); return json(await sendCustomerSms(await body(request), identity)) }
   if (method === 'POST' && path === 'ai/generate') { requireAdmin(await signedIn()); return json(await generateFromPrompt((await body(request)).prompt)) }
-  if (method === 'POST' && path === 'ai/forecast') { requireAdmin(await signedIn()); return json(await generateForecast(await body(request))) }
+  if (method === 'POST' && path === 'ai/forecast') { const identity = await signedIn(); return json(await generateForecastForAccount(await body(request), identity)) }
   if (method === 'POST' && path === 'ai/dss') { requireAdmin(await signedIn()); return json(await generateDecisionSupport(await body(request))) }
   if (method === 'GET' && path === 'public/orders/track') return json(await trackOrder(url.searchParams.get('q')))
   if (method === 'GET' && path === 'orders/page') return json(await listOrdersPage(Object.fromEntries(url.searchParams), await signedIn()))

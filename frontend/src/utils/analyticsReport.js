@@ -217,7 +217,7 @@ export function buildAnalyticsReport(input) {
     [],
     ['CASH-RECEIPT AND DEMAND FORECAST'],
     ['Forecast Date', 'Estimated Customer Payments (PHP)', 'Estimated Orders', 'Confidence in Estimate'],
-    ...model.forecastData.map((item) => [item.forecastDate || item.date, number(item.predicted), number(item.predictedOrders), confidenceLabel(item.confidence)]),
+    ...model.forecastData.map((item) => [item.forecastPeriod || item.forecastDate || item.date, number(item.predicted), number(item.predictedOrders), confidenceLabel(item.confidence)]),
     ['Forecast Total', metrics.forecastRevenue, metrics.forecastOrders, ''],
     ['Forecast Method', model.forecastModel],
     ['Forecast Source', model.forecastSource],
@@ -253,7 +253,7 @@ export function buildAnalyticsReport(input) {
     ? model.operationalSummary.outstandingBalances.map((item) => `<tr><td><strong>${html(item.customerName)}</strong></td><td>${html(item.phone || '—')}</td><td>${html((item.orderNumbers || []).join(', ') || '—')}</td><td>${html(item.branches || 'Unassigned')}</td><td class="money danger">${peso(item.remainingBalance)}</td></tr>`).join('')
     : emptyRow(5, 'No customer has an outstanding balance in this reporting scope.')
   const forecastRows = model.forecastData.length
-    ? model.forecastData.map((item) => `<tr><td>${html(item.forecastDate || item.date)}</td><td class="money">${peso(item.predicted)}</td><td class="number">${number(item.predictedOrders)}</td><td><span class="confidence ${html(text(item.confidence).toLowerCase())}">${html(confidenceLabel(item.confidence))}</span></td></tr>`).join('')
+    ? model.forecastData.map((item) => `<tr><td>${html(item.forecastPeriod || item.forecastDate || item.date)}</td><td class="money">${peso(item.predicted)}</td><td class="number">${number(item.predictedOrders)}</td><td><span class="confidence ${html(text(item.confidence).toLowerCase())}">${html(confidenceLabel(item.confidence))}</span></td></tr>`).join('')
     : emptyRow(4, 'No forecast is available for this reporting scope.')
   const insightMarkup = model.aiInsights.length
     ? model.aiInsights.map((item, index) => `<article class="priority"><span>${index + 1}</span><div><h3>${html(item.title)}</h3><p>${html(item.description)}</p></div></article>`).join('')

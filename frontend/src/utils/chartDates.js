@@ -1,4 +1,4 @@
-import { addDays, eachDayOfInterval, eachMonthOfInterval, eachYearOfInterval, endOfDay, format, parseISO, startOfDay, subDays } from 'date-fns'
+import { addDays, addMonths, addYears, eachDayOfInterval, eachMonthOfInterval, eachYearOfInterval, endOfDay, format, parseISO, startOfDay, startOfMonth, subDays } from 'date-fns'
 import { recordedRevenue } from './businessForecast.js'
 
 const paymentTimestamp = payment => payment?.paid_at || payment?.payment_date || payment?.created_at
@@ -31,6 +31,27 @@ export function chartGrouping(range, customRange = {}) {
 
 export function dailyChartLabel(value) {
   return format(typeof value === 'string' ? parseISO(value) : value, 'EEE, MMM d')
+}
+
+// A forecast is grouped like the trend chart beside it: days in the weekly
+// view, calendar months in the monthly view, years in the yearly view.
+export function forecastLabels(grouping, value) {
+  const date = typeof value === 'string' ? parseISO(value) : value
+  if (grouping === 'monthly') return { date: format(date, 'MMM yyyy'), fullDate: format(date, 'MMMM yyyy'), forecastPeriod: format(date, 'MMM yyyy') }
+  if (grouping === 'yearly') return { date: format(date, 'yyyy'), fullDate: format(date, 'yyyy'), forecastPeriod: format(date, 'yyyy') }
+  return { date: dailyChartLabel(date), fullDate: format(date, 'EEEE, MMMM d, yyyy') }
+}
+
+// The periods a forecast covers: the next 7 days from today, the next 6
+// calendar months (dated by their first day), or 5 years from this one.
+export function forecastPeriods(grouping, now = new Date()) {
+  const length = grouping === 'monthly' ? 6 : grouping === 'yearly' ? 5 : 7
+  return Array.from({ length }, (_, index) => {
+    const date = grouping === 'monthly' ? startOfMonth(addMonths(now, index + 1))
+      : grouping === 'yearly' ? addYears(now, index)
+        : addDays(now, index)
+    return { forecastDate: format(date, 'yyyy-MM-dd'), ...forecastLabels(grouping, date) }
+  })
 }
 
 export function chartTooltipDate(label, payload) {

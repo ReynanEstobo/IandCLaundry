@@ -30,13 +30,14 @@ import {
 } from "recharts";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
-import { generateAiForecast, generateDecisionSupport } from "../services/geminiService";
+import { generateDecisionSupport } from "../services/geminiService";
+import { loadRevenueForecast } from "../services/revenueForecast";
 import { useShowPageLoader, InlineSkeleton, LoadingVisual, PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from '../components/LoadingButton'
-import { analyticsPeriod, chartGrouping, chartTooltipDate, dailyChartLabel, paymentChartData } from '../utils/chartDates'
+import { analyticsPeriod, chartGrouping, chartTooltipDate, paymentChartData } from '../utils/chartDates'
 import { formatPeso } from '../utils/money'
 import { recordedPaymentAmount } from '../utils/businessForecast'
-import { analyticsDailyHistory, branchPerformance, fromFirstRecordedDay } from '../utils/analyticsMetrics'
+import { branchPerformance } from '../utils/analyticsMetrics'
 import { buildAnalyticsReport } from '../utils/analyticsReport'
 import { aiCacheKey, aiServiceErrorReason, dataFingerprint, describeAiSource, lastGeminiResult, pruneLegacyAiCache, readAiCache, reusableAiCache, sharedAiRequest, writeAiCache } from '../utils/aiOutputCache'
 import AiSourceNote, { PENDING_AI_META } from '../components/AiSourceNote'
@@ -473,187 +474,24 @@ export default function Analytics() {
     const requestId = ++forecastRequestId.current;
     try {
       setForecastLoading(true);
-
-      // ─────────────────────────────────────
-      // GET HISTORICAL REVENUE
-      // ─────────────────────────────────────
-      // ─────────────────────────────────────
-      // COMPUTE MOVING AVERAGE
-      // ─────────────────────────────────────
-      const historyPeriod = analyticsPeriod(range, customRange);
-      // Start from the first day with any order or payment, so the months
-      // before the shop began recording are not read as zero-order days.
-      const dailyHistory = fromFirstRecordedDay(analyticsDailyHistory(orderData, paymentData, historyPeriod.start, historyPeriod.end));
-      const forecastHistory = range === "yearly"
-        ? [...dailyHistory.reduce((years, day) => {
-            const year = day.date.slice(0, 4);
-            const total = years.get(year) || { date: `${year}-01-01`, revenue: 0, orders: 0 };
-            total.revenue += day.revenue;
-            total.orders += day.orders;
-            years.set(year, total);
-            return years;
-          }, new Map()).values()]
-        : dailyHistory.slice(-365);
-      const averageRevenue =
-        forecastHistory.length > 0
-          ? forecastHistory.reduce((sum, day) => sum + day.revenue, 0) /
-            forecastHistory.length
-          : 0;
-      const averageOrders =
-        forecastHistory.length > 0
-          ? forecastHistory.reduce((sum, day) => sum + day.orders, 0) /
-            forecastHistory.length
-          : 0;
-
-      const today = new Date();
-
-      let forecastLength = 7;
-
-      // ─────────────────────────────────────
-      // FORECAST LENGTH
-      // ─────────────────────────────────────
-      if (range === "weekly") {
-        forecastLength = 7;
-      } else if (range === "monthly") {
-        forecastLength = 30;
-      } else {
-        forecastLength = 5;
-      }
-
-      // ─────────────────────────────────────
-      // GENERATE FUTURE FORECAST
-      // ─────────────────────────────────────
-      const futureForecast = [];
-
-      for (let i = 0; i < forecastLength; i++) {
-        const futureDate = new Date(today);
-
-        // WEEKLY FORECAST
-        if (range === "weekly") {
-          futureDate.setDate(today.getDate() + i);
-        }
-
-        // MONTHLY FORECAST
-        else if (range === "monthly") {
-          futureDate.setDate(today.getDate() + i);
-        }
-
-        // YEARLY FORECAST
-        else {
-          futureDate.setFullYear(today.getFullYear() + i);
-        }
-
-        // ─────────────────────────────────
-        // SIMPLE TREND GROWTH
-        // ─────────────────────────────────
-        const growthRate =
-          range === "weekly" ? 0.01 : range === "monthly" ? 0.025 : 0.08;
-
-        const fluctuation = 0;
-
-        const predictedRevenue = Math.round(
-          averageRevenue * (1 + i * growthRate + fluctuation),
-        );
-
-        // ─────────────────────────────────
-        // LABEL FORMAT
-        // ─────────────────────────────────
-        let label = "";
-
-        // WEEKLY
-        if (range === "weekly") {
-          label = dailyChartLabel(futureDate);
-        }
-
-        // MONTHLY
-        else if (range === "monthly") {
-          label = format(futureDate, "MMM dd");
-        }
-
-        // YEARLY
-        else {
-          label = format(futureDate, "yyyy");
-        }
-
-        futureForecast.push({
-          date: label,
-          forecastDate: format(futureDate, "yyyy-MM-dd"),
-          predicted: predictedRevenue,
-          predictedOrders: Math.max(0, Math.round(averageOrders * (1 + i * growthRate))),
-          confidence: "low",
-          isPrediction: true,
-        });
-      }
-
-      // ─────────────────────────────────────
-      // GEMINI FORECAST (cached per filter)
-      // ─────────────────────────────────────
-      // The local trend above is shown only when no Gemini forecast exists
-      // for this filter. A cached Gemini forecast is reused instead of asking
-      // again, so the Gemini request quota is not spent on every page load.
-      const forecastDates = futureForecast.map((item) => item.forecastDate);
-      const forecastCacheKey = aiCacheKey("forecast", [selectedBranch, range, customRange.start, customRange.end]);
-      const dataVersion = dataFingerprint(forecastHistory);
-      const cachedEntry = readAiCache(forecastCacheKey);
-      // A forecast made on another day covers other dates, so it is not reused.
-      const sameDatesEntry = cachedEntry?.forecastDates === forecastDates.join("|") ? cachedEntry : null;
-
-      const showGeminiForecast = (entry, { isCached, reason = "" }) => {
-        setForecastData(entry.data);
-        setForecastModel(`Gemini-assisted forecast (${entry.model})`);
-        setForecastAiMeta({ source: "gemini", model: entry.model, savedAt: entry.savedAt, isCached, staleData: entry.dataVersion !== dataVersion, reason });
-        forecastOutcome.current = { source: isCached && reason ? "earlier" : "gemini", reason: reason || "" };
-        return entry.data;
-      };
-      const toChartForecast = (predictions) => predictions.map((prediction) => ({
-        date:
-          range === "yearly"
-            ? format(new Date(prediction.date), "yyyy")
-            : range === "monthly"
-              ? format(new Date(prediction.date), "MMM dd")
-              : dailyChartLabel(prediction.date),
-        forecastDate: prediction.date,
-        predicted: prediction.predictedRevenue,
-        predictedOrders: prediction.predictedOrders,
-        confidence: prediction.confidence,
-        isPrediction: true,
-      }));
-
-      const reusableForecast = !forceRefresh && reusableAiCache(sameDatesEntry, dataVersion);
-      if (reusableForecast) return showGeminiForecast(reusableForecast, { isCached: true });
-
-      let aiForecast;
-      try {
-        aiForecast = await sharedAiRequest(`${forecastCacheKey}|${dataVersion}|${forecastDates.join("|")}|${forceRefresh}`, () => generateAiForecast({ history: forecastHistory, forecastDates, branch: selectedBranch, range, refresh: forceRefresh }));
-      } catch (aiError) {
-        console.warn("Forecast service failed; using the local trend baseline.", aiError.message);
-        aiForecast = { source: "baseline", reasonMessage: aiServiceErrorReason(aiError) };
-      }
+      // The same forecast the dashboards read (services/revenueForecast.js),
+      // grouped like the trend chart: days, calendar months or years.
+      const result = await loadRevenueForecast({
+        orders: orderData,
+        payments: paymentData,
+        period: analyticsPeriod(range, customRange),
+        grouping: chartGrouping(range, customRange),
+        branch: selectedBranch,
+        customRange,
+        forceRefresh,
+      });
       // A newer filter may have started while this one was waiting.
       if (requestId !== forecastRequestId.current) return null;
-
-      if (aiForecast.source === "gemini" && Array.isArray(aiForecast.predictions)) {
-        const entry = {
-          data: toChartForecast(aiForecast.predictions),
-          model: aiForecast.model,
-          savedAt: Date.parse(aiForecast.generatedAt) || Date.now(),
-          dataVersion,
-          forecastDates: forecastDates.join("|"),
-        };
-        writeAiCache(forecastCacheKey, entry);
-        return showGeminiForecast(entry, { isCached: Boolean(aiForecast.cached) });
-      }
-
-      const reason = aiForecast.reasonMessage || "Gemini did not return a forecast.";
-      const earlierForecast = aiForecast.reason !== "no_data" && lastGeminiResult(sameDatesEntry);
-      if (earlierForecast) return showGeminiForecast(earlierForecast, { isCached: true, reason });
-
-      const baselineForecast = Array.isArray(aiForecast.predictions) ? toChartForecast(aiForecast.predictions) : futureForecast;
-      setForecastData(baselineForecast);
-      setForecastModel("Local trend baseline · low confidence");
-      setForecastAiMeta({ source: "baseline", model: "", savedAt: null, isCached: false, staleData: false, reason });
-      forecastOutcome.current = { source: "baseline", reason };
-      return baselineForecast;
+      setForecastData(result.data);
+      setForecastModel(result.model);
+      setForecastAiMeta(result.meta);
+      forecastOutcome.current = result.outcome;
+      return result.data;
     } catch (err) {
       console.error(err);
 
@@ -1300,7 +1138,7 @@ Rules:
             </div>
           ) : (
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={forecastData.map(point => ({ ...point, date: point.forecastDate && range !== 'yearly' ? dailyChartLabel(point.forecastDate) : point.date }))}>
+            <BarChart data={forecastData}>
               <CartesianGrid
                 strokeDasharray="3 3"
                 stroke="var(--chart-grid, #f3f4f6)"
@@ -1338,7 +1176,7 @@ Rules:
             </div>
           ) : forecastData.length ? (
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={forecastData.map(point => ({ ...point, date: point.forecastDate && range !== 'yearly' ? dailyChartLabel(point.forecastDate) : point.date }))}>
+              <BarChart data={forecastData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid, #f3f4f6)" vertical={false} />
                 <XAxis dataKey="date" minTickGap={24} tick={{ fontSize: 11 }} interval="preserveStartEnd" />
                 <YAxis allowDecimals={false} />

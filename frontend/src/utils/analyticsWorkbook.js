@@ -353,7 +353,7 @@ function addPlanningSheet(workbook, model) {
   )
   sheet.addRow([])
   sectionBand(sheet, sheet.lastRow.number + 1, 'EXPECTED ACTIVITY AHEAD', 6, COLORS.purple)
-  const forecastRows = model.forecastData.map((item) => [item.forecastDate || item.date, number(item.predicted), number(item.predictedOrders), text(item.confidence || 'Low')])
+  const forecastRows = model.forecastData.map((item) => [item.forecastPeriod || item.forecastDate || item.date, number(item.predicted), number(item.predictedOrders), text(item.confidence || 'Low')])
   addTable(sheet,
     ['Forecast Date', 'Estimated Customer Payments', 'Estimated Orders', 'Confidence'],
     forecastRows,
