@@ -32,6 +32,60 @@ function withGemini(t, handler) {
   return calls
 }
 
+// Three weeks of daily totals from Sunday 25 October 2026 to Saturday 14
+// November, each call with its own revenue so the reply cache never links tests.
+const threeWeeks = () => {
+  const offset = (historyCounter += 1)
+  return Array.from({ length: 21 }, (_, i) => ({
+    date: new Date(Date.UTC(2026, 9, 25 + i)).toISOString().slice(0, 10),
+    revenue: 5000 + i * 37 + offset,
+    orders: 20 + (i % 7),
+  }))
+}
+const nextWeek = ['2026-11-15', '2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21']
+const promptOf = options => JSON.parse(options.body).contents[0].parts[0].text
+
+test('ai forecast: Gemini forecasts from weekday averages and the recent trend', async t => {
+  let prompt = ''
+  withGemini(t, (model, n, options) => {
+    prompt = promptOf(options)
+    return geminiReply(JSON.stringify({ predictions: nextWeek.map((date, i) => prediction(date, 6101 + i, 24)), insights: [], method: 'weekday averages' }))
+  })
+  const result = await generateForecast({ history: threeWeeks(), forecastDates: nextWeek, branch: 'all', range: 'weekly' })
+  assert.equal(result.source, 'gemini')
+  assert.match(prompt, /Weekday averages over all recorded weeks \(per day\): \{"Sun":\{"recordedDays":3,"averageOrders":20,/)
+  assert.match(prompt, /Recent trend: \{"recentDays":14,"earlierDays":7,/)
+  assert.match(prompt, /Weekday of each forecast date: \{"2026-11-15":"Sun","2026-11-16":"Mon",/)
+  assert.match(prompt, /start each date from the average of its weekday, then apply the recent trend/)
+  assert.match(prompt, /Never copy a single past day's revenue or orders/)
+})
+
+test('ai forecast: a reply that repeats the latest week is not used; the next model is asked', async t => {
+  const history = threeWeeks()
+  const lastWeek = history.slice(-7)
+  const copied = JSON.stringify({ predictions: nextWeek.map((date, i) => prediction(date, lastWeek[i].revenue, lastWeek[i].orders)), insights: [], method: 'same day last week' })
+  const forecast = JSON.stringify({ predictions: nextWeek.map((date, i) => prediction(date, 6150 + i * 11, 23)), insights: [], method: 'weekday averages' })
+  const calls = withGemini(t, model => geminiReply(model === 'gemini-2.5-flash' ? copied : forecast))
+  const result = await generateForecast({ history, forecastDates: nextWeek, branch: 'all', range: 'weekly' })
+  assert.equal(result.source, 'gemini')
+  assert.equal(result.model, 'gemini-2.5-flash-lite')
+  assert.deepEqual(calls, ['gemini-2.5-flash', 'gemini-2.5-flash-lite'])
+  assert.deepEqual(result.predictions.map(item => item.predictedRevenue), nextWeek.map((date, i) => 6150 + i * 11))
+})
+
+test('ai forecast: a month forecast is told how many of each weekday every month holds', async t => {
+  let prompt = ''
+  const months = ['2026-12-01', '2027-01-01']
+  withGemini(t, (model, n, options) => {
+    prompt = promptOf(options)
+    return geminiReply(JSON.stringify({ predictions: months.map(date => prediction(date, 170000, 700)), insights: [], method: 'weekday averages' }))
+  })
+  const result = await generateForecast({ history: threeWeeks(), forecastDates: months, branch: 'all', range: 'monthly' })
+  assert.equal(result.source, 'gemini')
+  assert.match(prompt, /Weekdays in each forecast month: \{"2026-12-01":\{"Sun":4,"Mon":4,"Tue":5,"Wed":5,"Thu":5,"Fri":4,"Sat":4\}/)
+  assert.match(prompt, /for each month, add up the weekday averages for every day of that month/)
+})
+
 test('ai forecast: a reply with a stray character after the JSON is still used', async t => {
   withGemini(t, () => geminiReply(`${forecastReply}\n}`))
   const result = await generateForecast({ history: freshHistory(), forecastDates, branch: 'all', range: 'weekly' })

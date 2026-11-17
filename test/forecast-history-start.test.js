@@ -46,7 +46,7 @@ test('the server forecast and its fallback ignore days before the shop started r
     return Response.json({ candidates: [{ content: { role: 'model', parts: [{ text: JSON.stringify({ predictions, insights: [], method: 'test' }) }] }, finishReason: 'STOP' }] })
   }
   const ai = await generateForecast({ history: [...empty, ...recorded.map(d => ({ ...d, revenue: d.revenue + 1 }))], forecastDates, branch: 'all', range: 'monthly' })
-  const sent = JSON.parse(/Historical observations: (\[.*?\])\nForecast dates/s.exec(prompt)[1])
+  const sent = JSON.parse(/Historical observations: (\[.*?\])\n/s.exec(prompt)[1])
   assert.equal(sent.length, 30)
   assert.equal(sent[0].date, '2026-02-20')
   assert.deepEqual(ai.predictions.map(p => p.confidence), ['medium', 'medium'], '30 recorded days allow medium, not high')

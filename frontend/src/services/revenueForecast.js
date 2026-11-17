@@ -1,4 +1,4 @@
-import { getDaysInMonth, parseISO } from 'date-fns'
+import { format, getDaysInMonth, parseISO } from 'date-fns'
 import { generateAiForecast } from './geminiService.js'
 import { analyticsDailyHistory, fromFirstRecordedDay } from '../utils/analyticsMetrics.js'
 import { analyticsPeriod, forecastLabels, forecastPeriods } from '../utils/chartDates.js'
@@ -13,10 +13,12 @@ import {
 // mean every page shows the same figures for the same branch scope.
 
 // What the forecast learns from: daily totals from the first recorded day
-// (the last 365), or yearly totals in the yearly view.
-export function forecastHistory(orders, payments, period, grouping) {
+// (the last 365), or yearly totals in the yearly view. Today is still being
+// recorded and is one of the forecast dates, so a daily history ends yesterday.
+export function forecastHistory(orders, payments, period, grouping, now = new Date()) {
   const daily = fromFirstRecordedDay(analyticsDailyHistory(orders, payments, period.start, period.end))
-  if (grouping !== 'yearly') return daily.slice(-365)
+  const today = format(now, 'yyyy-MM-dd')
+  if (grouping !== 'yearly') return daily.filter(day => day.date < today).slice(-365)
   return [...daily.reduce((years, day) => {
     const year = day.date.slice(0, 4)
     const total = years.get(year) || { date: `${year}-01-01`, revenue: 0, orders: 0 }
@@ -118,14 +120,14 @@ export async function loadRevenueForecast({ orders, payments, period, grouping, 
 }
 
 /**
- * The dashboards' revenue card: next month's figure from the same Monthly
- * forecast that Analytics shows for this branch scope. The records are read
- * exactly as Analytics reads them (this year so far; payments by collection
- * date; cancelled orders left out), so both pages ask for the same forecast.
+ * The records a forecast learns from: this year so far, payments by collection
+ * date, cancelled orders left out. The Monthly forecast, the dashboards' revenue
+ * card and the Weekly forecast all read these, so a Weekly forecast learns from
+ * every recorded week, not only the 7 days its chart shows.
  * `branch` is a branch name or 'all'; staff accounts are limited to their own
  * branch by the database, whatever is passed here.
  */
-export async function loadNextMonthForecast(supabase, { branch = 'all' } = {}) {
+export async function loadForecastRecords(supabase, { branch = 'all' } = {}) {
   const period = analyticsPeriod('monthly')
   const startDate = period.start.toISOString()
   const endDate = period.end.toISOString()
@@ -141,6 +143,15 @@ export async function loadNextMonthForecast(supabase, { branch = 'all' } = {}) {
   if (ordersRes.error || paymentsRes.error) throw ordersRes.error || paymentsRes.error
   const orders = (ordersRes.data || []).filter(order => order.status !== 'cancelled')
   const payments = (paymentsRes.data || []).filter(payment => payment.orders?.status !== 'cancelled' && recordedPaymentAmount(payment) > 0)
+  return { orders, payments, period }
+}
+
+/**
+ * The dashboards' revenue card: next month's figure from the same Monthly
+ * forecast that Analytics shows for this branch scope, from the same records.
+ */
+export async function loadNextMonthForecast(supabase, { branch = 'all' } = {}) {
+  const { orders, payments, period } = await loadForecastRecords(supabase, { branch })
   const result = await loadRevenueForecast({ orders, payments, period, grouping: 'monthly', branch })
   return { ...result, nextMonth: result.data[0] || null }
 }

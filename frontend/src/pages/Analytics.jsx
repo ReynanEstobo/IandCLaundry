@@ -34,7 +34,7 @@ import {
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { generateDecisionSupport } from "../services/geminiService";
-import { loadRevenueForecast } from "../services/revenueForecast";
+import { loadForecastRecords, loadRevenueForecast } from "../services/revenueForecast";
 import { useShowPageLoader, InlineSkeleton, LoadingVisual, PageError, PageLoader } from "../components/AsyncState";
 import LoadingButton from '../components/LoadingButton'
 import { analyticsPeriod, chartGrouping, chartTooltipDate, paymentChartData } from '../utils/chartDates'
@@ -481,11 +481,18 @@ export default function Analytics() {
     try {
       setForecastLoading(true);
       // The same forecast the dashboards read (services/revenueForecast.js),
-      // grouped like the trend chart: days, calendar months or years.
+      // grouped like the trend chart: days, calendar months or years. The
+      // Weekly view shows 7 days, but its forecast learns from every recorded
+      // week (the records the Monthly forecast reads), not from those 7 alone.
+      const weeklyPreset = range === "weekly" && !(customRange.start && customRange.end);
+      const learning = weeklyPreset
+        ? await loadForecastRecords(supabase, { branch: selectedBranch })
+        : { orders: orderData, payments: paymentData, period: analyticsPeriod(range, customRange) };
+      if (requestId !== forecastRequestId.current) return null;
       const result = await loadRevenueForecast({
-        orders: orderData,
-        payments: paymentData,
-        period: analyticsPeriod(range, customRange),
+        orders: learning.orders,
+        payments: learning.payments,
+        period: learning.period,
         grouping: chartGrouping(range, customRange),
         branch: selectedBranch,
         customRange,

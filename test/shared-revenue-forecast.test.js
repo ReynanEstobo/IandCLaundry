@@ -3,7 +3,7 @@ import test from 'node:test'
 import { configureRuntimeEnv } from '../backend/config/supabase.js'
 import { generateForecastForAccount } from '../backend/services/aiService.js'
 import { analyticsPeriod } from '../frontend/src/utils/chartDates.js'
-import { loadNextMonthForecast, loadRevenueForecast } from '../frontend/src/services/revenueForecast.js'
+import { forecastHistory, loadNextMonthForecast, loadRevenueForecast } from '../frontend/src/services/revenueForecast.js'
 
 // A browser-like localStorage, so the shared cache entry can be observed.
 const store = new Map()
@@ -119,4 +119,16 @@ test('forecast endpoint: staff get their own branch, others are refused', async 
   assert.match(prompts.at(-1), /Branch scope: 3rd Branch - Nasugbu\n/)
   assert.throws(() => generateForecastForAccount(input, { role: 'unassigned' }), error => error.status === 403)
   assert.throws(() => generateForecastForAccount(input, { role: 'staff', branch: null }), error => error.status === 403)
+})
+
+test('a daily forecast learns up to yesterday: today is still being recorded and is forecast instead', () => {
+  const now = new Date(2026, 10, 22, 9, 0)
+  const at = (day, hour) => new Date(2026, 10, day, hour).toISOString()
+  const orders = [{ id: 'a', created_at: at(20, 10), status: 'released' }, { id: 'b', created_at: at(21, 15), status: 'released' },
+    { id: 'c', created_at: at(22, 8), status: 'received' }]
+  const period = { start: new Date(2026, 9, 17), end: now }
+  const weekly = forecastHistory(orders, [], period, 'weekly', now)
+  assert.equal(weekly.at(-1).date, '2026-11-21')
+  assert.equal(weekly.reduce((sum, day) => sum + day.orders, 0), 2)
+  assert.equal(forecastHistory(orders, [], period, 'monthly', now).at(-1).date, '2026-11-21')
 })

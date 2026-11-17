@@ -229,6 +229,64 @@ function historyAverages(history) {
   return { revenue: totals.revenue / days, orders: totals.orders / days }
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DAILY_DATE = /^\d{4}-\d{2}-\d{2}$/
+const weekdayOf = date => WEEKDAYS[new Date(`${String(date).slice(0, 10)}T00:00:00Z`).getUTCDay()]
+const oneDecimal = value => Math.round(value * 10) / 10
+
+// What a daily or monthly forecast is built from: each weekday's average over
+// every recorded week, and how the last two weeks compare with the days
+// before. Gemini forecasts from these; left to work them out from a long list
+// of days, it tends to repeat the latest week instead.
+function weekdayProfile(history) {
+  const days = history.filter(day => DAILY_DATE.test(String(day?.date || '')))
+  if (days.length < 7) return null
+  const sums = Object.fromEntries(WEEKDAYS.map(name => [name, { days: 0, orders: 0, revenue: 0 }]))
+  for (const day of days) {
+    const entry = sums[weekdayOf(day.date)]
+    entry.days += 1
+    entry.orders += Math.max(0, Number(day.orders) || 0)
+    entry.revenue += Math.max(0, Number(day.revenue) || 0)
+  }
+  const weekdays = Object.fromEntries(WEEKDAYS.filter(name => sums[name].days).map(name => [name, {
+    recordedDays: sums[name].days,
+    averageOrders: oneDecimal(sums[name].orders / sums[name].days),
+    averageRevenue: Math.round(sums[name].revenue / sums[name].days),
+  }]))
+  let trend = null
+  if (days.length >= 21) {
+    const recent = historyAverages(days.slice(-14))
+    const earlier = historyAverages(days.slice(0, -14))
+    const change = (now, before) => (before > 0 ? Math.round((now / before - 1) * 100) : null)
+    trend = {
+      recentDays: 14,
+      earlierDays: days.length - 14,
+      recentAverageOrders: oneDecimal(recent.orders),
+      recentAverageRevenue: Math.round(recent.revenue),
+      ordersChangePercent: change(recent.orders, earlier.orders),
+      revenueChangePercent: change(recent.revenue, earlier.revenue),
+    }
+  }
+  return { weekdays, trend }
+}
+
+// How many of each weekday a calendar month (dated by its first day) holds.
+function weekdaysInMonth(monthStart) {
+  const counts = Object.fromEntries(WEEKDAYS.map(name => [name, 0]))
+  for (let day = 1; day <= daysInMonth(monthStart); day += 1) {
+    counts[weekdayOf(`${monthStart.slice(0, 8)}${String(day).padStart(2, '0')}`)] += 1
+  }
+  return counts
+}
+
+// A reply that repeats recorded days (the latest week moved forward) is not a
+// forecast. Revenue matching recent days to the peso gives it away.
+function repeatsRecordedDays(items, history) {
+  const recent = new Set(history.slice(-14).map(day => Math.round(Number(day?.revenue) || 0)).filter(value => value > 0))
+  const repeated = items.filter(item => recent.has(Math.round(toAmount(item?.predictedRevenue)))).length
+  return items.length >= 3 && repeated >= Math.max(3, Math.ceil(items.length / 2))
+}
+
 function localForecast(history, forecastDates, monthTotals = false) {
   const average = historyAverages(history)
   return forecastDates.map(date => {
@@ -382,13 +440,32 @@ Days in each forecast month: ${JSON.stringify(Object.fromEntries(forecastDates.m
   const validMonthTotals = items => !monthTotals || items.every((item, index) =>
     toAmount(item.predictedOrders) >= (dailyAverage.orders * daysInMonth(forecastDates[index])) / 4)
 
+  // Daily and monthly forecasts learn from daily observations: the system
+  // summarises them by weekday and trend, and Gemini forecasts from that.
+  const profile = range !== 'yearly' ? weekdayProfile(history) : null
+  const patternInstructions = profile
+    ? `
+Weekday averages over all recorded weeks (per day): ${JSON.stringify(profile.weekdays)}
+Recent trend: ${profile.trend ? JSON.stringify(profile.trend) : 'fewer than 21 recorded days, so no trend is given'}
+${monthTotals
+    ? `Weekdays in each forecast month: ${JSON.stringify(Object.fromEntries(forecastDates.map(date => [date, weekdaysInMonth(date)])))}`
+    : `Weekday of each forecast date: ${JSON.stringify(Object.fromEntries(forecastDates.map(date => [date, weekdayOf(date)])))}`}`
+    : ''
+  const patternRules = profile
+    ? `
+- Forecast from the whole history: ${monthTotals
+    ? 'for each month, add up the weekday averages for every day of that month'
+    : 'start each date from the average of its weekday'}, then apply the recent trend, giving recent weeks somewhat more weight than older ones.
+- Never copy a single past day's revenue or orders; every figure is an estimate from the whole history.`
+    : ''
+
   const response = await askGeminiSafely(`You are assisting a laundry business manager with a revenue-and-demand forecast.
-Use only the supplied dated historical totals. Weekly and monthly selections use daily observations; yearly selections use yearly observations. Do not invent events, customers, or operational facts.
+Use only the supplied dated historical totals and the summaries computed from them. Weekly and monthly selections use daily observations; yearly selections use yearly observations. Do not invent events, customers, or operational facts.
 
 Branch scope: ${branch || 'All branches'}
 Report range: ${range}
 Currency: Philippine pesos (PHP / ₱). Every revenue amount is in PHP, never US dollars.
-Historical observations: ${JSON.stringify(history)}
+Historical observations: ${JSON.stringify(history)}${patternInstructions}
 Forecast dates: ${JSON.stringify(forecastDates)}${monthInstructions}
 
 Return ONLY valid JSON in exactly this shape:
@@ -398,12 +475,13 @@ Rules:
 - Include exactly one prediction for every forecast date given.
 - predictedRevenue and predictedOrders must be non-negative numbers.
 - predictedRevenue is a Philippine-peso (PHP) amount.
-- Make conservative forecasts when history is sparse.
+- Make conservative forecasts when history is sparse.${patternRules}
 - Use low confidence with fewer than ${mediumAt} historical observations, medium with ${mediumAt}–${highAt - 1}, and high only with at least ${highAt} observations and a consistent pattern. The server will enforce this ceiling.
 - Provide 2 or 3 practical recommendations covering peak demand, staffing, inventory, service demand, or branch performance when supported by the data.
 - Do not use markdown.`, text => {
     const result = forecastPredictions(parseJsonObject(text), forecastDates)
     if (!validMonthTotals(result.items)) throw new Error('Daily figures were returned for a monthly forecast')
+    if (!monthTotals && profile && repeatsRecordedDays(result.items, history)) throw new Error('The forecast repeats recorded days')
     return result
   }, refresh)
 
