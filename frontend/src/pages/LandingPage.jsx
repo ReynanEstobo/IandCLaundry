@@ -1121,7 +1121,8 @@ export default function LandingPage() {
             </div>
             <p>
               Wash, dry, and fold service in Balayan, Batangas. Keep your
-              receipt: its tracking number shows your order’s status online.
+              claim slip or order email: its tracking number shows your
+              order’s status online.
             </p>
           </div>
           <div className="landing-footer-divider" />
