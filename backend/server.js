@@ -19,12 +19,13 @@ import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail, sendCusto
 import { listOrdersPage } from './controllers/orderListController.js'
 import { listCustomersPage, listInventoryPage } from './controllers/operationalListController.js'
 import { renewSession, restoreSession, signIn, signOut } from './controllers/sessionController.js'
+import { SIGN_IN_LIMITS, signInDevice } from './utils/signInDevice.js'
 
 const port = Number(process.env.PORT || 3001)
 const localRateWindows = new Map()
 const LOCAL_GENERAL_LIMIT = { limit: 180, windowMs: 60_000 }
 const LOCAL_ROUTE_LIMITS = {
-  'POST:auth/login': { limit: 5, windowMs: 3 * 60_000 },
+  'POST:auth/login': SIGN_IN_LIMITS.address,
   'POST:public/contact': { limit: 3, windowMs: 15 * 60_000 },
   'POST:notifications/sms': { limit: 30, windowMs: 15 * 60_000 },
   'POST:ai/generate': { limit: 20, windowMs: 15 * 60_000 },
@@ -72,7 +73,7 @@ function enforceLocalLoginIdentifierLimit(payload) {
   const identifier = String(payload?.identifier || payload?.email || '').trim().toLowerCase()
   if (identifier) {
     const digest = createHash('sha256').update(identifier).digest('hex')
-    consumeLocalLimit(`login-identifier:${digest}`, { limit: 10, windowMs: 3 * 60_000 })
+    consumeLocalLimit(`login-identifier:${digest}`, SIGN_IN_LIMITS.account)
   }
 }
 
@@ -119,8 +120,13 @@ const server = http.createServer(async (request, response) => {
   if (request.method === 'OPTIONS') return write(response, 204, {})
   const url = new URL(request.url, `http://${request.headers.host}`)
   const path = url.pathname.replace(/^\/api\/?/, '').replace(/\/$/, '')
+  // A sign-in from a browser with no valid device cookie is given one, even when refused.
+  let deviceCookies = []
   try {
+    const device = request.method === 'POST' && path === 'auth/login' ? await signInDevice(request) : null
+    deviceCookies = device?.cookies || []
     if (url.pathname.startsWith('/api/')) enforceLocalRateLimit(request, request.method, path)
+    if (device) consumeLocalLimit(`login-device:${device.id}`, SIGN_IN_LIMITS.device)
     // Authenticates the request, then applies this route's per-account limit.
     const signedIn = async () => {
       const identity = await authenticate(request)
@@ -135,7 +141,7 @@ const server = http.createServer(async (request, response) => {
     }
     if (request.method === 'GET' && url.pathname === '/api/health') return write(response, 200, { status: 'ok' })
     if (request.method === 'GET' && url.pathname === '/api/events') return streamEvents(request, response)
-    if (request.method === 'POST' && path === 'auth/login') { const { payload, cookies } = await signIn(request.rateLimitedBody || await readBody(request)); return write(response, 200, payload, cookies) }
+    if (request.method === 'POST' && path === 'auth/login') { const { payload, cookies } = await signIn(request.rateLimitedBody || await readBody(request)); return write(response, 200, payload, [...cookies, ...deviceCookies]) }
     if (request.method === 'POST' && path === 'auth/refresh') { const { payload, cookies } = await renewSession(request, await readBody(request)); return write(response, 200, payload, cookies) }
     if (request.method === 'GET' && path === 'auth/session') { const { payload, cookies } = await restoreSession(request); return write(response, 200, payload, cookies) }
     if (request.method === 'POST' && path === 'auth/logout') { const { payload, cookies } = await signOut(request); return write(response, 200, payload, cookies) }
@@ -201,7 +207,7 @@ const server = http.createServer(async (request, response) => {
     // internal failures and raw database error details never reach the browser.
     return write(response, status, status >= 500
       ? { error: 'Internal server error' }
-      : { error: error.message || 'Request failed', code: error.code, retryAfterSeconds: error.retryAfterSeconds }, error.cookies)
+      : { error: error.message || 'Request failed', code: error.code, retryAfterSeconds: error.retryAfterSeconds }, [...(error.cookies || []), ...deviceCookies])
   }
 })
 

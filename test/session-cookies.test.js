@@ -68,7 +68,10 @@ test('signing in sets HttpOnly session cookies and gives the page no tokens', as
   // Without "Remember me" the cookies end when the browser closes.
   const browserOnly = await call('auth/login', { method: 'POST', body: { identifier: 'staff.user', password: 'correct-password', remember: false } })
   assert.equal(browserOnly.body.session.remember, false)
-  assert.ok(browserOnly.cookies.every(cookie => !cookie.includes('Max-Age')))
+  // (The sign-in device cookie is separate and outlives the session on purpose.)
+  const sessionOnly = browserOnly.cookies.filter(cookie => !cookie.startsWith('ic_device='))
+  assert.equal(sessionOnly.length, 3)
+  assert.ok(sessionOnly.every(cookie => !cookie.includes('Max-Age')))
 })
 
 test('every tab learns the signed-in account from the cookie, renewing it when it has expired', async t => {

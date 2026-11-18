@@ -15,6 +15,7 @@ import { listEmailDeliveryAudit, retryEmailDelivery, sendAuditedEmail, sendCusto
 import { listOrdersPage } from '../backend/controllers/orderListController.js'
 import { listCustomersPage, listInventoryPage } from '../backend/controllers/operationalListController.js'
 import { renewSession, restoreSession, signIn, signOut } from '../backend/controllers/sessionController.js'
+import { SIGN_IN_LIMITS, signInDevice } from '../backend/utils/signInDevice.js'
 
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; upgrade-insecure-requests",
@@ -69,9 +70,9 @@ async function body(request) {
 }
 
 const ratePolicies = {
-  // Limit password guessing from one source IP. A separate identifier bucket
-  // below also slows distributed attempts against a single account.
-  'POST:auth/login': { limit: 5, windowMs: 3 * 60 * 1000 },
+  // Outer cap per network address. Each device and each account has its own,
+  // smaller sign-in limit (see SIGN_IN_LIMITS and enforceRateLimit below).
+  'POST:auth/login': SIGN_IN_LIMITS.address,
   'POST:auth/refresh': { limit: 30, windowMs: 15 * 60 * 1000 },
   'POST:auth/forgot-password/otp': { limit: 5, windowMs: 15 * 60 * 1000 },
   'POST:auth/forgot-password/otp/verify': { limit: 10, windowMs: 15 * 60 * 1000 },
@@ -121,21 +122,33 @@ async function consumeRateLimit(env, key, policy) {
   }
 }
 
+// Returns the cookies the response must carry: a sign-in from a browser with no
+// valid device cookie is given one.
 async function enforceRateLimit(request, env, path) {
-  if (request.method === 'OPTIONS' || path === 'health') return
-  const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
-  await consumeRateLimit(env, `api:${ip}`, generalApiPolicy)
-  const policy = ratePolicies[`${request.method}:${path}`]
-  if (policy) await consumeRateLimit(env, `route:${request.method}:${path}:${ip}`, policy)
-  if (request.method === 'POST' && path === 'auth/login') {
-    const payload = await body(request.clone())
-    const identifier = String(payload.identifier || payload.email || '').trim().toLowerCase()
-    if (identifier) {
-      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identifier))
-      const identifierKey = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
-      await consumeRateLimit(env, `login-identifier:${identifierKey}`, { limit: 10, windowMs: 3 * 60 * 1000 })
+  if (request.method === 'OPTIONS' || path === 'health') return []
+  const isSignIn = request.method === 'POST' && path === 'auth/login'
+  const device = isSignIn ? await signInDevice(request) : { cookies: [] }
+  try {
+    const ip = request.headers.get('CF-Connecting-IP') || 'unknown'
+    await consumeRateLimit(env, `api:${ip}`, generalApiPolicy)
+    const policy = ratePolicies[`${request.method}:${path}`]
+    if (policy) await consumeRateLimit(env, `route:${request.method}:${path}:${ip}`, policy)
+    if (isSignIn) {
+      await consumeRateLimit(env, `login-device:${device.id}`, SIGN_IN_LIMITS.device)
+      const payload = await body(request.clone())
+      const identifier = String(payload.identifier || payload.email || '').trim().toLowerCase()
+      if (identifier) {
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identifier))
+        const identifierKey = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('')
+        await consumeRateLimit(env, `login-identifier:${identifierKey}`, SIGN_IN_LIMITS.account)
+      }
     }
+  } catch (error) {
+    // A refused attempt still keeps its device ID, so the next try from this
+    // browser counts against the same device.
+    throw Object.assign(error, { cookies: [...(error.cookies || []), ...device.cookies] })
   }
+  return device.cookies
 }
 
 /**
@@ -148,7 +161,7 @@ async function api(request, env) {
   const path = url.pathname.replace(/^\/api\/?/, '').replace(/\/$/, '')
   const method = request.method
 
-  await enforceRateLimit(request, env, path)
+  const deviceCookies = await enforceRateLimit(request, env, path)
   // Authenticates the request, then applies this route's per-account limit.
   const signedIn = async () => {
     const identity = await authenticate(request)
@@ -163,7 +176,13 @@ async function api(request, env) {
   // their own UI immediately; production polling can be added independently.
   if (method === 'GET' && path === 'events') return new Response(null, { status: 204 })
 
-  if (method === 'POST' && path === 'auth/login') return sessionJson(await signIn(await body(request)))
+  if (method === 'POST' && path === 'auth/login') {
+    try {
+      return withCookies(sessionJson(await signIn(await body(request))), deviceCookies)
+    } catch (error) {
+      throw Object.assign(error, { cookies: [...(error.cookies || []), ...deviceCookies] })
+    }
+  }
   if (method === 'POST' && path === 'auth/refresh') return sessionJson(await renewSession(request, await body(request)))
   if (method === 'GET' && path === 'auth/session') return sessionJson(await restoreSession(request))
   if (method === 'POST' && path === 'auth/logout') return sessionJson(await signOut(request))

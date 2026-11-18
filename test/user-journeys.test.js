@@ -93,7 +93,7 @@ test('visitor journey: contact honeypot silently drops automated submissions', a
   assert.deepEqual(result.body, { success: true })
 })
 
-test('security journey: login has a hashed account-identifier rate limit in addition to the IP limit', async () => {
+test('security journey: login is limited per device, per hashed account identifier and per IP', async () => {
   const keys = []
   const policies = new Map()
   const env = {
@@ -115,8 +115,10 @@ test('security journey: login has a hashed account-identifier rate limit in addi
   assert.equal(response.status, 429)
   assert.equal(response.headers.get('retry-after'), '180')
   const ipPolicy = [...policies].find(([key]) => key.startsWith('route:POST:auth/login:'))?.[1]
+  const devicePolicy = [...policies].find(([key]) => key.startsWith('login-device:'))?.[1]
   const accountPolicy = [...policies].find(([key]) => key.startsWith('login-identifier:'))?.[1]
-  assert.deepEqual(ipPolicy, { limit: 5, windowMs: 3 * 60 * 1000 })
+  assert.deepEqual(ipPolicy, { limit: 30, windowMs: 3 * 60 * 1000 })
+  assert.deepEqual(devicePolicy, { limit: 5, windowMs: 3 * 60 * 1000 })
   assert.deepEqual(accountPolicy, { limit: 10, windowMs: 3 * 60 * 1000 })
   assert.ok(keys.every(key => !key.includes('Test.User')))
 })
