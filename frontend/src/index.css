@@ -5991,6 +5991,44 @@ textarea.form-control {
 }
 
 /* Add-on Grid */
+.addon-service-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.addon-service-group {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+.addon-service-heading {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 2px;
+  margin-bottom: 9px;
+}
+.addon-service-kicker {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--primary-50);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .3px;
+  text-transform: uppercase;
+}
+.addon-service-heading strong {
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.addon-service-help {
+  grid-column: 2;
+  color: var(--text-muted);
+  font-size: 11px;
+}
 .addon-grid {
   display: flex;
   flex-direction: column;
@@ -6017,16 +6055,46 @@ textarea.form-control {
 .addon-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
+  min-width: 0;
+}
+.addon-name-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 .addon-name {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
+.addon-service-badge {
+  padding: 2px 7px;
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 9%, transparent);
+  color: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 .addon-stock {
   font-size: 11px;
   color: var(--text-muted);
+}
+.addon-empty-state {
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+.pricing-addon-service {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
 }
 .addon-qty {
   display: flex;
@@ -6076,6 +6144,9 @@ textarea.form-control {
 [data-theme="dark"] .addon-item {
   background: rgba(255, 255, 255, 0.04);
   border-color: var(--border);
+}
+[data-theme="dark"] .addon-service-group {
+  background: rgba(255, 255, 255, 0.025);
 }
 [data-theme="dark"] .addon-item.selected {
   background: rgba(46, 167, 224, 0.1);

@@ -39,7 +39,7 @@ import RowActionsMenu from "../components/RowActionsMenu";
 import { useSearchPending, SearchStatusIcon, useChangedRows } from "../components/DataView";
 import { isValidPhilippineMobile } from "../utils/validation";
 import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
-import { getAvailableOrderAddons, resolveBranchId, retainAvailableOrderAddons } from "../utils/orderAddons";
+import { getAvailableOrderAddons, groupOrderAddonsByService, resolveBranchId, retainAvailableOrderAddons } from "../utils/orderAddons";
 import useActiveBranches from "../hooks/useActiveBranches";
 import { quantity, unitName } from "../utils/alertText";
 import { canStaffUndoStage, moveBackStatus, undoSecondsLeft, withUndoDeadline } from "../utils/orderStageRules";
@@ -320,6 +320,11 @@ export default function Orders() {
     soapItems,
     selectedAddOnBranchId,
     selectedServiceIds,
+  );
+  const addonGroups = groupOrderAddonsByService(
+    branchInventoryItems,
+    serviceTypes,
+    form.items.map(item => item.service_type_id),
   );
   const availableAddonKey = branchInventoryItems.map(item => String(item.id)).sort().join("\n");
   const selectedAddonKey = Object.entries(form.addons || {}).filter(([, quantity]) => Number(quantity) > 0)
@@ -1784,51 +1789,76 @@ export default function Orders() {
                     <span>Choose add-ons <small>Optional items for the selected services</small></span>
                     <span className="order-section-optional">Optional</span>
                   </div>
-                  <div className="addon-grid">
-                    {branchInventoryItems.map((item) => {
-                      const qty = form.addons[item.id] || 0;
-                      const noStock = item.current_stock < 1 && qty === 0;
-                      return (
-                        <div
-                          key={item.id}
-                          className={`addon-item ${qty > 0 ? "selected" : ""} ${noStock ? "out-of-stock" : ""}`}
+                  {addonGroups.length > 0 ? (
+                    <div className="addon-service-groups">
+                      {addonGroups.map((group) => (
+                        <section
+                          key={group.serviceId}
+                          className="addon-service-group"
+                          aria-labelledby={`addon-service-${group.serviceId}`}
                         >
-                          <div className="addon-info">
-                            <span className="addon-name">{item.name}</span>
-                            <span className="addon-stock">
-                              {serviceTypes.find((service) => String(service.id) === String(item.service_type_id))?.name || "Service"}
-                              {" · "}₱{Number(item.unit_price || 0).toLocaleString()} / {unitName(item.unit)}
-                              {" · "}{quantity(item.current_stock, item.unit)} in stock
-                            </span>
+                          <div className="addon-service-heading">
+                            <span className="addon-service-kicker">Connected service</span>
+                            <strong id={`addon-service-${group.serviceId}`}>{group.serviceName}</strong>
+                            <span className="addon-service-help">These add-ons apply only to this service.</span>
                           </div>
-                          <div className="addon-qty">
-                            {qty > 0 && (
-                              <button
-                                type="button"
-                                className="addon-btn"
-                                aria-label={`Remove one ${item.name}`}
-                                onClick={() => updateAddon(item.id, -1)}
-                              >
-                                <Minus size={14} />
-                              </button>
-                            )}
-                            {qty > 0 && (
-                              <span className="addon-count">{qty}</span>
-                            )}
-                            <button
-                              type="button"
-                              className="addon-btn addon-btn-add"
-                              aria-label={`Add one ${item.name}`}
-                              onClick={() => updateAddon(item.id, 1)}
-                              disabled={noStock || qty >= item.current_stock}
-                            >
-                              <Plus size={14} />
-                            </button>
+                          <div className="addon-grid">
+                            {group.addons.map((item) => {
+                              const qty = form.addons[item.id] || 0;
+                              const noStock = item.current_stock < 1 && qty === 0;
+                              return (
+                                <div
+                                  key={item.id}
+                                  className={`addon-item ${qty > 0 ? "selected" : ""} ${noStock ? "out-of-stock" : ""}`}
+                                >
+                                  <div className="addon-info">
+                                    <span className="addon-name-row">
+                                      <span className="addon-name">{item.name}</span>
+                                      <span className="addon-service-badge">For {group.serviceName}</span>
+                                    </span>
+                                    <span className="addon-stock">
+                                      ₱{Number(item.unit_price || 0).toLocaleString()} / {unitName(item.unit)}
+                                      {" · "}{quantity(item.current_stock, item.unit)} in stock
+                                    </span>
+                                  </div>
+                                  <div className="addon-qty">
+                                    {qty > 0 && (
+                                      <button
+                                        type="button"
+                                        className="addon-btn"
+                                        aria-label={`Remove one ${item.name} from ${group.serviceName}`}
+                                        onClick={() => updateAddon(item.id, -1)}
+                                      >
+                                        <Minus size={14} />
+                                      </button>
+                                    )}
+                                    {qty > 0 && (
+                                      <span className="addon-count">{qty}</span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      className="addon-btn addon-btn-add"
+                                      aria-label={`Add one ${item.name} to ${group.serviceName}`}
+                                      onClick={() => updateAddon(item.id, 1)}
+                                      disabled={noStock || qty >= item.current_stock}
+                                    >
+                                      <Plus size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        </section>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="addon-empty-state">
+                      {selectedServiceIds.size > 0
+                        ? "No add-ons are connected to the selected services."
+                        : "Select a service in Step 2 to see its available add-ons."}
+                    </div>
+                  )}
                   {Object.keys(form.addons).length > 0 && (
                     <div className="soap-selected-info">
                       <CheckCircle2 size={15} />
@@ -1839,7 +1869,10 @@ export default function Orders() {
                             const item = branchInventoryItems.find(
                               (i) => String(i.id) === String(id),
                             );
-                            return `${item?.name || "Item"} ×${qty}`;
+                            const serviceName = serviceTypes.find(
+                              (service) => String(service.id) === String(item?.service_type_id),
+                            )?.name || "Selected service";
+                            return `${serviceName}: ${item?.name || "Item"} ×${qty}`;
                           })
                           .join(", ")}{" "}
                         — will be deducted from inventory
@@ -1899,10 +1932,13 @@ export default function Orders() {
                       .filter(([, qty]) => qty > 0)
                       .map(([id, qty]) => {
                         const item = branchInventoryItems.find((i) => i.id === id);
+                        const serviceName = serviceTypes.find(
+                          (service) => String(service.id) === String(item?.service_type_id),
+                        )?.name || "Selected service";
                         return (
                           <div key={id} className="pricing-row">
                             <span>
-                              {item?.name || "Add-on"} ×{qty}
+                              {item?.name || "Add-on"} <small className="pricing-addon-service">for {serviceName}</small> ×{qty}
                             </span>
                             <span>₱{(qty * Number(item?.unit_price || 0)).toLocaleString()}</span>
                           </div>

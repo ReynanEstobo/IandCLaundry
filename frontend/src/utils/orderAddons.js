@@ -27,6 +27,34 @@ export function getAvailableOrderAddons(addons, branchId, serviceIds) {
   )
 }
 
+export function groupOrderAddonsByService(addons, services, serviceIds) {
+  const servicesById = new Map((services || []).map(service => [String(service.id), service]))
+  const addonsByService = new Map()
+
+  for (const addon of addons || []) {
+    const serviceId = String(addon.service_type_id)
+    const serviceAddons = addonsByService.get(serviceId) || []
+    serviceAddons.push(addon)
+    addonsByService.set(serviceId, serviceAddons)
+  }
+
+  const seen = new Set()
+  return Array.from(serviceIds || []).flatMap(id => {
+    const serviceId = String(id)
+    if (!serviceId || seen.has(serviceId)) return []
+    seen.add(serviceId)
+
+    const serviceAddons = addonsByService.get(serviceId) || []
+    if (!serviceAddons.length) return []
+
+    return [{
+      serviceId,
+      serviceName: servicesById.get(serviceId)?.name || 'Selected service',
+      addons: serviceAddons,
+    }]
+  })
+}
+
 export function retainAvailableOrderAddons(selectedAddons, availableIds) {
   const available = new Set(Array.from(availableIds || [], id => String(id)))
   return Object.fromEntries(Object.entries(selectedAddons || {}).filter(([id, quantity]) =>

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getAvailableOrderAddons, resolveBranchId, retainAvailableOrderAddons } from '../frontend/src/utils/orderAddons.js'
+import { getAvailableOrderAddons, groupOrderAddonsByService, resolveBranchId, retainAvailableOrderAddons } from '../frontend/src/utils/orderAddons.js'
 
 const branches = [
   { id: 'branch-a', name: 'Main - Brgy 7' },
@@ -30,6 +30,26 @@ test('does not expose add-ons when the selected branch cannot be resolved', () =
   assert.deepEqual(getAvailableOrderAddons([
     { id: 'addon', branch_id: 'branch-a', inventory_branch_id: 'branch-a', service_type_id: 'service-1' },
   ], null, ['service-1']), [])
+})
+
+test('groups add-ons under their connected service in the selected service order', () => {
+  const addons = [
+    { id: 'comforter-detergent', service_type_id: 'comforter' },
+    { id: 'clothing-conditioner', service_type_id: 'clothing' },
+    { id: 'clothing-detergent', service_type_id: 'clothing' },
+  ]
+  const services = [
+    { id: 'clothing', name: 'Clothing' },
+    { id: 'comforter', name: 'Comforter' },
+  ]
+
+  assert.deepEqual(
+    groupOrderAddonsByService(addons, services, ['comforter', 'clothing', 'comforter']),
+    [
+      { serviceId: 'comforter', serviceName: 'Comforter', addons: [addons[0]] },
+      { serviceId: 'clothing', serviceName: 'Clothing', addons: [addons[1], addons[2]] },
+    ],
+  )
 })
 
 test('removes archived or otherwise unavailable add-ons from an in-progress new order', () => {
