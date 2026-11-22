@@ -28,6 +28,7 @@ test('forecast supplement creates dated ledger, usage and ETA history without re
     '20261001_remove_note_fields.sql',
     '20261003_service_inventory_integrity.sql',
     '20261008_reject_order_overpayment.sql',
+    '20261122_analytics_data_origin.sql',
   ]) {
     const sql = await readFile(new URL(`../supabase_migrations/${name}`, import.meta.url), 'utf8')
     await db.exec(sql.replace('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";', ''))

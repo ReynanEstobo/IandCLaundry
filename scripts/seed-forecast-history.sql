@@ -121,7 +121,7 @@ BEGIN
 
         -- Backdate only records created by this iteration. Audit logs retain the
         -- true import time; operational timestamps describe synthetic activity.
-        UPDATE public.orders SET created_at = v_start,
+        UPDATE public.orders SET data_origin = 'demo', created_at = v_start,
           processing_started_at = v_start + interval '15 minutes', ready_at = v_ready,
           actual_completion = v_ready, picked_up_at = v_ready + interval '30 minutes',
           stage_started_at = v_ready + interval '30 minutes',
@@ -137,14 +137,14 @@ BEGIN
           WHEN 'received' THEN v_start WHEN 'on_process' THEN v_start + interval '15 minutes'
           WHEN 'ready' THEN v_ready WHEN 'released' THEN v_ready + interval '30 minutes'
           ELSE changed_at END WHERE order_id = v_order.id;
-        UPDATE public.customers SET created_at = v_start WHERE id = v_order.customer_id;
+        UPDATE public.customers SET data_origin = 'demo', created_at = v_start WHERE id = v_order.customer_id;
         UPDATE public.customer_branches SET first_served_at = v_start, last_served_at = v_start
         WHERE customer_id = v_order.customer_id AND branch_id = v_branch.id;
       END LOOP;
       IF v_days % 7 = 0 THEN
-        INSERT INTO public.expenses(category, description, amount, expense_date, branch, branch_id)
+        INSERT INTO public.expenses(category, description, amount, expense_date, branch, branch_id, data_origin)
         VALUES ('Utilities', 'Demo forecast history: weekly utilities',
-          700 + v_branch_count * 50 + (v_days % 4) * 25, v_day, v_branch.name, v_branch.id);
+          700 + v_branch_count * 50 + (v_days % 4) * 25, v_day, v_branch.name, v_branch.id, 'demo');
       END IF;
     END LOOP;
     RAISE NOTICE 'Added % historical orders for %', v_branch_orders, v_branch.name;

@@ -1,6 +1,18 @@
 import { eachDayOfInterval, format, startOfDay } from 'date-fns'
 import { paymentTimestamp, recordedPaymentAmount } from './businessForecast.js'
 
+export function dataOrigin(record) {
+  return record?.data_origin || 'live'
+}
+
+export function isLiveOperationalRecord(record) {
+  return dataOrigin(record) === 'live'
+}
+
+export function isVerifiedAggregateRecord(record) {
+  return dataOrigin(record) !== 'demo'
+}
+
 function uniqueOrders(orders = []) {
   const seen = new Set()
   return orders.filter((order, index) => {

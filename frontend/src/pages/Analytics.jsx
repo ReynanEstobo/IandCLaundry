@@ -40,7 +40,11 @@ import LoadingButton from '../components/LoadingButton'
 import { analyticsPeriod, chartGrouping, chartTooltipDate, paymentChartData } from '../utils/chartDates'
 import { formatPeso } from '../utils/money'
 import { recordedPaymentAmount } from '../utils/businessForecast'
-import { branchPerformance } from '../utils/analyticsMetrics'
+import {
+  branchPerformance,
+  isLiveOperationalRecord,
+  isVerifiedAggregateRecord,
+} from '../utils/analyticsMetrics'
 import { buildAnalyticsReport } from '../utils/analyticsReport'
 import { UNAVAILABLE_DECISION_INSIGHTS } from '../utils/decisionAreas'
 import DecisionInsights from '../components/DecisionInsights'
@@ -278,33 +282,33 @@ export default function Analytics() {
 
     let orderQuery = supabase
       .from("orders")
-      .select("id, order_number, created_at, updated_at, ready_at, status, customer_id, completed_by_staff_id, created_by_staff_id, branch, branch_id, total_price, amount_paid, payment_status, customers(name, phone), service_types(name)")
+      .select("id, order_number, created_at, updated_at, ready_at, status, customer_id, completed_by_staff_id, created_by_staff_id, branch, branch_id, total_price, amount_paid, payment_status, data_origin, customers(name, phone), service_types(name)")
       .gte("created_at", startDate)
       .lte("created_at", endDate)
       .order("created_at", { ascending: true });
 
     let expenseQuery = supabase
       .from("expenses")
-      .select("amount, expense_date")
+      .select("amount, expense_date, data_origin")
       .gte("expense_date", format(new Date(startDate), "yyyy-MM-dd"))
       .lte("expense_date", format(new Date(endDate), "yyyy-MM-dd"));
 
     let paymentQuery = supabase
       .from("payments")
-      .select("amount, paid_at, payment_date, order_id, branch, branch_id, orders!inner(id, status, branch, branch_id, service_types(name))")
+      .select("amount, paid_at, payment_date, order_id, branch, branch_id, orders!inner(id, status, branch, branch_id, data_origin, service_types(name))")
       .gte("paid_at", startDate)
       .lte("paid_at", endDate)
       .order("paid_at", { ascending: true });
 
     let serviceItemQuery = supabase
       .from("order_items")
-      .select("id, order_id, service_name_snapshot, pricing_type_snapshot, weight_kg, quantity, subtotal, created_at, orders!inner(id, status, branch, branch_id)")
+      .select("id, order_id, service_name_snapshot, pricing_type_snapshot, weight_kg, quantity, subtotal, created_at, orders!inner(id, status, branch, branch_id, data_origin)")
       .gte("created_at", startDate)
       .lte("created_at", endDate);
 
     let customerQuery = supabase
       .from("customers")
-      .select("id, created_at, branch")
+      .select("id, created_at, branch, data_origin")
       .gte("created_at", startDate)
       .lte("created_at", endDate);
 
@@ -331,13 +335,16 @@ export default function Analytics() {
     const requestError = ordersRes.error || expensesRes.error || staffRes.error || inventoryRes.error || paymentsRes.error || serviceItemsRes.error || customersRes.error;
     if (requestError) throw requestError;
 
-    const orderData = (ordersRes.data || []).filter((order) => order.status !== "cancelled");
-    const paymentData = (paymentsRes.data || []).filter((payment) => payment.orders?.status !== 'cancelled' && recordedPaymentAmount(payment) > 0);
-    const expenseData = expensesRes.data || [];
+    const loadedOrders = (ordersRes.data || []).filter((order) => order.status !== "cancelled");
+    const loadedPayments = (paymentsRes.data || []).filter((payment) => payment.orders?.status !== 'cancelled' && recordedPaymentAmount(payment) > 0);
+    const orderData = loadedOrders.filter(isVerifiedAggregateRecord);
+    const liveOrderData = orderData.filter(isLiveOperationalRecord);
+    const paymentData = loadedPayments.filter((payment) => isVerifiedAggregateRecord(payment.orders));
+    const expenseData = (expensesRes.data || []).filter(isVerifiedAggregateRecord);
     const staffById = new Map((staffRes.data || []).map((staff) => [staff.id, staff.full_name || "Unassigned staff"]));
     const inventoryData = inventoryRes.data || [];
-    const serviceItems = (serviceItemsRes.data || []).filter((item) => item.orders?.status !== 'cancelled');
-    const newCustomerData = customersRes.data || [];
+    const serviceItems = (serviceItemsRes.data || []).filter((item) => item.orders?.status !== 'cancelled' && isLiveOperationalRecord(item.orders));
+    const newCustomerData = (customersRes.data || []).filter(isLiveOperationalRecord);
 
     setOrders(orderData);
     setPayments(paymentData);
@@ -382,7 +389,7 @@ export default function Analytics() {
       current.quantity += Number(item.quantity) || 0;
       serviceTotals.set(serviceName, current);
     });
-    orderData.forEach((order) => {
+    liveOrderData.forEach((order) => {
       if (order.customer_id) customerVisits.set(order.customer_id, (customerVisits.get(order.customer_id) || 0) + 1);
       // The creator is credited with the order and the releaser with the
       // release; they can be different people. createdReleased counts the
@@ -421,7 +428,7 @@ export default function Analytics() {
       .map(([date, count]) => ({ date, count }))
       .sort((a, b) => a.date.localeCompare(b.date));
     const outstandingByCustomer = new Map();
-    orderData.forEach((order) => {
+    liveOrderData.forEach((order) => {
       const remaining = Math.max(0, Number(order.total_price || 0) - Number(order.amount_paid || 0));
       if (remaining <= 0) return;
       const customer = order.customers || {};
@@ -996,7 +1003,7 @@ Rules:
               </div>
               <h3 style={{ margin: 0 }}>Operational Performance</h3>
             </div>
-            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Services, branches, and staff ranked by recorded sales for the selected period.</p>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Service, customer, staff, balance, and turnaround indicators use live operational records only. Verified reconstructed history remains available only for aggregate branch totals and forecasting.</p>
           </div>
         </div>
 
