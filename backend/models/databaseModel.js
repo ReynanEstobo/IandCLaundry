@@ -508,6 +508,21 @@ export async function execute(table, request, identity) {
     await assertRecordRules(table, request)
   }
   const { operation, selection = '*', filters, orders = [], range, limit, payload, count, head, single, returning } = request
+
+  // Inventory edits must be applied in the same database transaction that
+  // identifies the signed-in account. A plain PostgREST update reaches the
+  // audit trigger without that request identity and is therefore labelled as
+  // an automatic System change.
+  if (table === 'inventory_items' && operation === 'update') {
+    const itemId = recordIdFrom(filters)
+    const { data, error } = await database.rpc('update_inventory_item_with_actor', {
+      p_item_id: itemId,
+      p_updates: payload,
+      p_staff_id: identity.staffId,
+    })
+    return { data: returning ? data : null, error, count: null }
+  }
+
   if (operation === 'delete' && PROTECTED_TRANSACTION_TABLES.has(table)) {
     throw Object.assign(new Error('This transaction record cannot be deleted. Use the appropriate cancellation or correction workflow so the audit trail and inventory history remain accurate.'), { status: 400 })
   }

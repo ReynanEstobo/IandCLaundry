@@ -305,8 +305,12 @@ test('administrators can correct an inventory item\'s stock, branch, and unit', 
     filters: [{ type: 'eq', column: 'id', value: 'inventory-1' }],
   }, admin)
   assert.equal(result.error, null)
-  const update = calls.find(call => call.table === 'inventory_items' && call.method === 'update')
-  assert.deepEqual(update.args[0], { name: 'Ariel', current_stock: 180, branch: 'Other', branch_id: 'branch-b', unit: 'kg', minimum_stock: 20 })
+  const update = calls.find(call => call.rpc === 'update_inventory_item_with_actor')
+  assert.deepEqual(update.args, {
+    p_item_id: 'inventory-1',
+    p_updates: { name: 'Ariel', current_stock: 180, branch: 'Other', branch_id: 'branch-b', unit: 'kg', minimum_stock: 20 },
+    p_staff_id: 'admin-a',
+  })
 })
 
 test('administrators cannot set a negative stock or an unknown branch', async t => {

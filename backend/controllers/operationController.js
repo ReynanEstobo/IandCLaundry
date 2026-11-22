@@ -137,6 +137,7 @@ export async function restockInventory(body, identity) {
     p_quantity: added,
     p_cost_total: Number(costTotal) || 0,
     p_supplier: '',
+    p_staff_id: identity.staffId,
   })
   if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
   return { data }
