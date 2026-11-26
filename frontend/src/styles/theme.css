@@ -1110,6 +1110,26 @@ td[data-card-actions]:has(> .row-actions) { white-space: nowrap; }
 .order-service-addons ul { display: grid; grid-template-columns: minmax(0, max-content) max-content; gap: 2px 20px; margin: 0; padding: 0; list-style: none; }
 .order-service-addons li { display: contents; color: var(--text-secondary); font-size: 12.5px; }
 .order-service-addons li > :last-child { text-align: right; }
+/* Customer supply choices (Step 3 of a new order): the add-on cards, with a
+   four-way choice under each usual supply. */
+.addon-item.supply-item { flex-direction: column; align-items: stretch; gap: 10px; }
+.supply-badge { padding: 2px 7px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-secondary); color: var(--text-muted); font-size: 10px; font-weight: 700; white-space: nowrap; }
+.supply-choice-toggle { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--border-strong); border-radius: var(--radius-xs); background: var(--bg-card); overflow: hidden; }
+.supply-choice-btn { min-height: 36px; padding: 6px 8px; border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.2; cursor: pointer; transition: background-color .15s ease, color .15s ease; }
+.supply-choice-btn + .supply-choice-btn { border-left: 1px solid var(--border); }
+.supply-choice-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--text-primary); }
+.supply-choice-btn.active, .supply-choice-btn.active:hover { background: var(--primary); color: var(--on-primary); font-weight: 700; }
+.supply-choice-btn:disabled { color: var(--text-muted); opacity: .5; cursor: not-allowed; }
+.supply-choice-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.supply-replacement, .supply-hint { margin: 0; }
+.supply-replacement-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.supply-replacement-row.has-amount { grid-template-columns: minmax(0, 1fr) minmax(130px, 180px); }
+@media (max-width: 560px) {
+  .supply-replacement-row.has-amount { grid-template-columns: minmax(0, 1fr); }
+  .supply-choice-toggle { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .supply-choice-btn:nth-child(3) { border-left: 0; }
+  .supply-choice-btn:nth-child(n+3) { border-top: 1px solid var(--border); }
+}
 /* Narrow places (board cards, phones): each service is two short lines,
    the name (with add-ons) first, then weight, loads and subtotal. */
 .kanban-card .order-services-detail { margin: 8px 0; }

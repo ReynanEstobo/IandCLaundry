@@ -8,6 +8,35 @@ function requireBranch(identity) {
   if (identity.role !== 'admin' && (!identity.branchId || !identity.branch)) throw Object.assign(new Error('Your staff account must be assigned to a branch.'), { status: 403 })
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const SUPPLY_CHOICES = new Set(['default', 'substitute', 'customer_own', 'none'])
+
+// A service may carry the customer's supply choices: a replacement item from
+// the branch's stock, the customer's own supplies, or none. The database checks
+// that each choice belongs to the service and that a replacement is suitable.
+function assertSupplyChoices(supplies) {
+  if (supplies === undefined || supplies === null) return
+  if (!Array.isArray(supplies) || supplies.length > 20) {
+    throw Object.assign(new Error('Supply choices must be sent as a short list.'), { status: 400 })
+  }
+  for (const supply of supplies) {
+    if (!supply || typeof supply !== 'object' || !UUID_PATTERN.test(String(supply.requirement_id || ''))) {
+      throw Object.assign(new Error('Each supply choice must name the usual supply it changes.'), { status: 400 })
+    }
+    if (!SUPPLY_CHOICES.has(supply.choice)) throw Object.assign(new Error('Choose a valid supply option.'), { status: 400 })
+    if (supply.choice === 'substitute' && !UUID_PATTERN.test(String(supply.item_id || ''))) {
+      throw Object.assign(new Error('Choose the item to use instead.'), { status: 400 })
+    }
+    // An amount comes with a replacement counted in another unit (for example mL).
+    if (supply.quantity !== undefined && supply.quantity !== null && supply.quantity !== '') {
+      const amount = Number(supply.quantity)
+      if (supply.choice !== 'substitute' || !Number.isFinite(amount) || amount <= 0 || amount > 100000) {
+        throw Object.assign(new Error('Enter a valid amount for the item used instead.'), { status: 400 })
+      }
+    }
+  }
+}
+
 async function resolveBranch(identity, requestedBranch) {
   requireBranch(identity)
   if (identity.role !== 'admin') return { id: identity.branchId, name: identity.branch }
@@ -42,6 +71,7 @@ export async function createOrder(body, identity) {
     if (item.quantity !== undefined && item.quantity !== '' && (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0)) {
       throw Object.assign(new Error('Service quantities must be greater than zero.'), { status: 400 })
     }
+    assertSupplyChoices(item.supplies)
   }
   for (const quantity of Object.values(addons || {})) {
     const parsed = Number(quantity)

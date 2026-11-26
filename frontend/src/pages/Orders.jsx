@@ -40,6 +40,8 @@ import { useSearchPending, SearchStatusIcon, useChangedRows } from "../component
 import { isValidPhilippineMobile } from "../utils/validation";
 import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
 import { getAvailableOrderAddons, groupOrderAddonsByService, resolveBranchId, retainAvailableOrderAddons } from "../utils/orderAddons";
+import { describeSupplyChange, serviceLoads, serviceRecipe, supplyChoiceProblem, supplyChoicesPayload } from "../utils/orderSupplies";
+import OrderSupplyChoices from "../components/OrderSupplyChoices";
 import useActiveBranches from "../hooks/useActiveBranches";
 import { quantity, unitName } from "../utils/alertText";
 import { canStaffUndoStage, moveBackStatus, undoSecondsLeft, withUndoDeadline } from "../utils/orderStageRules";
@@ -106,6 +108,19 @@ function OrderServicesDetail({ order, id }) {
                         <li key={addon.id}>
                           <span>{addon.item_name_snapshot} {"×"} {Number(addon.quantity).toLocaleString()}</span>
                           <span>{"₱"}{Number(addon.subtotal).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </span>
+                )}
+                {item.order_item_supplies?.length > 0 && (
+                  <span className="order-service-addons">
+                    <span className="order-service-addons-title">Supplies changed for this customer</span>
+                    <ul aria-label={`Supplies changed for ${item.service_name_snapshot || "service"}`}>
+                      {item.order_item_supplies.map((change) => (
+                        <li key={change.id}>
+                          <span>{describeSupplyChange(change)}</span>
+                          <span>{quantity(change.quantity, change.unit_snapshot)}</span>
                         </li>
                       ))}
                     </ul>
@@ -251,6 +266,10 @@ export default function Orders() {
   const [serviceTypes, setServiceTypes] = useState([]);
   const [branchRecords, setBranchRecords] = useState([]);
   const [soapItems, setSoapItems] = useState([]);
+  // Each service's usual supplies, and the stock that can replace them when a
+  // customer asks. If these cannot load, orders simply use the usual supplies.
+  const [supplyRecipes, setSupplyRecipes] = useState([]);
+  const [supplyStock, setSupplyStock] = useState([]);
   const [loading, setLoading] = useState(true);
   const showPageLoader = useShowPageLoader(loading);
   const [loadError, setLoadError] = useState("");
@@ -326,6 +345,20 @@ export default function Orders() {
     serviceTypes,
     form.items.map(item => item.service_type_id),
   );
+  // Step 3 (new orders only): each selected service with its usual supplies.
+  const supplyStepOffset = editing ? 0 : 1;
+  const supplyServices = form.items.map((item, index) => {
+    const service = serviceTypes.find((candidate) => String(candidate.id) === String(item.service_type_id));
+    if (!service) return null;
+    return {
+      index,
+      label: form.items.length > 1 ? `Service ${index + 1} · ${service.name}` : service.name,
+      recipe: serviceRecipe(supplyRecipes, supplyStock, selectedAddOnBranchId, item.service_type_id),
+      loads: serviceLoads(item.weight_kg, service),
+      weightEntered: Number(item.weight_kg) > 0,
+      choices: item.supplies,
+    };
+  }).filter(Boolean);
   const availableAddonKey = branchInventoryItems.map(item => String(item.id)).sort().join("\n");
   const selectedAddonKey = Object.entries(form.addons || {}).filter(([, quantity]) => Number(quantity) > 0)
     .map(([id]) => String(id)).sort().join("\n");
@@ -437,14 +470,21 @@ export default function Orders() {
     boardQuery?.catch(() => {});
 
     try {
-    const [ordersRes, soapRes, servicesRes, branchesRes] = await Promise.all([
+    const optional = (query) => Promise.resolve(query).catch(() => ({ data: [], error: true }));
+    const [ordersRes, soapRes, servicesRes, branchesRes, recipesRes, stockRes] = await Promise.all([
       ordersQuery,
       supabase.from("service_addon_items")
         .select("id, branch_id, service_type_id, unit_price, inventory_items(id, name, unit, current_stock, branch, branch_id, deleted_at)")
         .eq("is_active", true),
       supabase.from("service_types").select("*").eq("is_active", true).order("name"),
       supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
+      optional(supabase.from("service_inventory_requirements")
+        .select("id, branch_id, service_type_id, inventory_item_id, quantity_per_load")
+        .eq("is_active", true)),
+      optional(supabase.from("inventory_items").select("id, name, unit, current_stock, category_id, branch_id")),
     ]);
+    setSupplyRecipes(recipesRes.error ? [] : recipesRes.data || []);
+    setSupplyStock(stockRes.error ? [] : stockRes.data || []);
 
     const error = soapRes.error || servicesRes.error || branchesRes.error;
     if (error) throw error;
@@ -685,6 +725,12 @@ export default function Orders() {
       return toast.error("Choose a service and enter its required weight or quantity.");
     if (isAdmin && !form.branch)
       return toast.error("Please assign this order to a branch");
+    if (!editing) {
+      const supplyProblem = supplyServices
+        .map((service) => supplyChoiceProblem(service.choices, service.recipe, supplyStock, service.loads))
+        .find(Boolean);
+      if (supplyProblem) return toast.error(supplyProblem);
+    }
 
     const totalWeight = form.items.reduce((total, item) => total + (Number(item.weight_kg) || 0), 0);
 
@@ -760,7 +806,15 @@ export default function Orders() {
             phone: form.customer_phone.trim(),
             email: form.customer_email.trim(),
           },
-          order: payload,
+          // Each service carries only the supplies changed for this customer.
+          order: {
+            ...payload,
+            items: form.items.map(({ supplies, ...item }) => {
+              const recipe = serviceRecipe(supplyRecipes, supplyStock, selectedAddOnBranchId, item.service_type_id);
+              const changes = supplyChoicesPayload(supplies, recipe, supplyStock);
+              return changes.length ? { ...item, supplies: changes } : item;
+            }),
+          },
           addons: form.addons,
           clientRequestId: orderRequestId.current,
           loyaltyRewardId: null,
@@ -1763,7 +1817,7 @@ export default function Orders() {
                         <div className="form-row">
                           <div className="form-group" style={{ flex: 2 }}>
                             <label htmlFor={`order-item-${index}-service`}>Service {index + 1} *</label>
-                            <select id={`order-item-${index}-service`} className={`form-control ${editing && !['received'].includes(editing.status) ? 'is-readonly' : ''}`} value={item.service_type_id} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { service_type_id: event.target.value, weight_kg: '', quantity: '1' })} required>
+                            <select id={`order-item-${index}-service`} className={`form-control ${editing && !['received'].includes(editing.status) ? 'is-readonly' : ''}`} value={item.service_type_id} disabled={Boolean(editing && !['received'].includes(editing.status))} onChange={(event) => updateServiceItem(index, { service_type_id: event.target.value, weight_kg: '', quantity: '1', supplies: {} })} required>
                               <option value="">Select service</option>
                               {serviceTypes.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}
                             </select>
@@ -1782,10 +1836,27 @@ export default function Orders() {
                     {!editing || editing.status === 'received' ? <button type="button" className="btn btn-secondary btn-sm" onClick={addServiceItem}><Plus size={15} /> Add another service</button> : <InfoNote compact title="Service details are locked">Service details are locked after processing starts so inventory remains accurate.</InfoNote>}
                 </div>
 
+                {/* Section: Supplies for this customer (new orders only) */}
+                {!editing && (
+                  <div className="order-section">
+                    <div className="order-section-title">
+                      <span className="order-step-number">Step 3</span>
+                      <span>Supplies for this customer <small>Change a supply only when the customer asks for something different</small></span>
+                      <span className="order-section-optional">Optional</span>
+                    </div>
+                    <OrderSupplyChoices
+                      services={supplyServices}
+                      stockItems={supplyStock}
+                      hasSelectedServices={selectedServiceIds.size > 0}
+                      onChange={(index, supplies) => updateServiceItem(index, { supplies })}
+                    />
+                  </div>
+                )}
+
                 {/* Section: Add-ons */}
                 <div className="order-section">
                   <div className="order-section-title">
-                    <span className="order-step-number">Step 3</span>
+                    <span className="order-step-number">Step {3 + supplyStepOffset}</span>
                     <span>Choose add-ons <small>Optional items for the selected services</small></span>
                     <span className="order-section-optional">Optional</span>
                   </div>
@@ -1884,7 +1955,7 @@ export default function Orders() {
                 {/* Price Breakdown */}
                 <div className="order-section">
                   <div className="order-section-title">
-                    <span className="order-step-number">Step 4</span>
+                    <span className="order-step-number">Step {4 + supplyStepOffset}</span>
                     <span>Review the total <small>Confirm services, weights, add-ons, and rewards</small></span>
                   </div>
                   {!editing && loyaltyPreview && (
@@ -1968,7 +2039,7 @@ export default function Orders() {
                 {/* Section: Payment */}
                 <div className="order-section">
                   <div className="order-section-title">
-                    <span className="order-step-number">Step 5</span>
+                    <span className="order-step-number">Step {5 + supplyStepOffset}</span>
                     <span>Record payment <small>Enter an amount now, or leave it blank when payment will follow</small></span>
                     <span className="order-section-optional">
                       Payment optional
