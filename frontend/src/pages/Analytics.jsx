@@ -1003,7 +1003,7 @@ Rules:
               </div>
               <h3 style={{ margin: 0 }}>Operational Performance</h3>
             </div>
-            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Service, customer, staff, balance, and turnaround indicators use live operational records only. Verified reconstructed history remains available only for aggregate branch totals and forecasting.</p>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Service, customer, balance, and turnaround indicators use live operational records only. Verified reconstructed history remains available only for aggregate branch totals and forecasting.</p>
           </div>
         </div>
 
@@ -1034,7 +1034,6 @@ Rules:
         <div className="operational-lists">
           <OperationalList icon={<TrendingUp size={17} />} title="High-Performing Services" accent="#8b5cf6" empty="No service data yet" items={operationalSummary.topServices.map((service) => `${service.name} · ${service.orders} service requests · ${formatPeso(service.revenue)}`)} />
           <OperationalList icon={<Building2 size={17} />} title="Top Branches" accent="#0ea5e9" empty="No branch data yet" items={operationalSummary.topBranches.map((branchMetric) => `${branchMetric.name} · ${branchMetric.orders} ${branchMetric.orders === 1 ? "order" : "orders"} created · ${formatPeso(branchMetric.revenue)}`)} />
-          <OperationalList icon={<Users size={17} />} title="Staff Productivity" accent="#10b981" empty="No staff activity yet" items={operationalSummary.staffPerformance.slice(0, 3).map((staff) => `${staff.name} · ${staff.completed} released / ${staff.created} created`)} />
           <OperationalList icon={<Users size={17} />} title="Daily New Customers" accent="#0284c7" empty="No new customer profiles in this scope" ranked={false} limit={7} items={[...operationalSummary.dailyNewCustomers].reverse().map((item) => `${format(new Date(`${item.date}T00:00:00`), "MMM d, yyyy")} · ${item.count} new customer${item.count === 1 ? "" : "s"}`)} />
         </div>
       </div>
