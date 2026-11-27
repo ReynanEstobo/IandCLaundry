@@ -22,6 +22,14 @@ import LandingChatbot from "../components/LandingChatbot";
 import FacebookIcon from "../components/FacebookIcon";
 import FormAlert from "../components/FormAlert";
 import { isValidPhilippineMobile, normalizePhone } from "../utils/validation";
+import { describeSupplyChange } from "../utils/orderSupplies";
+
+// The supplies a customer asked for, as shown with their tracked order.
+function trackedSupplyChanges(order) {
+  const items = order.order_items || [];
+  return items.flatMap((item) => (item.order_item_supplies || []).map((change) =>
+    items.length > 1 ? `${item.service_name_snapshot}: ${describeSupplyChange(change)}` : describeSupplyChange(change)));
+}
 
 function useScrollReveal(threshold = 0.15) {
   const ref = useRef(null);
@@ -402,6 +410,7 @@ export default function LandingPage() {
         service_name: o.order_items?.length
           ? o.order_items.map((item) => item.service_name_snapshot).join(", ")
           : o.service_types?.name || "Service",
+        supply_changes: trackedSupplyChanges(o),
       }));
       setTrackResults(enriched.length > 0 ? enriched : null);
       if (enriched.length === 0)
@@ -428,6 +437,7 @@ export default function LandingPage() {
               service_name: o.order_items?.length
                 ? o.order_items.map((item) => item.service_name_snapshot).join(", ")
                 : o.service_types?.name || "Service",
+              supply_changes: trackedSupplyChanges(o),
             }));
             setTrackResults(enriched.length > 0 ? enriched : null);
           }
@@ -840,6 +850,14 @@ export default function LandingPage() {
                       <span className="track-weight">{order.weight_kg} kg</span>
                     </div>
                   </div>
+                  {order.supply_changes?.length > 0 && (
+                    <div className="track-supplies">
+                      <span className="track-supplies-title">Supplies you asked for</span>
+                      <ul>
+                        {order.supply_changes.map((change) => <li key={change}>{change}</li>)}
+                      </ul>
+                    </div>
+                  )}
 
                   {/* ✅ PROGRESS BAR */}
                   <div className="track-progress">

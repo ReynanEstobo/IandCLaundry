@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { URL } from 'node:url'
 import { authenticate, requireAdmin } from './middleware/authenticate.js'
 import { handleData } from './controllers/dataController.js'
-import { cancelOrder, collectOrderPayment, createInventoryItem, createOrder, restockInventory, settleAndReleaseOrder, transitionAllOrderItems, transitionOrder, transitionOrderItem } from './controllers/operationController.js'
+import { cancelOrder, collectOrderPayment, createInventoryItem, createOrder, restockInventory, settleAndReleaseOrder, transitionAllOrderItems, transitionOrder, transitionOrderItem, updateOrderItemSupplies } from './controllers/operationController.js'
 import { listVisibleCustomers, lookupCustomer } from './controllers/customerController.js'
 import { listAuditLog, restoreRecord } from './controllers/auditController.js'
 import { signUp, getMe, requestForgotPasswordOtp, requestPasswordOtp, resetForgottenPassword, updatePassword, verifyForgotPasswordOtp, verifyPasswordChangeOtp } from './controllers/authController.js'
@@ -181,6 +181,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && path === 'orders/collect-payment') return write(response, 200, await collectOrderPayment(await readBody(request), await signedIn()))
     if (request.method === 'POST' && path === 'orders/settle-and-release') return write(response, 200, await settleAndReleaseOrder(await readBody(request), await signedIn()))
     if (request.method === 'POST' && path === 'orders/cancel') return write(response, 200, await cancelOrder(await readBody(request), await signedIn()))
+    if (request.method === 'POST' && path === 'orders/items/supplies') return write(response, 200, await updateOrderItemSupplies(await readBody(request), await signedIn()))
     if (request.method === 'POST' && path === 'inventory/restock') return write(response, 200, await restockInventory(await readBody(request), await signedIn()))
     if (request.method === 'POST' && path === 'inventory/create') return write(response, 200, await createInventoryItem(await readBody(request), await signedIn()))
     if (request.method === 'GET' && path === 'loyalty/rewards') return write(response, 200, await listLoyaltyRewards(await signedIn()))
@@ -189,7 +190,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'GET' && path === 'customers/lookup') return write(response, 200, await lookupCustomer(url.searchParams.get('phone'), await signedIn()))
     if (request.method === 'GET' && (path === 'audit-log' || path === 'recycle-bin')) {
       return write(response, 200, await listAuditLog(await signedIn(), {
-        page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'), direction: url.searchParams.get('direction'),
+        page: url.searchParams.get('page'), pageSize: url.searchParams.get('pageSize'), direction: url.searchParams.get('direction'), type: url.searchParams.get('type'),
       }))
     }
     if (request.method === 'POST' && path === 'recycle-bin/restore') return write(response, 200, await restoreRecord(await readBody(request), await signedIn()))

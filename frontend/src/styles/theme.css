@@ -1112,6 +1112,73 @@ td[data-card-actions]:has(> .row-actions) { white-space: nowrap; }
 .order-service-addons li > :last-child { text-align: right; }
 /* Customer supply choices (Step 3 of a new order): the add-on cards, with a
    four-way choice under each usual supply. */
+/* Services page: customer supply choices, one card per usual supply. Every
+   change saves by itself; the header shows the save status. */
+.supply-settings-card { margin-top: 18px; }
+.supply-settings-header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
+.supply-settings-header > div { flex: 1 1 320px; min-width: 0; }
+.auto-save-status { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: var(--bg-secondary); color: var(--text-muted); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.auto-save-status.is-saved { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); }
+.auto-save-status.is-error { background: var(--danger-light); color: var(--danger); white-space: normal; }
+.auto-save-spin { animation: auto-save-spin 0.9s linear infinite; }
+@keyframes auto-save-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .auto-save-spin { animation: none; } }
+.supply-setup-list { display: grid; gap: 14px; }
+.supply-setup-item { padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-card); }
+.supply-setup-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.supply-setup-icon { display: grid; place-items: center; width: 34px; height: 34px; flex: none; border-radius: var(--radius-xs); background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); }
+.supply-setup-title { display: flex; flex-direction: column; min-width: 0; }
+.supply-setup-title strong { font-size: 15px; color: var(--text-primary); }
+.supply-setup-title span { color: var(--text-muted); font-size: 12.5px; }
+.supply-setup-switches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.supply-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-xs); background: var(--bg-secondary); }
+.supply-switch-label { display: block; color: var(--text-primary); font-size: 13.5px; font-weight: 600; }
+.supply-switch-detail { display: block; margin-top: 2px; color: var(--text-muted); font-size: 12.5px; line-height: 1.4; }
+.supply-switch-row .settings-toggle { flex: none; }
+.supply-setup-replacements { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); }
+.supply-setup-subhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+.supply-setup-subhead strong { color: var(--text-primary); font-size: 13.5px; }
+.supply-setup-subhead span, .supply-setup-empty { margin: 0; color: var(--text-muted); font-size: 12.5px; }
+.supply-replacement-card { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-xs); background: var(--bg-secondary); }
+.supply-replacement-card.has-problem { border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+.supply-replacement-fields { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.supply-replacement-fields .form-group { margin: 0; }
+.supply-replacement-fields label { font-size: 12px; }
+.supply-input-unit { display: flex; align-items: center; gap: 8px; }
+.supply-input-unit input { min-width: 0; }
+.supply-input-unit span { color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+.supply-replacement-remove { align-self: end; height: 38px; width: 38px; color: var(--text-muted); }
+.supply-replacement-remove:hover { color: var(--danger); background: var(--danger-light); }
+.supply-replacement-note { margin: 8px 0 0; color: var(--text-secondary); font-size: 12.5px; line-height: 1.45; }
+.supply-replacement-note.is-problem { color: var(--danger); font-weight: 500; }
+.supply-add-replacement { align-self: flex-start; }
+.checklist-field-error { display: block; margin-top: 6px; color: var(--danger); font-size: 12px; font-weight: 500; }
+@media (max-width: 760px) {
+  .supply-setup-switches { grid-template-columns: minmax(0, 1fr); }
+  .supply-replacement-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .supply-replacement-fields .form-group:first-child { grid-column: 1 / -1; }
+  .supply-replacement-remove { grid-column: 2; justify-self: end; }
+}
+/* Step 3: approved replacements as option cards, and the per-service summary. */
+.supply-change-chip { display: inline-flex; align-items: center; margin-left: auto; padding: 2px 9px; border-radius: 999px; background: color-mix(in srgb, var(--primary) 12%, transparent); color: var(--primary); font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+.supply-option-list { display: grid; gap: 8px; }
+.supply-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-xs); background: var(--bg-card); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; transition: border-color .15s ease, background-color .15s ease; }
+.supply-option:hover:not(:disabled) { border-color: var(--primary); background: var(--bg-hover); }
+.supply-option.selected { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 9%, var(--bg-card)); box-shadow: inset 0 0 0 1px var(--primary); }
+.supply-option:disabled { opacity: .55; cursor: not-allowed; }
+.supply-option:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.supply-option-main { display: flex; flex-direction: column; min-width: 0; }
+.supply-option-name { font-size: 13.5px; font-weight: 600; }
+.supply-option-meta { color: var(--text-muted); font-size: 12px; }
+.supply-option-charge { flex: none; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, var(--warning, #b7791f) 15%, transparent); color: var(--text-primary); font-size: 12px; font-weight: 700; }
+.supply-option-charge.is-free { background: color-mix(in srgb, var(--success) 12%, transparent); color: var(--success); }
+.order-supply-change-btn { margin-top: 8px; align-self: flex-start; }
+.audit-card-tools { display: flex; align-items: center; gap: 12px; }
+.audit-type-filter { width: auto; min-width: 150px; padding-top: 6px; padding-bottom: 6px; }
+.track-supplies { margin: 4px 0 12px; font-size: 13px; color: var(--text-secondary, inherit); }
+.track-supplies-title { display: block; font-weight: 600; margin-bottom: 4px; }
+.track-supplies ul { margin: 0; padding-left: 18px; }
+.supply-change-summary { display: flex; align-items: center; gap: 8px; margin: -4px 0 16px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-xs); background: var(--bg-secondary); font-size: 13px; color: var(--text-secondary); }
 .addon-item.supply-item { flex-direction: column; align-items: stretch; gap: 10px; }
 .supply-badge { padding: 2px 7px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-secondary); color: var(--text-muted); font-size: 10px; font-weight: 700; white-space: nowrap; }
 .supply-choice-toggle { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--border-strong); border-radius: var(--radius-xs); background: var(--bg-card); overflow: hidden; }

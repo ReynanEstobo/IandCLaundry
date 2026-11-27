@@ -17,7 +17,7 @@ const TABLE_LABELS = {
   service_inventory_requirements: 'Automatic deduction setting', inventory_usage_log: 'Stock usage',
   inventory_restocks: 'Restock', inventory_adjustments: 'Stock correction', settings: 'Business settings',
   inventory_categories: 'Inventory category', loyalty_rewards: 'Loyalty reward', payments: 'Payment',
-  order_refunds: 'Refund', branches: 'Branch',
+  order_refunds: 'Refund', branches: 'Branch', service_supply_replacements: 'Supply replacement setting',
 }
 const orderLabel = log => log.order_number ? `order ${log.order_number}` : 'an order'
 const recordLabel = log => {
@@ -38,10 +38,56 @@ const withOrderBranch = (log, text) => {
   return branch ? text.replace(/\.$/, ` at ${branch}.`) : text
 }
 
+const peso = value => `₱${Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+// One supply change in words, for example "Ariel → Tide (+₱20.00)".
+function supplyChangeText(change) {
+  const used = change.choice === 'substitute' ? change.used_item || 'another item'
+    : change.choice === 'customer_own' ? "customer's own" : 'left out'
+  const charge = Number(change.extra_charge) > 0 ? ` (+${peso(change.extra_charge)})` : ''
+  return `${change.usual_item || 'A supply'} → ${used}${charge}`
+}
+// What was used for one usual supply, for example "Tide (+₱20.00)".
+function supplyUsedText(change) {
+  if (!change) return "the shop's usual"
+  const used = change.choice === 'substitute' ? change.used_item || 'another item'
+    : change.choice === 'customer_own' ? "customer's own" : 'left out'
+  return Number(change.extra_charge) > 0 ? `${used} (+${peso(change.extra_charge)})` : used
+}
+// "Powder Detergent from Tide (+₱20.00) to Liquid Detergent" for each supply
+// whose choice differs between the old and the new supplies.
+function supplyEditText(beforeChanges, afterChanges) {
+  const byItem = list => new Map(list.map(change => [change.usual_item || 'A supply', change]))
+  const before = byItem(beforeChanges), after = byItem(afterChanges)
+  return [...new Set([...before.keys(), ...after.keys()])]
+    .map(item => ({ item, from: supplyUsedText(before.get(item)), to: supplyUsedText(after.get(item)) }))
+    .filter(({ from, to }) => from !== to)
+    .map(({ item, from, to }) => `${item} from ${from} to ${to}`)
+}
+function describeSupplyChanges(log, after) {
+  const order = after.order_number ? `order ${after.order_number}` : orderLabel(log)
+  const branch = log.branch?.name ? ` at ${log.branch.name}` : ''
+  const changes = Array.isArray(after.changes) ? after.changes : []
+  if (log.action === 'update') {
+    const service = after.service ? ` for ${after.service}` : ''
+    const previous = log.before_data?.changes
+    if (Array.isArray(previous)) {
+      const edits = supplyEditText(previous, changes)
+      return edits.length
+        ? `Supplies${service} on ${order}${branch} were changed: ${edits.join('; ')}.`
+        : `Supplies${service} on ${order}${branch} were saved without a change.`
+    }
+    return changes.length
+      ? `Supplies${service} on ${order}${branch} were changed to: ${changes.map(supplyChangeText).join('; ')}.`
+      : `Supplies${service} on ${order}${branch} were changed back to the shop's usual supplies.`
+  }
+  return `Supplies changed for the customer on ${order}${branch}: ${changes.map(supplyChangeText).join('; ')}.`
+}
+
 function describe(log) {
   const before = log.before_data || {}
   const after = log.after_data || {}
   const record = recordLabel(log)
+  if (log.event_type === 'order_supplies_changed') return describeSupplyChanges(log, after)
   if (log.action === 'delete') return withOrderBranch(log, `${record} was archived.`)
   if (log.action === 'restore') return withOrderBranch(log, `${record} was restored to the active system.`)
   if (log.action === 'cancel') {
@@ -90,7 +136,7 @@ async function orderNumbersFor(logs) {
   return new Map((data || []).map(order => [order.id, order.order_number]))
 }
 
-export async function listAuditLog(identity, { page = 1, pageSize = AUDIT_PAGE_SIZE, direction = 'desc' } = {}) {
+export async function listAuditLog(identity, { page = 1, pageSize = AUDIT_PAGE_SIZE, direction = 'desc', type = '' } = {}) {
   requireAdmin(identity)
   const safePage = Math.max(1, Number.parseInt(page, 10) || 1)
   const safePageSize = Math.min(AUDIT_MAX_PAGE_SIZE, Math.max(1, Number.parseInt(pageSize, 10) || AUDIT_PAGE_SIZE))
@@ -103,9 +149,12 @@ export async function listAuditLog(identity, { page = 1, pageSize = AUDIT_PAGE_S
   // The database records every staff-table change but cannot see who made it;
   // each of those changes also has an application entry that names the
   // administrator. Only that one is listed, so a change does not appear twice.
-  const { data: logs, error: logError, count } = await database.from('audit_logs')
+  let logQuery = database.from('audit_logs')
     .select('id, action, event_type, event_category, table_name, record_id, branch_id, created_at, actor_staff_id, changed_fields, reason, source, before_data, after_data, staff:actor_staff_id(full_name), branch:branch_id(name)', { count: 'exact' })
     .or('table_name.neq.staff,source.neq.database_trigger,actor_staff_id.not.is.null')
+  // "Supply changes" lists only the supply changes made on orders.
+  if (type === 'supply_changes') logQuery = logQuery.eq('event_type', 'order_supplies_changed')
+  const { data: logs, error: logError, count } = await logQuery
     .order('created_at', { ascending: direction === 'asc' }).range(from, from + safePageSize - 1)
   if (logError) throw Object.assign(new Error(logError.message), { status: 400, details: logError })
   const orderNumbers = await orderNumbersFor(logs || [])

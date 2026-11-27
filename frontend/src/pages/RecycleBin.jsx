@@ -29,9 +29,11 @@ export default function RecycleBin() {
   const [archivedPage, setArchivedPage] = useState(1)
   // Activity is sorted by time on the server, so the order covers every page.
   const [activityDirection, setActivityDirection] = useState('desc')
+  // "Supply changes" shows only the supply changes made on orders.
+  const [activityType, setActivityType] = useState('')
   const hasLoaded = useRef(false)
 
-  const load = useCallback(async (page = 1, background = false, direction = activityDirection) => {
+  const load = useCallback(async (page = 1, background = false, direction = activityDirection, type = activityType) => {
     const isInitialLoad = !hasLoaded.current
     if (!background) {
       if (isInitialLoad) setLoading(true)
@@ -39,7 +41,7 @@ export default function RecycleBin() {
       setError('')
     }
     try {
-      const data = await getAuditLog({ page, pageSize: 25, direction })
+      const data = await getAuditLog({ page, pageSize: 25, direction, type })
       setRecords(data.records || [])
       setAudit(data.audit || { items: [], page, pageSize: 25, total: 0, totalPages: 1 })
       hasLoaded.current = true
@@ -53,7 +55,7 @@ export default function RecycleBin() {
         setAuditLoading(false)
       }
     }
-  }, [activityDirection])
+  }, [activityDirection, activityType])
 
   useEffect(() => { load(1) }, [load])
 
@@ -148,7 +150,15 @@ export default function RecycleBin() {
     <section className="card audit-section-card" aria-busy={auditLoading || undefined}>
       <div className="card-header audit-card-header">
         <h3><History size={18} color="#7c3aed" /> Activity history</h3>
-        <span>{audit.total} event{audit.total === 1 ? '' : 's'}</span>
+        <div className="audit-card-tools">
+          <label className="visually-hidden" htmlFor="audit-activity-type">Show</label>
+          <select id="audit-activity-type" className="form-control audit-type-filter" value={activityType} disabled={auditLoading}
+            onChange={event => setActivityType(event.target.value)}>
+            <option value="">All activity</option>
+            <option value="supply_changes">Supply changes</option>
+          </select>
+          <span>{audit.total} event{audit.total === 1 ? '' : 's'}</span>
+        </div>
       </div>
       {auditLoading ? <TableSkeleton label="Loading audit page…" rows={5} columns={4} /> : <DataTable ariaLabel="Audit activity">
         <thead><tr>
@@ -160,7 +170,7 @@ export default function RecycleBin() {
         <tbody>
           {!audit.items.length ? <EmptyState colSpan={4} message="No audit activity recorded yet" /> : audit.items.map(log => <tr key={log.id}>
             <td data-card-primary data-label="Activity" className="audit-description">{log.description}</td>
-            <td data-label="Branch">{log.table_name === 'orders' ? log.branch?.name || 'Not recorded' : '—'}</td>
+            <td data-label="Branch">{['orders', 'order_item_supplies'].includes(log.table_name) ? log.branch?.name || 'Not recorded' : '—'}</td>
             <td data-label="Performed by">{log.staff?.full_name || 'System (automatic)'}</td>
             <td data-label="When">{new Date(log.created_at).toLocaleString('en-PH')}</td>
           </tr>)}

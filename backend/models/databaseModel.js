@@ -12,6 +12,7 @@ export const TABLES = new Set([
   'inventory_usage_log', 'inventory_restocks', 'expenses', 'staff',
   'settings', 'service_types', 'sms_log', 'branches', 'payments', 'ai_forecasts',
   'order_items', 'order_item_addons', 'service_inventory_requirements', 'service_addon_items',
+  'service_supply_replacements',
   'order_refunds',
 ])
 
@@ -245,6 +246,7 @@ const BRANCH_SCOPED_TABLES = new Set([
   'orders', 'customers', 'inventory_items', 'inventory_usage_log',
   'inventory_restocks', 'expenses', 'payments', 'order_refunds',
   'order_items', 'order_item_addons', 'service_inventory_requirements', 'service_addon_items',
+  'service_supply_replacements',
 ])
 
 function restrictStaffBranchRequest(table, request, identity) {
@@ -252,7 +254,7 @@ function restrictStaffBranchRequest(table, request, identity) {
   if (identity.role !== 'staff') throw Object.assign(new Error('This account has no staff profile. Contact an administrator to assign a role and branch.'), { status: 403 })
   if (!identity.staffId || !identity.branch) throw Object.assign(new Error(`Your staff account must be assigned to a branch before you can access ${table}.`), { status: 403 })
 
-  const usesBranchId = ['order_items', 'order_item_addons', 'service_inventory_requirements', 'service_addon_items'].includes(table)
+  const usesBranchId = ['order_items', 'order_item_addons', 'service_inventory_requirements', 'service_addon_items', 'service_supply_replacements'].includes(table)
   const branchColumn = usesBranchId ? 'branch_id' : 'branch'
   const branchValue = usesBranchId ? identity.branchId : identity.branch
   const scoped = { ...request, filters: [...(request.filters || []), { type: 'eq', column: branchColumn, value: branchValue }] }
@@ -282,7 +284,7 @@ async function attachAdminBranch(table, request, identity) {
   if (!['insert', 'update'].includes(request.operation)) return request
 
   async function resolveBranch(payload) {
-    const branchIdOnly = ['order_items', 'order_item_addons', 'service_inventory_requirements', 'service_addon_items'].includes(table)
+    const branchIdOnly = ['order_items', 'order_item_addons', 'service_inventory_requirements', 'service_addon_items', 'service_supply_replacements'].includes(table)
     if (branchIdOnly && payload?.branch_id) {
       const { data: branch, error } = await database.from('branches').select('id').eq('id', payload.branch_id).maybeSingle()
       if (error || !branch) throw Object.assign(new Error('The selected branch does not exist.'), { status: 400 })
@@ -370,6 +372,25 @@ function validateResourcePayload(table, payload, operation) {
       if (operation === 'insert' && (!value.service_type_id || !value.inventory_item_id || !value.branch_id)) throw Object.assign(new Error('Branch, service, and inventory item are required.'), { status: 400 })
       if (has('unit_price')) value.unit_price = assertNonNegativeNumber(value.unit_price, 'Add-on unit price')
     }
+    if (table === 'service_inventory_requirements') {
+      for (const field of ['allow_customer_own', 'allow_leave_out']) {
+        if (has(field) && typeof value[field] !== 'boolean') throw Object.assign(new Error('Choose yes or no for each supply option.'), { status: 400 })
+      }
+    }
+    // An approved replacement for a usual supply. The database also checks
+    // that the item belongs to the same branch and is not a usual supply.
+    if (table === 'service_supply_replacements') {
+      if (operation === 'insert' && (!value.requirement_id || !value.replacement_item_id)) throw Object.assign(new Error('Choose the usual supply and the item that may replace it.'), { status: 400 })
+      if (needs('quantity_per_load')) {
+        value.quantity_per_load = assertNonNegativeNumber(value.quantity_per_load, 'Amount per load')
+        if (value.quantity_per_load <= 0 || value.quantity_per_load > 100000) throw Object.assign(new Error('Enter an amount per load greater than zero.'), { status: 400 })
+      }
+      if (needs('extra_charge_per_load')) {
+        value.extra_charge_per_load = assertNonNegativeNumber(value.extra_charge_per_load ?? 0, 'Extra charge per load')
+        if (value.extra_charge_per_load > 10000) throw Object.assign(new Error('The extra charge per load can be at most ₱10,000.'), { status: 400 })
+      }
+      if (has('is_active') && typeof value.is_active !== 'boolean') throw Object.assign(new Error('Choose whether the replacement is available.'), { status: 400 })
+    }
     if (table === 'expenses') {
       if (needs('category')) value.category = assertText(value.category, { label: 'Expense category', min: 2, max: 80 })
       if (needs('amount')) value.amount = assertNonNegativeNumber(value.amount, 'Expense amount')
@@ -445,7 +466,7 @@ export async function execute(table, request, identity) {
   if (table === 'settings' && request.operation !== 'select' && identity.role !== 'admin') {
     throw Object.assign(new Error('Only administrators can change business settings.'), { status: 403 })
   }
-  if (['service_types', 'service_inventory_requirements', 'service_addon_items'].includes(table) && request.operation !== 'select' && identity.role !== 'admin') {
+  if (['service_types', 'service_inventory_requirements', 'service_addon_items', 'service_supply_replacements'].includes(table) && request.operation !== 'select' && identity.role !== 'admin') {
     throw Object.assign(new Error('Only administrators can change service configuration.'), { status: 403 })
   }
   if (['order_items', 'order_item_addons'].includes(table) && request.operation !== 'select') {

@@ -28,7 +28,7 @@ import toast from "react-hot-toast";
 import { supabase } from "../lib/supabase";
 import { useRealtime } from "../lib/useRealtime";
 import { sendEmail } from "../services/api/notificationApi";
-import { cancelBranchOrder, collectBranchOrderPayment, createBranchOrder, getOrdersPage, lookupCustomerByPhone, settleAndReleaseBranchOrder, transitionAllOrderServiceItems, transitionBranchOrder } from "../services/api/operationsApi";
+import { cancelBranchOrder, collectBranchOrderPayment, createBranchOrder, getOrdersPage, lookupCustomerByPhone, settleAndReleaseBranchOrder, transitionAllOrderServiceItems, transitionBranchOrder, updateOrderItemSupplies } from "../services/api/operationsApi";
 import { useAuth } from "../context/AuthContext";
 import { useShowPageLoader, InlineSkeleton, PageError, PageLoader, TableSkeleton } from "../components/AsyncState";
 import LoadingButton from "../components/LoadingButton";
@@ -40,7 +40,7 @@ import { useSearchPending, SearchStatusIcon, useChangedRows } from "../component
 import { isValidPhilippineMobile } from "../utils/validation";
 import { orderItemsTotal, pricingInputLabel, serviceItemSubtotal, validServiceItem } from "../utils/orderPricing";
 import { getAvailableOrderAddons, groupOrderAddonsByService, resolveBranchId, retainAvailableOrderAddons } from "../utils/orderAddons";
-import { describeSupplyChange, serviceLoads, serviceRecipe, supplyChoiceProblem, supplyChoicesPayload } from "../utils/orderSupplies";
+import { choicesFromRecorded, describeSupplyChange, peso, serviceLoads, serviceRecipe, supplyCharge, supplyChoiceProblem, supplyChoicesPayload } from "../utils/orderSupplies";
 import OrderSupplyChoices from "../components/OrderSupplyChoices";
 import useActiveBranches from "../hooks/useActiveBranches";
 import { quantity, unitName } from "../utils/alertText";
@@ -68,6 +68,25 @@ const STATUS_ICONS = {
   cancelled: <CircleX size={15} />,
 };
 
+// Cancelling returns supplies only for services that have not started yet;
+// supplies already used for washing stay deducted.
+function cancelStockReturn(order) {
+  const items = serviceItemsForDisplay(order);
+  const notStarted = items.filter((item) => (item.status || order.status) === "received");
+  if (order.status === "received" && notStarted.length === items.length) return "all";
+  return notStarted.length ? "some" : "none";
+}
+
+function cancelStockText(order) {
+  const branch = order.branch || "this branch";
+  const items = serviceItemsForDisplay(order);
+  const which = cancelStockReturn(order);
+  if (which === "all") return <>The supplies taken for this order are returned to the stock of <b>{branch}</b>.</>;
+  if (which === "none") return "Work on this order has already started, so the supplies already used stay deducted from stock.";
+  const names = items.filter((item) => (item.status || order.status) === "received").map((item) => item.service_name_snapshot || "Laundry service");
+  return <>Supplies for services not started yet ({names.join(", ")}) are returned to the stock of <b>{branch}</b>. Supplies already used for started services stay deducted.</>;
+}
+
 function serviceItemsForDisplay(order) {
   if (order?.order_items?.length) return order.order_items;
   return [{
@@ -83,7 +102,7 @@ function serviceItemsForDisplay(order) {
 
 // The services of one order as a compact sub-table: one row per service with
 // its add-ons beneath it. The order number is on the row/card it opens from.
-function OrderServicesDetail({ order, id }) {
+function OrderServicesDetail({ order, id, onChangeSupplies }) {
   const items = serviceItemsForDisplay(order);
   return (
     <section id={id} className="order-services-detail" aria-label={`Services in order ${order.order_number}`}>
@@ -120,11 +139,19 @@ function OrderServicesDetail({ order, id }) {
                       {item.order_item_supplies.map((change) => (
                         <li key={change.id}>
                           <span>{describeSupplyChange(change)}</span>
-                          <span>{quantity(change.quantity, change.unit_snapshot)}</span>
+                          <span>
+                            {quantity(change.quantity, change.unit_snapshot)}
+                            {Number(change.extra_charge) > 0 ? ` · +${peso(change.extra_charge)}` : ""}
+                          </span>
                         </li>
                       ))}
                     </ul>
                   </span>
+                )}
+                {onChangeSupplies && order.status === "received" && item.status === "received" && !String(item.id).startsWith("legacy-") && (
+                  <button type="button" className="btn btn-sm btn-secondary order-supply-change-btn" onClick={() => onChangeSupplies(order, item)}>
+                    Change supplies
+                  </button>
                 )}
               </span>
             </span>
@@ -190,6 +217,7 @@ async function sendOrderReceivedEmail(
   totalPrice,
   estimatedReadyAt,
   isAdmin = false,
+  supplyChanges = [],
 ) {
   if (!String(customerEmail || "").trim()) return;
   try {
@@ -202,7 +230,7 @@ async function sendOrderReceivedEmail(
         orderId,
         notificationType: "order_received",
         subject: `We received your I&C Laundry order - ${orderNumber}`,
-        body: `Hello ${customerName || "Customer"},\n\nWe have received your laundry order. Here is a copy of the information recorded by our staff.\n\nOrder summary:\n- Tracking number: ${orderNumber}\n- Service: ${serviceName}\n- Weight: ${weightKg} kg\n- Total: ₱${totalPrice.toLocaleString()}\n\nEstimated pickup time: ${completionText}\n\nYou can check the order status on our website using the tracking number above. We will send another message when the order is ready.\n\nThank you,\nI&C Laundry`,
+        body: `Hello ${customerName || "Customer"},\n\nWe have received your laundry order. Here is a copy of the information recorded by our staff.\n\nOrder summary:\n- Tracking number: ${orderNumber}\n- Service: ${serviceName}\n- Weight: ${weightKg} kg\n- Total: ₱${totalPrice.toLocaleString()}\n${supplyChanges.length ? `\nSupplies you asked for:\n${supplyChanges.map((change) => `- ${change}`).join("\n")}\n` : ""}\nEstimated pickup time: ${completionText}\n\nYou can check the order status on our website using the tracking number above. We will send another message when the order is ready.\n\nThank you,\nI&C Laundry`,
     });
     if (res.success) {
       toast.success(`Order confirmation email sent to ${customerEmail}`);
@@ -270,6 +298,10 @@ export default function Orders() {
   // customer asks. If these cannot load, orders simply use the usual supplies.
   const [supplyRecipes, setSupplyRecipes] = useState([]);
   const [supplyStock, setSupplyStock] = useState([]);
+  const [supplyReplacements, setSupplyReplacements] = useState([]);
+  // Changing the supplies of a service whose order is still "Received".
+  const [supplyEdit, setSupplyEdit] = useState(null);
+  const [savingSupplyEdit, setSavingSupplyEdit] = useState(false);
   const [loading, setLoading] = useState(true);
   const showPageLoader = useShowPageLoader(loading);
   const [loadError, setLoadError] = useState("");
@@ -353,7 +385,7 @@ export default function Orders() {
     return {
       index,
       label: form.items.length > 1 ? `Service ${index + 1} · ${service.name}` : service.name,
-      recipe: serviceRecipe(supplyRecipes, supplyStock, selectedAddOnBranchId, item.service_type_id),
+      recipe: serviceRecipe(supplyRecipes, supplyStock, selectedAddOnBranchId, item.service_type_id, supplyReplacements),
       loads: serviceLoads(item.weight_kg, service),
       weightEntered: Number(item.weight_kg) > 0,
       choices: item.supplies,
@@ -390,8 +422,19 @@ export default function Orders() {
   const [loyaltyPreview, setLoyaltyPreview] = useState(null);
   const phoneLookupRequest = useRef(0);
 
+  // The extra charges of the approved replacements chosen in the supply step.
+  function supplyChargeFor(items) {
+    if (editing) return 0;
+    return (items || []).reduce((sum, item) => {
+      const service = serviceTypes.find((candidate) => String(candidate.id) === String(item.service_type_id));
+      if (!service) return sum;
+      const recipe = serviceRecipe(supplyRecipes, supplyStock, selectedAddOnBranchId, item.service_type_id, supplyReplacements);
+      return sum + supplyCharge(item.supplies, recipe, serviceLoads(item.weight_kg, service));
+    }, 0);
+  }
+
   function calcPrice(items, addons) {
-    const serviceTotal = orderItemsTotal(items, serviceTypes);
+    const serviceTotal = orderItemsTotal(items, serviceTypes) + supplyChargeFor(items);
     const weight = 0; // Bundle/excess pricing is now resolved per service item.
     if (false) return 0;
 
@@ -471,7 +514,7 @@ export default function Orders() {
 
     try {
     const optional = (query) => Promise.resolve(query).catch(() => ({ data: [], error: true }));
-    const [ordersRes, soapRes, servicesRes, branchesRes, recipesRes, stockRes] = await Promise.all([
+    const [ordersRes, soapRes, servicesRes, branchesRes, recipesRes, stockRes, replacementsRes] = await Promise.all([
       ordersQuery,
       supabase.from("service_addon_items")
         .select("id, branch_id, service_type_id, unit_price, inventory_items(id, name, unit, current_stock, branch, branch_id, deleted_at)")
@@ -479,12 +522,16 @@ export default function Orders() {
       supabase.from("service_types").select("*").eq("is_active", true).order("name"),
       supabase.from("branches").select("id, name").eq("is_active", true).order("name"),
       optional(supabase.from("service_inventory_requirements")
-        .select("id, branch_id, service_type_id, inventory_item_id, quantity_per_load")
+        .select("id, branch_id, service_type_id, inventory_item_id, quantity_per_load, allow_customer_own, allow_leave_out")
         .eq("is_active", true)),
-      optional(supabase.from("inventory_items").select("id, name, unit, current_stock, category_id, branch_id")),
+      optional(supabase.from("inventory_items").select("id, name, unit, current_stock, category_id, branch_id, deleted_at")),
+      optional(supabase.from("service_supply_replacements")
+        .select("id, requirement_id, replacement_item_id, quantity_per_load, extra_charge_per_load, is_active")
+        .eq("is_active", true)),
     ]);
     setSupplyRecipes(recipesRes.error ? [] : recipesRes.data || []);
     setSupplyStock(stockRes.error ? [] : stockRes.data || []);
+    setSupplyReplacements(replacementsRes.error ? [] : replacementsRes.data || []);
 
     const error = soapRes.error || servicesRes.error || branchesRes.error;
     if (error) throw error;
@@ -727,7 +774,7 @@ export default function Orders() {
       return toast.error("Please assign this order to a branch");
     if (!editing) {
       const supplyProblem = supplyServices
-        .map((service) => supplyChoiceProblem(service.choices, service.recipe, supplyStock, service.loads))
+        .map((service) => supplyChoiceProblem(service.choices, service.recipe, service.loads))
         .find(Boolean);
       if (supplyProblem) return toast.error(supplyProblem);
     }
@@ -810,8 +857,8 @@ export default function Orders() {
           order: {
             ...payload,
             items: form.items.map(({ supplies, ...item }) => {
-              const recipe = serviceRecipe(supplyRecipes, supplyStock, selectedAddOnBranchId, item.service_type_id);
-              const changes = supplyChoicesPayload(supplies, recipe, supplyStock);
+              const recipe = serviceRecipe(supplyRecipes, supplyStock, selectedAddOnBranchId, item.service_type_id, supplyReplacements);
+              const changes = supplyChoicesPayload(supplies, recipe);
               return changes.length ? { ...item, supplies: changes } : item;
             }),
           },
@@ -847,6 +894,16 @@ export default function Orders() {
         total_price,
         orderData.estimated_ready_at,
         isAdmin,
+        supplyServices.flatMap((service) => service.recipe
+          .filter((line) => service.choices?.[line.requirementId]?.choice && service.choices[line.requirementId].choice !== "default")
+          .map((line) => {
+            const choice = service.choices[line.requirementId];
+            const used = choice.choice === "substitute"
+              ? service.recipe.find((entry) => entry.requirementId === line.requirementId)?.replacements
+                .find((option) => option.replacementId === String(choice.replacementId))?.item.name || "another item"
+              : choice.choice === "customer_own" ? "your own" : "not used";
+            return `${line.item.name}: ${used}`;
+          })),
       );
     }
 
@@ -1188,7 +1245,44 @@ export default function Orders() {
   const filtered = orders;
 
   const changedRows = useChangedRows(filtered);
+  // "Change supplies" on a service that has not started: the same supply step,
+  // for that one service, starting from what was recorded.
+  function openSupplyEdit(order, item) {
+    setSupplyEdit({ order, item, choices: choicesFromRecorded(item.order_item_supplies) });
+  }
+  const supplyEditService = supplyEdit ? (() => {
+    const service = serviceTypes.find((candidate) => String(candidate.id) === String(supplyEdit.item.service_type_id));
+    return {
+      index: 0,
+      label: supplyEdit.item.service_name_snapshot || service?.name || "Service",
+      recipe: serviceRecipe(supplyRecipes, supplyStock, supplyEdit.order.branch_id, supplyEdit.item.service_type_id, supplyReplacements),
+      loads: Number(supplyEdit.item.loads) || 1,
+      weightEntered: true,
+      choices: supplyEdit.choices,
+    };
+  })() : null;
+  async function saveSupplyEdit() {
+    if (!supplyEdit || savingSupplyEdit) return;
+    // Supplies still counted from this order are given back first, so the
+    // replacement's own stock is the only limit worth checking here.
+    const problem = supplyChoiceProblem(supplyEditService.choices, supplyEditService.recipe, supplyEditService.loads);
+    if (problem) return toast.error(problem.replace("In Step 3, ", "").replace(/^./, (letter) => letter.toUpperCase()));
+    setSavingSupplyEdit(true);
+    try {
+      const result = await updateOrderItemSupplies(supplyEdit.item.id, supplyChoicesPayload(supplyEditService.choices, supplyEditService.recipe));
+      const newTotal = Number(result?.data?.total_price);
+      toast.success(Number.isFinite(newTotal) ? `Supplies updated. The order total is now ${peso(newTotal)}.` : "Supplies updated.");
+      setSupplyEdit(null);
+      loadData(true);
+    } catch (supplyError) {
+      toast.error(supplyError.message || "The supplies could not be changed.");
+    } finally {
+      setSavingSupplyEdit(false);
+    }
+  }
+
   useEscapeToClose(showModal, () => setShowModal(false));
+  useEscapeToClose(Boolean(supplyEdit), () => !savingSupplyEdit && setSupplyEdit(null));
   useEscapeToClose(Boolean(correctionOrder), () => !updatingOrderId && setCorrectionOrder(null));
   useEscapeToClose(showAdditionalPaymentModal, () => !recordingPayment && setShowAdditionalPaymentModal(false));
   useEscapeToClose(showPaymentModal, () => updatingOrderId !== selectedOrder?.id && setShowPaymentModal(false));
@@ -1353,7 +1447,7 @@ export default function Orders() {
                             </span>
                           </div>
                           {expandedServicesOrderId === order.id && (
-                            <OrderServicesDetail order={order} id={`order-services-board-${order.id}`} />
+                            <OrderServicesDetail order={order} id={`order-services-board-${order.id}`} onChangeSupplies={openSupplyEdit} />
                           )}
                           {!["ready", "released", "cancelled"].includes(order.status) && (
                             <div className="kanban-timer-row">
@@ -1534,7 +1628,7 @@ export default function Orders() {
                     {expandedServicesOrderId === order.id && (
                       <tr className="order-services-expanded-row">
                         <td colSpan={6}>
-                          <OrderServicesDetail order={order} id={`order-services-table-${order.id}`} />
+                          <OrderServicesDetail order={order} id={`order-services-table-${order.id}`} onChangeSupplies={openSupplyEdit} />
                         </td>
                       </tr>
                     )}
@@ -1846,7 +1940,6 @@ export default function Orders() {
                     </div>
                     <OrderSupplyChoices
                       services={supplyServices}
-                      stockItems={supplyStock}
                       hasSelectedServices={selectedServiceIds.size > 0}
                       onChange={(index, supplies) => updateServiceItem(index, { supplies })}
                     />
@@ -2015,6 +2108,15 @@ export default function Orders() {
                           </div>
                         );
                       })}
+                    {!editing && supplyServices.map((service) => {
+                      const charge = supplyCharge(service.choices, service.recipe, service.loads);
+                      return charge > 0 ? (
+                        <div key={`supply-charge-${service.index}`} className="pricing-row">
+                          <span>Supply changes <small className="pricing-addon-service">for {service.label}</small></span>
+                          <span>{peso(charge)}</span>
+                        </div>
+                      ) : null;
+                    })}
                     {(() => {
                       const rawTotal = calcPrice(form.items, form.addons);
                       const reward = loyaltyPreview;
@@ -2210,6 +2312,33 @@ export default function Orders() {
         onClose={() => setReleaseConfirmationOrder(null)}
         onConfirm={confirmFullyPaidRelease}
       />
+      {supplyEdit && supplyEditService && (
+        <div className="modal-overlay" onClick={() => !savingSupplyEdit && setSupplyEdit(null)}>
+          <div className="modal order-modal" role="dialog" aria-modal="true" aria-labelledby="supply-edit-title" style={{ maxWidth: 640 }} onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3 id="supply-edit-title">Change supplies</h3>
+                <p>{supplyEditService.label} on order {supplyEdit.order.order_number}. Stock and the price are recalculated when you save.</p>
+              </div>
+              <button className="btn-icon" type="button" aria-label="Close" disabled={savingSupplyEdit} onClick={() => setSupplyEdit(null)}><X size={20} /></button>
+            </div>
+            <div className="modal-body">
+              <OrderSupplyChoices
+                services={[supplyEditService]}
+                hasSelectedServices
+                onChange={(_index, choices) => setSupplyEdit((current) => current && ({ ...current, choices }))}
+              />
+              <InfoNote compact title="Price">
+                Approved replacements may add a charge. If the customer has already paid more than the new total, keep the paid change or cancel the order and create it again.
+              </InfoNote>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" type="button" disabled={savingSupplyEdit} onClick={() => setSupplyEdit(null)}>Cancel</button>
+              <LoadingButton className="btn btn-primary" type="button" loading={savingSupplyEdit} loadingLabel="Saving…" onClick={saveSupplyEdit}>Save supplies</LoadingButton>
+            </div>
+          </div>
+        </div>
+      )}
       {showPaymentModal && (
         <div
           className="modal-overlay"
@@ -2281,7 +2410,7 @@ export default function Orders() {
             <div className="order-modal-body">
               <div className="cancellation-alert-message">
                 <strong>This action changes the order status to Cancelled.</strong>
-                <span>Used inventory is returned to <b>{cancellingOrder.branch || "this branch"}</b>.{" "}
+                <span>{cancelStockText(cancellingOrder)}{" "}
                   {Number(cancellingOrder.amount_paid) > 0
                     ? <>The <b>₱{Number(cancellingOrder.amount_paid).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> paid for this order will be recorded as refunded under your name. Return this cash to the customer.</>
                     : "No payment was collected, so no refund is needed."}</span>
@@ -2294,7 +2423,7 @@ export default function Orders() {
             <div className="order-modal-footer">
               <button className="btn btn-secondary" disabled={isCancelling} onClick={() => setCancellingOrder(null)}>Keep Order</button>
               <button className="btn btn-danger cancellation-confirm-btn" disabled={isCancelling || !cancellationReason.trim()} onClick={confirmCancellation}>
-                {isCancelling ? <><Loader2 size={16} className="spin" /> Cancelling…</> : "Cancel Order & Restore Stock"}
+                {isCancelling ? <><Loader2 size={16} className="spin" /> Cancelling…</> : cancelStockReturn(cancellingOrder) === "all" ? "Cancel Order & Restore Stock" : "Cancel Order"}
               </button>
             </div>
           </div>

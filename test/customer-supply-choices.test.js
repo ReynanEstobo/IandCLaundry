@@ -3,9 +3,9 @@ import { readFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import { PGlite } from '@electric-sql/pglite'
-import { database } from '../backend/config/supabase.js'
-import { createOrder } from '../backend/controllers/operationController.js'
-import { describeSupplyChange, needsAmount, replacementOptions, serviceLoads, serviceRecipe, supplyChoiceProblem, supplyChoicesPayload } from '../frontend/src/utils/orderSupplies.js'
+// The 20261126 migration on its own. Approved replacements, extra charges,
+// and the newer order-form and server rules are tested in
+// supply-replacements.test.js.
 
 const read = path => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
 const MIGRATION = 'supabase_migrations/20261126_customer_supply_choices.sql'
@@ -211,95 +211,4 @@ test('unsuitable supply choices are refused and nothing is taken from stock', as
   await assert.rejects(placeOrder(db, ids, { supplies: [{ requirement_id: ids.arielLine, choice: 'substitute', item_id: ids.liquid, quantity: 5 }] }), /not available at this branch/, 'an archived item cannot be used')
   assert.deepEqual(await Promise.all([ids.ariel, ids.downy, ids.bag, ids.tide].map(id => stockOf(db, id))), [20, 20, 20, 1])
   assert.equal((await db.query('SELECT count(*)::int AS n FROM orders')).rows[0].n, 0)
-})
-
-function mockDatabase(t) {
-  const originalFrom = database.from
-  const originalRpc = database.rpc
-  const calls = []
-  database.from = table => {
-    const query = { then(resolve, reject) { return Promise.resolve({ data: [], error: null }).then(resolve, reject) } }
-    for (const method of ['select', 'update', 'insert', 'delete', 'order', 'range', 'limit', 'gte', 'lte', 'ilike', 'in', 'not', 'neq', 'eq', 'is']) {
-      query[method] = (...args) => { calls.push({ table, method, args }); return query }
-    }
-    query.maybeSingle = query.single = async () => ({ data: null, error: null })
-    return query
-  }
-  database.rpc = async (name, args) => { calls.push({ rpc: name, args }); return { data: {}, error: null } }
-  t.after(() => { database.from = originalFrom; database.rpc = originalRpc })
-  return calls
-}
-
-const staff = { role: 'staff', staffId: 'staff-a', branchId: 'branch-a', branch: 'Main' }
-const line = '11111111-1111-4111-8111-111111111111'
-const tide = '22222222-2222-4222-8222-222222222222'
-
-test('the server passes valid supply choices to the database and refuses malformed ones', async t => {
-  const calls = mockDatabase(t)
-  const order = supplies => createOrder({
-    customer: { name: 'Ana Cruz', phone: '09171234567' },
-    order: { total_price: 200, items: [{ service_type_id: 'service-1', weight_kg: 8, supplies }] },
-  }, staff)
-  await order([{ requirement_id: line, choice: 'substitute', item_id: tide, quantity: 50 }, { requirement_id: line, choice: 'none' }])
-  assert.deepEqual(calls.find(call => call.rpc === 'create_branch_order').args.p_order.items[0].supplies[0], { requirement_id: line, choice: 'substitute', item_id: tide, quantity: 50 })
-  await order(undefined)
-  for (const [supplies, message] of [
-    ['none', /short list/],
-    [Array.from({ length: 21 }, () => ({ requirement_id: line, choice: 'none' })), /short list/],
-    [[{ choice: 'none' }], /usual supply/],
-    [[{ requirement_id: line, choice: 'extra' }], /valid supply option/],
-    [[{ requirement_id: line, choice: 'substitute' }], /item to use instead/],
-    [[{ requirement_id: line, choice: 'substitute', item_id: tide, quantity: -1 }], /valid amount/],
-    [[{ requirement_id: line, choice: 'substitute', item_id: tide, quantity: 'a lot' }], /valid amount/],
-    [[{ requirement_id: line, choice: 'none', quantity: 2 }], /valid amount/],
-  ]) await assert.rejects(order(supplies), message)
-})
-
-test('the order form offers any other item, asks for an amount when the unit differs, and sends only real changes', () => {
-  const stock = [
-    { id: 'ariel', name: 'Ariel', unit: 'sachets', current_stock: 20, branch_id: 'main' },
-    { id: 'tide', name: 'Tide', unit: 'sachets', current_stock: 3, branch_id: 'main' },
-    { id: 'liquid', name: 'Liquid', unit: 'mL', current_stock: 900, branch_id: 'main' },
-    { id: 'breeze', name: 'Breeze', unit: 'sachets', current_stock: 9, branch_id: 'calzada' },
-    { id: 'downy', name: 'Downy', unit: 'sachets', current_stock: 20, branch_id: 'main' },
-    { id: 'bag', name: 'Plastic Bag', unit: 'pcs', current_stock: 50, branch_id: 'main' },
-    { id: 'hanger', name: 'Hanger', unit: 'pcs', current_stock: 30, branch_id: 'main' },
-  ]
-  const requirements = [
-    { id: 'line-ariel', branch_id: 'main', service_type_id: 'wash', inventory_item_id: 'ariel', quantity_per_load: 1 },
-    { id: 'line-downy', branch_id: 'main', service_type_id: 'wash', inventory_item_id: 'downy', quantity_per_load: 1 },
-    { id: 'line-bag', branch_id: 'main', service_type_id: 'wash', inventory_item_id: 'bag', quantity_per_load: 1 },
-    { id: 'line-other', branch_id: 'calzada', service_type_id: 'wash', inventory_item_id: 'breeze', quantity_per_load: 1 },
-  ]
-  const recipe = serviceRecipe(requirements, stock, 'main', 'wash')
-  assert.deepEqual(recipe.map(entry => entry.item.name), ['Ariel', 'Downy', 'Plastic Bag'])
-  assert.deepEqual(replacementOptions(stock, recipe[0].item, recipe).map(item => item.name), ['Tide', 'Hanger', 'Liquid'],
-    "same branch only, items counted the same way first, never the service's own usual supplies")
-  assert.equal(needsAmount(recipe[0].item, stock[1]), false)
-  assert.equal(needsAmount(recipe[0].item, stock[2]), true)
-  assert.equal(serviceLoads(17, { bundle_kg: 8 }), 3)
-  assert.equal(serviceLoads('', { bundle_kg: 8 }), 1)
-
-  assert.deepEqual(supplyChoicesPayload({
-    'line-ariel': { choice: 'substitute', itemId: 'liquid', amount: '60' },
-    'line-downy': { choice: 'default' },
-    'line-bag': { choice: 'substitute', itemId: 'hanger', amount: '' },
-    'line-gone': { choice: 'none' },
-  }, recipe, stock), [
-    { requirement_id: 'line-ariel', choice: 'substitute', item_id: 'liquid', quantity: 60 },
-    { requirement_id: 'line-bag', choice: 'substitute', item_id: 'hanger' },
-  ])
-
-  const problem = (choices, loads = 1) => supplyChoiceProblem(choices, recipe, stock, loads)
-  assert.equal(problem({ 'line-downy': { choice: 'customer_own' } }), null)
-  assert.match(problem({ 'line-downy': { choice: 'substitute', itemId: '' } }), /choose the item to use instead of Downy/)
-  assert.match(problem({ 'line-ariel': { choice: 'substitute', itemId: 'liquid', amount: '' } }), /enter how much Liquid to use instead of Ariel/)
-  assert.match(problem({ 'line-bag': { choice: 'substitute', itemId: 'tide', amount: '1.5' } }), /whole number/)
-  assert.match(problem({ 'line-ariel': { choice: 'substitute', itemId: 'tide' } }, 4), /Tide has only 3 sachets left, but 4 sachets is needed/)
-  assert.match(problem({ 'line-ariel': { choice: 'substitute', itemId: 'liquid', amount: '950' } }), /Liquid has only 900 mL left/)
-  assert.equal(problem({ 'line-ariel': { choice: 'substitute', itemId: 'tide' } }, 3), null)
-
-  assert.equal(describeSupplyChange({ choice: 'customer_own', default_item_name_snapshot: 'Downy' }), "Downy → Customer's own")
-  assert.equal(describeSupplyChange({ choice: 'none', default_item_name_snapshot: 'Plastic Bag' }), 'Plastic Bag → Left out')
-  assert.equal(describeSupplyChange({ choice: 'substitute', default_item_name_snapshot: 'Ariel', used_item_name_snapshot: 'Tide' }), 'Ariel → Tide')
 })

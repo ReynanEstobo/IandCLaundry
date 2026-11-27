@@ -7,6 +7,7 @@ import {
   CalendarClock,
   Lightbulb,
   Percent,
+  PackageCheck,
   ShoppingBag,
   Printer,
   RefreshCw,
@@ -210,6 +211,7 @@ export default function Analytics() {
   const [stats, setStats] = useState({});
   const [operationalSummary, setOperationalSummary] = useState({
     services: [], branches: [], topServices: [], topBranches: [], staffPerformance: [], lowStockItems: [], repeatCustomers: 0, completedOrders: 0, averageTurnaroundHours: null, newCustomerTotal: 0, dailyNewCustomers: [], outstandingBalances: [],
+    supplyChangeOrders: 0, supplyChargeTotal: 0,
   });
 
   const [forecastLoading, setForecastLoading] = useState(false);
@@ -302,7 +304,7 @@ export default function Analytics() {
 
     let serviceItemQuery = supabase
       .from("order_items")
-      .select("id, order_id, service_name_snapshot, pricing_type_snapshot, weight_kg, quantity, subtotal, created_at, orders!inner(id, status, branch, branch_id, data_origin)")
+      .select("id, order_id, service_name_snapshot, pricing_type_snapshot, weight_kg, quantity, subtotal, supply_charge, created_at, orders!inner(id, status, branch, branch_id, data_origin), order_item_supplies(choice)")
       .gte("created_at", startDate)
       .lte("created_at", endDate);
 
@@ -389,6 +391,10 @@ export default function Analytics() {
       current.quantity += Number(item.quantity) || 0;
       serviceTotals.set(serviceName, current);
     });
+    // Orders where a customer asked for different supplies, and the extra
+    // charges of approved replacements included in their prices.
+    const supplyChangeOrderIds = new Set(serviceItems.filter((item) => item.order_item_supplies?.length > 0).map((item) => item.order_id));
+    const supplyChargeTotal = serviceItems.reduce((sum, item) => sum + (Number(item.supply_charge) || 0), 0);
     liveOrderData.forEach((order) => {
       if (order.customer_id) customerVisits.set(order.customer_id, (customerVisits.get(order.customer_id) || 0) + 1);
       // The creator is credited with the order and the releaser with the
@@ -461,6 +467,8 @@ export default function Analytics() {
       newCustomerTotal: newCustomerData.length,
       dailyNewCustomers,
       outstandingBalances,
+      supplyChangeOrders: supplyChangeOrderIds.size,
+      supplyChargeTotal,
     });
 
     generateForecast(orderData, paymentData);
@@ -1029,6 +1037,16 @@ Rules:
               <div className="stat-label">{metric.label}</div>
             </div>;
           })}
+        </div>
+
+        <div className="supply-change-summary" role="note">
+          <PackageCheck size={16} aria-hidden="true" />
+          <span>
+            <strong>Supply changes:</strong>{" "}
+            {operationalSummary.supplyChangeOrders === 0
+              ? "no order in this period used different supplies."
+              : `${operationalSummary.supplyChangeOrders} ${operationalSummary.supplyChangeOrders === 1 ? "order" : "orders"} used different supplies · ${formatPeso(operationalSummary.supplyChargeTotal)} in extra charges for approved replacements.`}
+          </span>
         </div>
 
         <div className="operational-lists">

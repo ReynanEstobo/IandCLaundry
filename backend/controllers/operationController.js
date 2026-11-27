@@ -11,30 +11,30 @@ function requireBranch(identity) {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SUPPLY_CHOICES = new Set(['default', 'substitute', 'customer_own', 'none'])
 
-// A service may carry the customer's supply choices: a replacement item from
-// the branch's stock, the customer's own supplies, or none. The database checks
-// that each choice belongs to the service and that a replacement is suitable.
-function assertSupplyChoices(supplies) {
-  if (supplies === undefined || supplies === null) return
+// A service may carry the customer's supply choices: an approved replacement,
+// the customer's own supplies, or none. Only the choice is passed on: the
+// database takes each replacement's amount and extra charge from the
+// Administrator's settings, so an amount or price sent here is dropped.
+function supplyChoices(supplies) {
+  if (supplies === undefined || supplies === null) return undefined
   if (!Array.isArray(supplies) || supplies.length > 20) {
     throw Object.assign(new Error('Supply choices must be sent as a short list.'), { status: 400 })
   }
-  for (const supply of supplies) {
+  return supplies.map(supply => {
     if (!supply || typeof supply !== 'object' || !UUID_PATTERN.test(String(supply.requirement_id || ''))) {
       throw Object.assign(new Error('Each supply choice must name the usual supply it changes.'), { status: 400 })
     }
     if (!SUPPLY_CHOICES.has(supply.choice)) throw Object.assign(new Error('Choose a valid supply option.'), { status: 400 })
-    if (supply.choice === 'substitute' && !UUID_PATTERN.test(String(supply.item_id || ''))) {
-      throw Object.assign(new Error('Choose the item to use instead.'), { status: 400 })
+    if (supply.choice !== 'substitute') return { requirement_id: supply.requirement_id, choice: supply.choice }
+    // Current forms send the approved replacement; older ones sent the item.
+    if (UUID_PATTERN.test(String(supply.replacement_id || ''))) {
+      return { requirement_id: supply.requirement_id, choice: 'substitute', replacement_id: supply.replacement_id }
     }
-    // An amount comes with a replacement counted in another unit (for example mL).
-    if (supply.quantity !== undefined && supply.quantity !== null && supply.quantity !== '') {
-      const amount = Number(supply.quantity)
-      if (supply.choice !== 'substitute' || !Number.isFinite(amount) || amount <= 0 || amount > 100000) {
-        throw Object.assign(new Error('Enter a valid amount for the item used instead.'), { status: 400 })
-      }
+    if (UUID_PATTERN.test(String(supply.item_id || ''))) {
+      return { requirement_id: supply.requirement_id, choice: 'substitute', item_id: supply.item_id }
     }
-  }
+    throw Object.assign(new Error('Choose the item to use instead.'), { status: 400 })
+  })
 }
 
 async function resolveBranch(identity, requestedBranch) {
@@ -63,7 +63,7 @@ export async function createOrder(body, identity) {
   if (!serviceItems.length && (!Number.isFinite(weight) || weight <= 0)) {
     throw Object.assign(new Error('Add at least one service item or a valid order weight.'), { status: 400 })
   }
-  for (const item of serviceItems) {
+  const items = serviceItems.map(item => {
     if (!item?.service_type_id) throw Object.assign(new Error('Choose a service for every service item.'), { status: 400 })
     if (item.weight_kg !== undefined && item.weight_kg !== '' && (!Number.isFinite(Number(item.weight_kg)) || Number(item.weight_kg) <= 0)) {
       throw Object.assign(new Error('Service weights must be greater than zero.'), { status: 400 })
@@ -71,8 +71,10 @@ export async function createOrder(body, identity) {
     if (item.quantity !== undefined && item.quantity !== '' && (!Number.isFinite(Number(item.quantity)) || Number(item.quantity) <= 0)) {
       throw Object.assign(new Error('Service quantities must be greater than zero.'), { status: 400 })
     }
-    assertSupplyChoices(item.supplies)
-  }
+    const supplies = supplyChoices(item.supplies)
+    const { supplies: _sent, ...service } = item
+    return supplies ? { ...service, supplies } : service
+  })
   for (const quantity of Object.values(addons || {})) {
     const parsed = Number(quantity)
     if (!Number.isInteger(parsed) || parsed <= 0) {
@@ -91,7 +93,7 @@ export async function createOrder(body, identity) {
   validatedCustomer.email = assertEmail(customer.email, { label: 'Customer email' })
   const payload = {
     // The database resolves price snapshots. Client totals are previews only.
-    items: serviceItems,
+    items,
     service_type_id: order.service_type_id || serviceItems[0]?.service_type_id || null,
     weight_kg: Number.isFinite(weight) ? weight : null,
     payment_method: 'cash',
@@ -122,6 +124,26 @@ async function assertOrderAccess(orderId, identity) {
     throw Object.assign(new Error('You can only update orders assigned to your branch.'), { status: 403 })
   }
   return order
+}
+
+// Changes the supplies of one service while the order is still "Received".
+// The database returns the old supplies to stock, takes the new ones, and
+// recalculates the charge and the total.
+export async function updateOrderItemSupplies(body, identity) {
+  const itemId = String(body?.orderItemId || '').trim()
+  if (!UUID_PATTERN.test(itemId)) throw Object.assign(new Error('A service on the order is required.'), { status: 400 })
+  const supplies = supplyChoices(Array.isArray(body?.supplies) ? body.supplies : []) || []
+  requireBranch(identity)
+  const { data: item, error: itemError } = await database.from('order_items').select('id, order_id, branch_id').eq('id', itemId).maybeSingle()
+  if (itemError || !item) throw Object.assign(new Error('Service not found.'), { status: 404 })
+  if (identity.role !== 'admin' && item.branch_id !== identity.branchId) {
+    throw Object.assign(new Error('You can only change orders assigned to your branch.'), { status: 403 })
+  }
+  const { data, error } = await database.rpc('update_order_item_supplies', {
+    p_order_item_id: item.id, p_staff_id: identity.staffId, p_supplies: supplies,
+  })
+  if (error) throw Object.assign(new Error(error.message), { status: 400, details: error })
+  return { data }
 }
 
 export async function transitionOrderItem(body, identity) {

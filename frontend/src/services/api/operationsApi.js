@@ -75,3 +75,8 @@ export async function getLoyaltyRewards() {
 export async function revokeLoyaltyReward(rewardId, reason) {
   return apiFetch('/api/loyalty/revoke', { method: 'POST', body: JSON.stringify({ rewardId, reason }) })
 }
+
+// Changes the supplies of one service while its order is still "Received".
+export async function updateOrderItemSupplies(orderItemId, supplies) {
+  return apiFetch('/api/orders/items/supplies', { method: 'POST', body: JSON.stringify({ orderItemId, supplies }) })
+}
